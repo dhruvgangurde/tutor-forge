@@ -1,0 +1,78 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+# Scoped to backend/ only -- a bare `dist/`/`build/` pattern also matches
+# guide-docs/build/ and .project-guide-rule-details/build/, which are real
+# tracked project documentation directories, not generated artifacts.
+backend/dist/
+backend/build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# ChromaDB + app data (never commit vector store or uploaded files)
+backend/data/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Test / coverage
+coverage/
+frontend/coverage/
+*.cover
+.nyc_output/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# AI assistant / GUIDE-AI-SDP tooling (kept local, not published)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.project-guide-rule-details/
+guide-docs/
+harness/
+
+# OS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# Stray full-folder archive snapshots (not a build artifact of this project;
+# has appeared at the repo root before -- see repository hygiene notes)
+/backend.zip
+
+
+docs/

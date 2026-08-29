@@ -1,0 +1,29 @@
+# Virtualenvs / caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets and local data (never bake into the image)
+.env
+.env.*
+data/
+*.sqlite
+*.db
+
+# Tests, diagnostics, docs — not needed at runtime
+tests/
+diagnose_*.py
+test_db.py
+*.md
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+backend.zip
