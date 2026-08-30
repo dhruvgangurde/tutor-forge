@@ -63,6 +63,17 @@ logger = logging.getLogger(__name__)
 
 # Grading-method label and rationale text for questions the student skipped.
 UNANSWERED_GRADING_METHOD = "not_answered"
+
+#: Grading-method label and feedback for a response the groundedness gate could
+#: not ground. Distinct from "not answered": the student may have written a fine
+#: answer, but the corpus cannot support judging it, so this is a flag for the
+#: teacher rather than a verdict on the student.
+UNGROUNDED_GRADING_METHOD = "ungrounded_pending_review"
+UNGROUNDED_FEEDBACK = (
+    "Not scored automatically: no course material was retrieved that is close "
+    "enough to this question to judge the answer against. Flagged for your "
+    "review - the student may well have answered correctly."
+)
 UNANSWERED_FEEDBACK = (
     "Not answered - the student left this question blank. Scored 0."
 )
@@ -293,6 +304,110 @@ def retrieve_evidence_node(
     return {**state, "evidence_per_question": evidence_per_question}
 
 
+# ── Node 2b: check_evidence_groundedness_node ─────────────────────────────────
+
+def check_evidence_groundedness_node(
+    state: GradingState,
+    retrieval_service: "RetrievalService",
+) -> GradingState:
+    """
+    Decide, per response, whether it can be graded against course evidence.
+
+    Mirrors the tutor's check_groundedness_node: a dedicated node computes the
+    gate decision and the generation step consumes it, using the same
+    RetrievalService.is_grounded() at the same
+    settings.active_groundedness_threshold. The grading graph cannot branch per
+    response the way the tutor's graph branches per turn (one run covers a whole
+    submission), so the decision is recorded per response and enforced inside
+    grade_responses_node rather than as a conditional edge.
+
+    Why this exists at all, and what it replaces
+    --------------------------------------------
+    The short-answer prompt already tells the model that when no evidence was
+    retrieved it should "award 0 points and note the absence of evidence". That
+    is an instruction, not an enforcement, and three things make it inadequate:
+
+      1. It is not reliably obeyed. Measured: grading identical model answers
+         with an empty evidence list produced 0.0 in some runs and full marks in
+         others (see eval/README.md - the first eval run hit this).
+      2. It only covers EMPTY evidence. Evidence that exists but scores below
+         the groundedness bar reaches the model looking authoritative, which is
+         the same failure with extra steps.
+      3. It spends an LLM call to produce a zero, and that call is precisely
+         where an untrusted student answer meets the model with no corpus to
+         anchor it.
+
+    So this gate REPLACES that clause as the enforcement point rather than
+    stacking a second mechanism on it. The clause is deliberately left in the
+    prompt as an unreachable backstop, so any future path that bypasses this
+    node still does not grade confidently against nothing.
+
+    MCQ and numeric are always grounded: they are scored against the question's
+    own answer_key, so corpus evidence is not the basis of the judgement and
+    gating them on retrieval would refuse gradeable work.
+    """
+    from retrieval.models import Chunk, RetrievalResult
+
+    from core.config import settings
+
+    threshold = settings.active_groundedness_threshold
+    responses = state["responses"]
+    evidence_per_question = state["evidence_per_question"]
+    grounded_flags: list[bool] = []
+
+    for idx, resp in enumerate(responses):
+        # Deterministic paths need no corpus evidence to be judged.
+        if resp["question_type"] != "short_answer" or not resp.get("rubric_criteria"):
+            grounded_flags.append(True)
+            continue
+
+        # A blank answer is handled before the gate and scores 0 on its own
+        # terms; it must not be reported as an evidence failure.
+        if _is_unanswered(resp):
+            grounded_flags.append(True)
+            continue
+
+        evidence = evidence_per_question[idx] if idx < len(evidence_per_question) else []
+        result = RetrievalResult(
+            query=resp["stem"],
+            chunks=[
+                Chunk(
+                    text=e.get("text", ""),
+                    source_file=e.get("source_file", ""),
+                    page_or_slide=e.get("page_or_slide"),
+                    course_id=state["course_id"],
+                )
+                for e in evidence
+            ],
+            confidence_scores=[float(e.get("confidence", 0.0)) for e in evidence],
+        )
+        grounded = retrieval_service.is_grounded(result, threshold=threshold)
+        grounded_flags.append(grounded)
+
+        logger.info(
+            "[GRADING-GROUNDEDNESS] submission=%s question=%s top_score=%.4f "
+            "threshold=%.2f chunks=%d grounded=%s",
+            state.get("submission_id"),
+            resp["question_id"],
+            result.top_score if not result.is_empty() else 0.0,
+            threshold,
+            len(evidence),
+            grounded,
+        )
+
+    ungrounded = sum(1 for g in grounded_flags if not g)
+    if ungrounded:
+        logger.warning(
+            "[GRADING-GROUNDEDNESS] submission=%s: %d of %d response(s) could not "
+            "be grounded and will be flagged for teacher review instead of scored.",
+            state.get("submission_id"),
+            ungrounded,
+            len(responses),
+        )
+
+    return {**state, "evidence_grounded": grounded_flags}
+
+
 # ── Node 3: grade_responses_node ──────────────────────────────────────────────
 
 def grade_responses_node(
@@ -314,6 +429,9 @@ def grade_responses_node(
     """
     responses = state["responses"]
     evidence_per_question = state["evidence_per_question"]
+    # Default True so a caller that skips the gate node (older tests, direct
+    # invocation) grades exactly as before rather than flagging everything.
+    evidence_grounded = state.get("evidence_grounded") or [True] * len(responses)
     criterion_results: list[list[dict]] = []
     total_score = 0.0
     max_score = 0.0
@@ -432,6 +550,38 @@ def grade_responses_node(
             }])
             continue
 
+        # ── Groundedness gate ─────────────────────────────────────────────────
+        # Enforced here rather than as a graph edge because one graph run covers
+        # a whole submission; the decision itself is made in
+        # check_evidence_groundedness_node. No LLM call is made for an
+        # ungrounded response — the point is not to grade against nothing.
+        #
+        # The criteria are emitted at score 0 but marked requires_review, so the
+        # teacher sees "we could not judge this" rather than a silent zero that
+        # reads as "the student was wrong". max_score still counts the question,
+        # so the recommendation's denominator stays honest and the teacher can
+        # award the points on review.
+        if not (evidence_grounded[idx] if idx < len(evidence_grounded) else True):
+            grading_method_used.add(UNGROUNDED_GRADING_METHOD)
+            criterion_results.append([
+                {
+                    "criterion_id": c["criterion_id"],
+                    "description": c["description"],
+                    "score": 0.0,
+                    "max_points": c["max_points"],
+                    "feedback": UNGROUNDED_FEEDBACK,
+                    "citations": [],
+                    "requires_review": True,
+                }
+                for c in rubric_criteria
+            ])
+            logger.info(
+                "Question %s not graded: evidence below the groundedness bar; "
+                "flagged for teacher review.",
+                resp["question_id"],
+            )
+            continue
+
         # Build evidence context string
         if evidence:
             evidence_context = "\n\n".join(
@@ -439,6 +589,10 @@ def grade_responses_node(
                 for e in evidence
             )
         else:
+            # Unreachable while check_evidence_groundedness_node runs: empty
+            # evidence never clears the gate. Kept as a backstop so a path that
+            # bypasses the gate still does not grade confidently against
+            # nothing. The gate, not this sentence, is the enforcement.
             evidence_context = (
                 "No course evidence was retrieved for this question. "
                 "Score criteria accordingly — if the student cannot be evaluated "
@@ -696,7 +850,10 @@ async def persist_recommendation_node(
     # ── Langfuse trace (non-fatal) ────────────────────────────────────────────
     trace_id: str | None = None
     try:
-        trace = langfuse.trace(
+        # See the tutor's emit_pedagogy_trace_node: v4 replaced `.trace()` with
+        # `start_observation()`, the span needs an explicit `.end()`, and the
+        # trace id is `.trace_id`.
+        span = langfuse.start_observation(
             name="grading_recommendation",
             input={
                 "submission_id": str(submission_id),
@@ -711,9 +868,15 @@ async def persist_recommendation_node(
             },
             metadata={"status": "pending_review"},
         )
-        trace_id = trace.id
-    except Exception as exc:
-        logger.warning("Langfuse trace failed for grading recommendation (non-fatal): %s", exc)
+        span.end()
+        trace_id = span.trace_id
+    except Exception:  # noqa: BLE001 - tracing must never fail grading
+        # Loud on purpose - see the matching comment in the assessment agent.
+        logger.exception(
+            "Langfuse trace FAILED for grading recommendation %s - the "
+            "recommendation was persisted, but this run is missing from tracing.",
+            recommendation_id,
+        )
 
     return {
         **state,

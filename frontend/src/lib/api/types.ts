@@ -262,6 +262,12 @@ export interface CriterionGrade {
   max_points: number
   feedback: string
   citations: EvidenceCitation[]
+  /**
+   * The groundedness gate could not judge this criterion against course
+   * evidence. score is 0 because nothing was evaluated, not because the answer
+   * was wrong — the teacher decides.
+   */
+  requires_review: boolean
 }
 
 export interface GradingQueueItem {
@@ -275,6 +281,20 @@ export interface GradingQueueItem {
   submitted_at: string | null
 }
 
+/**
+ * One question of the assessment and the criteria scored against it.
+ * Backend: QuestionGrade in grading/schemas.py.
+ *
+ * `stem` is hydrated from the questions table at read time — the grading agent
+ * does not store it — and is null when the question has since been deleted.
+ */
+export interface QuestionGrade {
+  question_id: string | null
+  question_type: string
+  stem: string | null
+  criteria: CriterionGrade[]
+}
+
 export interface GradingDetail {
   recommendation_id: string
   submission_id: string
@@ -283,7 +303,9 @@ export interface GradingDetail {
   recommended_score: number
   max_score: number
   status: string
-  criteria: CriterionGrade[]
+  /** Grouped by question. Was a single flat `criteria` list, which left a
+      teacher unable to tell which criterion belonged to which question. */
+  questions: QuestionGrade[]
   evidence_citations: EvidenceCitation[]
   created_at: string
 }
@@ -293,4 +315,53 @@ export interface FinalGradeResponse {
   final_score: number
   action: 'approved' | 'overridden'
   finalized_at: string
+}
+
+// ─── Student progress ────────────────────────────────────────────────────────
+// Backend: progress/schemas.py. Every score here comes from a released
+// FinalGrade — a submission still awaiting teacher review shows as awaiting,
+// never as a score.
+
+export interface CourseProgressSummary {
+  course_id: string
+  course_name: string
+  assessments_graded: number
+  assessments_awaiting_grade: number
+  earned_points: number
+  possible_points: number
+  last_graded_at: string | null
+}
+
+export interface ConceptMastery {
+  concept_id: string
+  concept_name: string
+  chapter_title: string
+  attempts: number
+  earned_points: number
+  possible_points: number
+  /** earned/possible, 0..1 */
+  mastery: number
+}
+
+export interface AssessmentResult {
+  submission_id: string
+  assessment_title: string
+  final_score: number
+  max_score: number
+  action: string
+  finalized_at: string
+  submitted_at: string | null
+}
+
+export interface CourseProgressDetail {
+  course_id: string
+  course_name: string
+  earned_points: number
+  possible_points: number
+  concepts: ConceptMastery[]
+  results: AssessmentResult[]
+  tutoring_sessions: number
+  tutoring_messages: number
+  /** Set when there are released grades but no concept breakdown to show. */
+  untagged_note: string | null
 }

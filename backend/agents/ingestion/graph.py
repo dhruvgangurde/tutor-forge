@@ -40,6 +40,7 @@ def build_ingestion_graph(
     retrieval_service,
     gemini_pro,
     db,
+    langfuse=None,
 ) -> "CompiledGraph":
     """
     Build and compile the ingestion graph with injected service dependencies.
@@ -48,6 +49,10 @@ def build_ingestion_graph(
         retrieval_service: RetrievalService singleton from app.state
         gemini_pro: GeminiProClient singleton from app.state
         db: AsyncSession for the current background task invocation
+        langfuse: Langfuse client from app.state, injected the same way the
+            other three agent graphs take it. Optional so existing callers and
+            tests that do not care about tracing keep working; when None, the
+            terminal node simply emits no span.
     """
     builder = StateGraph(IngestionState)
 
@@ -68,7 +73,7 @@ def build_ingestion_graph(
     )
     builder.add_node(
         "persist_to_db",
-        partial(persist_to_db_node, db=db),
+        partial(persist_to_db_node, db=db, langfuse=langfuse),
     )
 
     # Entry point

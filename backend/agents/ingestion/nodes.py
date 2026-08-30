@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from retrieval.service import RetrievalService
     from main import GeminiProClient
     from sqlalchemy.ext.asyncio import AsyncSession
+    from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -358,6 +359,7 @@ def chunk_and_embed_node(
 async def persist_to_db_node(
     state: IngestionState,
     db: "AsyncSession",
+    langfuse: "Langfuse" = None,
 ) -> IngestionState:
     """
     Write Chapter, Concept, and ConceptPrerequisite ORM records to PostgreSQL.
@@ -463,4 +465,34 @@ async def persist_to_db_node(
         course_id, chapter_count, concept_count
     )
 
-    return {**state, "status": "complete"}
+    # ── Langfuse trace ────────────────────────────────────────────────────────
+    # Ingestion had no tracing at all, which left observability coverage at 3/4
+    # agents. Same shape as the other three: start_observation, explicit end,
+    # trace-level id, and a loud log if it fails.
+    trace_id: str | None = None
+    if langfuse is not None:
+        try:
+            span = langfuse.start_observation(
+                name="course_ingestion",
+                input={
+                    "course_id": str(course_id),
+                    "job_id": str(job_id),
+                    "file_count": len(state.get("files", [])),
+                },
+                output={
+                    "chapters": chapter_count,
+                    "concepts": concept_count,
+                    "chunks": len(state.get("chunks", [])),
+                },
+                metadata={"status": "complete"},
+            )
+            span.end()
+            trace_id = span.trace_id
+        except Exception:  # noqa: BLE001 - tracing must never fail ingestion
+            logger.exception(
+                "Langfuse trace FAILED for ingestion of course %s - the course "
+                "was ingested successfully, but this run is missing from tracing.",
+                course_id,
+            )
+
+    return {**state, "status": "complete", "trace_id": trace_id}

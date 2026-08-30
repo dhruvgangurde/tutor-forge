@@ -1,0 +1,131 @@
+{
+  "description": "Labeled calibration set for the assessment-correctness judge. Each item carries the verdict a competent human reviewer would give, so the suite can report how accurate the JUDGE is before quoting the rate it produces over real generated questions. Without this, an unreliable judge would silently produce a confident-looking correctness percentage. Items are drawn from DSA topics so harness.retrieve_evidence() returns genuine course context.",
+  "corpus": "DSA",
+  "items": [
+    {
+      "id": "corr-ok-01",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": ["A. O(n)", "B. O(log n)", "C. O(n log n)", "D. O(1)"],
+      "correct_answer": "B",
+      "expected_correct": true,
+      "note": "Correctly keyed and answerable from the corpus."
+    },
+    {
+      "id": "corr-ok-02",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters are assigned the shortest binary codes?",
+      "options": ["A. The rarest characters", "B. The most frequent characters", "C. Alphabetically first", "D. The longest words"],
+      "correct_answer": "B",
+      "expected_correct": true,
+      "note": "Correctly keyed."
+    },
+    {
+      "id": "corr-ok-03",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "correct_answer": "10",
+      "expected_correct": true,
+      "note": "log2(1024) = 10; correctly keyed."
+    },
+    {
+      "id": "corr-ok-04",
+      "question_type": "mcq",
+      "stem": "Which algorithm repeatedly expands the unvisited vertex with the smallest known distance?",
+      "options": ["A. Bellman-Ford", "B. Kruskal", "C. Dijkstra", "D. Prim"],
+      "correct_answer": "C",
+      "expected_correct": true,
+      "note": "Correctly keyed."
+    },
+    {
+      "id": "corr-ok-05",
+      "question_type": "short_answer",
+      "stem": "Why does binary search require the array to be sorted?",
+      "options": null,
+      "correct_answer": "Because the ordering lets a comparison with the middle element rule out an entire half of the range.",
+      "expected_correct": true,
+      "note": "Correct model answer, answerable from the corpus."
+    },
+    {
+      "id": "corr-miskeyed-01",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": ["A. O(n)", "B. O(log n)", "C. O(n log n)", "D. O(1)"],
+      "correct_answer": "A",
+      "expected_correct": false,
+      "failure_mode": "miskeyed",
+      "note": "Well-formed question, exactly one defensible answer, but the WRONG letter is marked. This is the case distractor-quality scores 5/5 on single_answer and never catches."
+    },
+    {
+      "id": "corr-miskeyed-02",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters are assigned the shortest binary codes?",
+      "options": ["A. The rarest characters", "B. The most frequent characters", "C. Alphabetically first", "D. The longest words"],
+      "correct_answer": "A",
+      "expected_correct": false,
+      "failure_mode": "miskeyed",
+      "note": "Inverts the actual rule."
+    },
+    {
+      "id": "corr-miskeyed-03",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "correct_answer": "1024",
+      "expected_correct": false,
+      "failure_mode": "miskeyed",
+      "note": "Confuses n with log2(n)."
+    },
+    {
+      "id": "corr-miskeyed-04",
+      "question_type": "mcq",
+      "stem": "Which algorithm handles graphs containing negative edge weights?",
+      "options": ["A. Dijkstra", "B. Bellman-Ford", "C. Binary search", "D. Huffman coding"],
+      "correct_answer": "A",
+      "expected_correct": false,
+      "failure_mode": "miskeyed",
+      "note": "Dijkstra is precisely the one that cannot; Bellman-Ford is correct."
+    },
+    {
+      "id": "corr-miskeyed-05",
+      "question_type": "short_answer",
+      "stem": "Why does binary search require the array to be sorted?",
+      "options": null,
+      "correct_answer": "Because sorting makes the array smaller, so there is less to search.",
+      "expected_correct": false,
+      "failure_mode": "miskeyed",
+      "note": "Plausible-sounding but factually wrong model answer."
+    },
+    {
+      "id": "corr-unanswerable-01",
+      "question_type": "mcq",
+      "stem": "In which year was the Dijkstra algorithm's author awarded the Turing Award?",
+      "options": ["A. 1968", "B. 1972", "C. 1976", "D. 1984"],
+      "correct_answer": "B",
+      "expected_correct": false,
+      "failure_mode": "unanswerable_from_corpus",
+      "note": "Factually true but the corpus is an algorithms lab guide; the date is not in it, so a student cannot answer from the material."
+    },
+    {
+      "id": "corr-unanswerable-02",
+      "question_type": "numeric",
+      "stem": "How many pages long is the course textbook?",
+      "options": null,
+      "correct_answer": "412",
+      "expected_correct": false,
+      "failure_mode": "unanswerable_from_corpus",
+      "note": "Not derivable from any course content."
+    },
+    {
+      "id": "corr-unanswerable-03",
+      "question_type": "mcq",
+      "stem": "What is the average salary of a software engineer who uses Dijkstra's algorithm?",
+      "options": ["A. $80,000", "B. $95,000", "C. $110,000", "D. $130,000"],
+      "correct_answer": "C",
+      "expected_correct": false,
+      "failure_mode": "unanswerable_from_corpus",
+      "note": "Uses corpus vocabulary but asks something the corpus cannot answer."
+    }
+  ]
+}

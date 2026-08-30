@@ -23,10 +23,21 @@ export const queryKeys = {
     detail: (assessmentId: string) => ['assessments', assessmentId] as const,
     take: (assessmentId: string) => ['assessments', assessmentId, 'take'] as const,
   },
+  progress: {
+    all: () => ['progress'] as const,
+    mine: () => ['progress', 'me'] as const,
+    course: (courseId: string) => ['progress', 'me', 'course', courseId] as const,
+  },
   grading: {
     all: () => ['grading'] as const,
     queue: () => ['grading', 'queue'] as const,
+    // Student view of their own submission: GET /assessments/submissions/{id}.
     detail: (submissionId: string) => ['grading', submissionId] as const,
+    // Teacher review of the AI recommendation: GET /grading/{id}.
+    // Deliberately a separate key from detail() above: the two endpoints take
+    // the same submissionId but return different shapes, so sharing a key would
+    // let one view read the other's cached payload.
+    review: (submissionId: string) => ['grading', 'review', submissionId] as const,
     myGrades: (courseId?: string) => ['grading', 'my-grades', courseId || ''] as const,
   },
 } as const

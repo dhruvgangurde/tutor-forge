@@ -289,7 +289,10 @@ class Assessment(Base):
 
 class Question(Base):
     __tablename__ = "questions"
-    __table_args__ = (Index("ix_questions_assessment_id", "assessment_id"),)
+    __table_args__ = (
+        Index("ix_questions_assessment_id", "assessment_id"),
+        Index("ix_questions_concept_id", "concept_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     assessment_id: Mapped[uuid.UUID] = mapped_column(
@@ -304,8 +307,22 @@ class Question(Base):
     difficulty: Mapped[str | None] = mapped_column(String(32), nullable=True)
     max_points: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    concept_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("concepts.id", ondelete="SET NULL"),
+        nullable=True,
+        comment=(
+            "Concept this question assesses. Nullable on purpose: set at "
+            "generation time when the match is confident (see "
+            "progress/concept_matching.py), left NULL otherwise. An untagged "
+            "question still counts toward course-level progress but claims no "
+            "concept mastery. SET NULL on delete so removing a concept never "
+            "deletes graded questions."
+        ),
+    )
 
     assessment: Mapped["Assessment"] = relationship("Assessment", back_populates="questions")
+    concept: Mapped["Concept | None"] = relationship("Concept")
     rubric_criteria: Mapped[list["RubricCriterion"]] = relationship(
         "RubricCriterion", back_populates="question", cascade="all, delete-orphan"
     )
@@ -473,3 +490,51 @@ class GradeAuditRecord(Base):
     final_grade: Mapped["FinalGrade"] = relationship(
         "FinalGrade", back_populates="audit_record"
     )
+
+
+# ── 17. StudentConceptMastery ─────────────────────────────────────────────────
+
+class StudentConceptMastery(Base):
+    """
+    A student's accumulated performance on one concept.
+
+    Materialized rather than computed on read: it accumulates across every
+    finalized submission, so recomputing it would mean re-walking every
+    GradeRecommendation rationale the student has ever had on every page load.
+
+    Written ONLY by progress/mastery.apply_finalized_grade_to_mastery(), which
+    grading/service.finalize_grade() calls inside its transaction. Nothing moves
+    mastery except a grade a teacher actually released — an AI recommendation
+    alone must not, or the progress view would route around the
+    teacher-approval gate.
+    """
+    __tablename__ = "student_concept_mastery"
+    __table_args__ = (
+        UniqueConstraint("student_id", "concept_id", name="uq_mastery_student_concept"),
+        Index("ix_student_concept_mastery_student_id", "student_id"),
+        Index("ix_student_concept_mastery_concept_id", "concept_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    concept_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0,
+        comment="Graded questions tagged to this concept that the student has answered.",
+    )
+    earned_points: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    possible_points: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    mastery: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0,
+        comment="earned_points / possible_points, 0..1. Stored so the API does not divide on read.",
+    )
+    last_graded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    student: Mapped["User"] = relationship("User")
+    concept: Mapped["Concept"] = relationship("Concept")

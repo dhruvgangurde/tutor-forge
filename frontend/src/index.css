@@ -781,6 +781,173 @@ code {
   font-style: italic;
 }
 
+/* ── Grading review (teacher) ───────────────────────────────────── */
+.score-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+  background: var(--clr-surface-2);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+}
+
+.score-summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.score-summary-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--clr-text-muted);
+}
+
+.score-summary-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--clr-text);
+}
+
+.score-summary-max {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--clr-text-dim);
+}
+
+.score-summary-note {
+  font-size: 0.8rem;
+  color: var(--clr-text-dim);
+}
+
+.criterion-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--clr-border);
+}
+
+.criterion-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.criterion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.criterion-description {
+  color: var(--clr-text);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.criterion-feedback {
+  color: var(--clr-text-muted);
+  font-size: 0.85rem;
+  margin-top: var(--space-2);
+}
+
+.criterion-feedback-label {
+  color: var(--clr-text-dim);
+  font-weight: 600;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.override-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  margin-top: var(--space-4);
+  background: var(--clr-surface-2);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-md);
+}
+
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--clr-text-dim);
+}
+
+.field-error {
+  font-size: 0.8rem;
+  color: var(--clr-danger);
+}
+
+/* ── Student progress ───────────────────────────── */
+.mastery-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-4) 0;
+}
+
+.mastery-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mastery-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.mastery-name {
+  color: var(--clr-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.mastery-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  color: var(--clr-text-dim);
+  font-size: 0.8rem;
+}
+
+.mastery-chapter {
+  font-style: italic;
+}
+
+.mastery-bar {
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--clr-surface-2);
+  border: 1px solid var(--clr-border);
+  overflow: hidden;
+}
+
+.mastery-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  transition: width var(--duration-fast) var(--ease-out);
+}
+
+.mastery-bar-fill[data-band="success"] { background: var(--clr-success); }
+.mastery-bar-fill[data-band="warning"] { background: var(--clr-warning); }
+.mastery-bar-fill[data-band="danger"]  { background: var(--clr-danger); }
+
 /* ── Tutoring Interface ─────────────────────────────────────────────────────────── */
 .tutor-container {
   display: flex;

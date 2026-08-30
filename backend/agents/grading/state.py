@@ -51,6 +51,20 @@ class GradingState(TypedDict):
     #   page_or_slide:  int | None
     #   confidence:     float
 
+    # ── Groundedness gate (written by check_evidence_groundedness_node) ───────
+    # Index i corresponds to responses[i]. True means the response CAN be
+    # evaluated against retrieved course evidence.
+    #
+    # Always True for MCQ/numeric: those are scored against the question's own
+    # answer_key, which is the ground truth for them — corpus evidence is not
+    # the basis of the judgement, so gating them on retrieval would refuse
+    # perfectly gradeable work.
+    #
+    # For short answers it is RetrievalService.is_grounded() at
+    # settings.active_groundedness_threshold — the same gate and the same
+    # threshold the tutor and assessment agents use.
+    evidence_grounded: list[bool]
+
     # ── Grading outputs (written by grade_responses_node) ─────────────────────
     # Outer index = question, inner = criterion within that question.
     # MCQ/numeric questions have exactly one criterion entry (the question itself).
@@ -62,6 +76,7 @@ class GradingState(TypedDict):
     #   max_points:     float
     #   feedback:       str
     #   citations:      list[dict]   (same schema as evidence chunks)
+    #   requires_review: bool        (True when the gate could not ground it)
 
     total_score: float
     max_score: float

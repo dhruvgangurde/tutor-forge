@@ -726,7 +726,7 @@ async def test_chat_survives_langfuse_failure(
     app.dependency_overrides[get_gemini_pro] = lambda: _make_mock_gemini_pro()
     app.dependency_overrides[get_langfuse_client] = lambda: broken_langfuse
 
-    with caplog.at_level(logging.WARNING, logger="agents.tutor.nodes"):
+    with caplog.at_level(logging.ERROR, logger="agents.tutor.nodes"):
         resp = await client.post(
             f"/tutor/sessions/{session_id}/chat",
             json={"question": "What is the Socratic method?"},
@@ -741,7 +741,14 @@ async def test_chat_survives_langfuse_failure(
     data = resp.json()
     assert data["is_grounded"] is True
     assert data["response"]  # the tutor's answer still came back
-    assert any("non-fatal" in r.message for r in caplog.records)
+    # The failure must be LOUD. A bare warning is how the v4 break stayed
+    # invisible for a whole major version, and observability coverage is itself
+    # an acceptance criterion — so a dead trace is logged at ERROR, with the
+    # traceback, naming what was lost.
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors, "a failed trace must be logged at ERROR, not swallowed"
+    assert any("Langfuse trace FAILED" in r.message for r in errors)
+    assert any(r.exc_info for r in errors), "the traceback must be captured"
 
 
 @pytest.mark.asyncio

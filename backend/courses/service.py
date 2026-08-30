@@ -20,6 +20,7 @@ from db.models import Chapter, Concept, Course, IngestionJob, User
 if TYPE_CHECKING:
     from retrieval.service import RetrievalService
     from main import GeminiProClient
+    from langfuse import Langfuse
 
 
 async def create_course(
@@ -30,6 +31,7 @@ async def create_course(
     background_tasks: BackgroundTasks,
     retrieval_service: "RetrievalService",
     gemini_pro: "GeminiProClient",
+    langfuse: "Langfuse" = None,
 ) -> tuple[uuid.UUID, uuid.UUID]:
     """
     Create a Course + IngestionJob and enqueue the ingestion graph as a BackgroundTask.
@@ -52,6 +54,7 @@ async def create_course(
         files=files,
         retrieval_service=retrieval_service,
         gemini_pro=gemini_pro,
+        langfuse=langfuse,
     )
 
     return course.id, job.id
@@ -63,6 +66,7 @@ async def _run_ingestion(
     files: list[dict],
     retrieval_service: "RetrievalService",
     gemini_pro: "GeminiProClient",
+    langfuse: "Langfuse" = None,
 ) -> None:
     """BackgroundTask target: build and invoke the ingestion graph."""
     from agents.ingestion.graph import build_ingestion_graph
@@ -82,6 +86,7 @@ async def _run_ingestion(
                 retrieval_service=retrieval_service,
                 gemini_pro=gemini_pro,
                 db=db,
+                langfuse=langfuse,
             )
             initial_state: IngestionState = {
                 "job_id": job_id,

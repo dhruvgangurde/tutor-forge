@@ -11,7 +11,7 @@ Endpoints
 ---------
   POST /{submission_id}/grade        → 202 GradingAck
   GET  /queue                        → 200 list[GradingQueueItem]
-  GET  /{submission_id}              → 200 GradingDetail
+  GET  /{submission_id}              → 200 GradingDetail (grouped by question)
   POST /{submission_id}/approve      → 200 FinalGradeResponse
   POST /{submission_id}/override     → 200 FinalGradeResponse
 """
@@ -36,6 +36,7 @@ from grading.schemas import (
     OverrideRequest,
     EvidenceCitation,
     CriterionGrade,
+    QuestionGrade,
 )
 from grading.service import (
     finalize_grade,
@@ -46,6 +47,18 @@ from grading.service import (
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/grading", tags=["grading"])
+
+
+# ── Mapping helpers ───────────────────────────────────────────────────────────
+
+def _to_citation(raw: dict) -> EvidenceCitation:
+    """Map one stored citation dict onto the response schema."""
+    return EvidenceCitation(
+        text=raw.get("text", ""),
+        source_file=raw.get("source_file", ""),
+        page_or_slide=raw.get("page_or_slide"),
+        confidence=float(raw.get("confidence", 0.0)),
+    )
 
 
 # ── Authorization helper ──────────────────────────────────────────────────────
@@ -203,40 +216,31 @@ async def get_grading_recommendation(
             detail="Failed to load grading recommendation.",
         )
 
-    # ── Parse criterion results from rationale dict ───────────────────────────
-    criteria_out: list[CriterionGrade] = []
-    rationale = detail.get("rationale", {})
-    for question_entry in rationale.get("questions", []):
-        for crit in question_entry.get("criteria", []):
-            citations = [
-                EvidenceCitation(
-                    text=c.get("text", ""),
-                    source_file=c.get("source_file", ""),
-                    page_or_slide=c.get("page_or_slide"),
-                    confidence=float(c.get("confidence", 0.0)),
-                )
-                for c in crit.get("citations", [])
-            ]
-            criteria_out.append(
+    # ── Map the grouped question/criterion structure onto the schema ──────────
+    # The grouping, stem hydration and ordering are done in
+    # grading.service.group_question_grades; this loop is pure shape mapping.
+    questions_out: list[QuestionGrade] = [
+        QuestionGrade(
+            question_id=entry.get("question_id"),
+            question_type=entry.get("question_type", ""),
+            stem=entry.get("stem"),
+            criteria=[
                 CriterionGrade(
                     criterion_id=crit.get("criterion_id"),
                     description=crit.get("description", ""),
                     score=float(crit.get("score", 0.0)),
                     max_points=float(crit.get("max_points", 1.0)),
                     feedback=crit.get("feedback", ""),
-                    citations=citations,
+                    citations=[_to_citation(c) for c in crit.get("citations", [])],
+                    requires_review=bool(crit.get("requires_review", False)),
                 )
-            )
-
-    all_citations = [
-        EvidenceCitation(
-            text=c.get("text", ""),
-            source_file=c.get("source_file", ""),
-            page_or_slide=c.get("page_or_slide"),
-            confidence=float(c.get("confidence", 0.0)),
+                for crit in entry.get("criteria", [])
+            ],
         )
-        for c in detail.get("evidence_citations", [])
+        for entry in detail.get("questions", [])
     ]
+
+    all_citations = [_to_citation(c) for c in detail.get("evidence_citations", [])]
 
     return GradingDetail(
         recommendation_id=detail["recommendation_id"],
@@ -246,7 +250,7 @@ async def get_grading_recommendation(
         recommended_score=detail["recommended_score"],
         max_score=detail["max_score"],
         status=detail["status"],
-        criteria=criteria_out,
+        questions=questions_out,
         evidence_citations=all_citations,
         created_at=detail["created_at"],
     )

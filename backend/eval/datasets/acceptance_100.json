@@ -1,0 +1,1616 @@
+{
+  "description": "100 labeled synthetic answers for the acceptance proxy. `expected_score` is the score a competent human marker would give. This measures AI-vs-label agreement, which is a PROXY for the brief's teacher-acceptance target -- a real teacher-acceptance rate requires a teacher, and this number must never be quoted as one. Wrong numeric answers are generated clearly outside the grader's NUMERIC_TOLERANCE (1% of the expected value); an earlier revision produced one that fell inside it, which showed up as a false 'disagreement' when the grader was in fact correct.",
+  "tolerance": 0.001,
+  "composition": {
+    "mcq": 60,
+    "numeric": 25,
+    "short_answer": 15
+  },
+  "answers": [
+    {
+      "id": "acc-001",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-002",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-003",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-004",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-005",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-006",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-007",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-008",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-009",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-010",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-011",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-012",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-013",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-014",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-015",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-016",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-017",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-018",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-019",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-020",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-021",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-022",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-023",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-024",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-025",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-026",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-027",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-028",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-029",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-030",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-031",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-032",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-033",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-034",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-035",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-036",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-037",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-038",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-039",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-040",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-041",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-042",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-043",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-044",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-045",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-046",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-047",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-048",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-049",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-050",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "A",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-051",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "10",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-052",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "21",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-053",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "8",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-054",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "4500",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-055",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "13.0",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-056",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "21",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-057",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "8",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-058",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "4500",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-059",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "10",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-060",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "24.0",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-061",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "8",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-062",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "4500",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-063",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "10",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-064",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "21",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-065",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "11.0",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-066",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "4500",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-067",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "10",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-068",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "21",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-069",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "8",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-070",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "9007.0",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-071",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "10",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-072",
+      "question_type": "numeric",
+      "stem": "Given weights 9, 3, 7, 2, what is the total frequency at the Huffman root?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "21"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "21",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-073",
+      "question_type": "numeric",
+      "stem": "What is log base 2 of 256?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "8"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "8",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-074",
+      "question_type": "numeric",
+      "stem": "A(10x30), B(30x5), C(5x60): minimum multiplications for (AB)C?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "4500"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "4500",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-075",
+      "question_type": "numeric",
+      "stem": "How many comparisons does binary search need in the worst case on 1024 sorted elements?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "10"
+      },
+      "max_points": 1.0,
+      "student_answer_text": "13.0",
+      "expected_score": 0.0
+    },
+    {
+      "id": "acc-076",
+      "question_type": "short_answer",
+      "stem": "Explain why binary search requires a sorted array.",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that ordering lets you discard half the range.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-077",
+      "question_type": "short_answer",
+      "stem": "Why is Dijkstra's algorithm called greedy?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It always chooses the unvisited vertex with the smallest known distance from the source."
+      },
+      "rubric_criteria": [
+        {
+          "description": "Identifies that it expands the nearest unvisited vertex.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "It always chooses the unvisited vertex with the smallest known distance from the source.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-078",
+      "question_type": "short_answer",
+      "stem": "What does matrix chain multiplication optimise?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It finds the parenthesisation of the chain that minimises the total number of scalar multiplications."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that it minimises scalar multiplications via parenthesisation.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": null,
+      "expected_score": 0.0,
+      "note": "blank answer -> must score 0"
+    },
+    {
+      "id": "acc-079",
+      "question_type": "short_answer",
+      "stem": "Explain why binary search requires a sorted array.",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that ordering lets you discard half the range.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-080",
+      "question_type": "short_answer",
+      "stem": "Why is Dijkstra's algorithm called greedy?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It always chooses the unvisited vertex with the smallest known distance from the source."
+      },
+      "rubric_criteria": [
+        {
+          "description": "Identifies that it expands the nearest unvisited vertex.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "It always chooses the unvisited vertex with the smallest known distance from the source.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-081",
+      "question_type": "short_answer",
+      "stem": "What does matrix chain multiplication optimise?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It finds the parenthesisation of the chain that minimises the total number of scalar multiplications."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that it minimises scalar multiplications via parenthesisation.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": null,
+      "expected_score": 0.0,
+      "note": "blank answer -> must score 0"
+    },
+    {
+      "id": "acc-082",
+      "question_type": "short_answer",
+      "stem": "Explain why binary search requires a sorted array.",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that ordering lets you discard half the range.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-083",
+      "question_type": "short_answer",
+      "stem": "Why is Dijkstra's algorithm called greedy?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It always chooses the unvisited vertex with the smallest known distance from the source."
+      },
+      "rubric_criteria": [
+        {
+          "description": "Identifies that it expands the nearest unvisited vertex.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "It always chooses the unvisited vertex with the smallest known distance from the source.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-084",
+      "question_type": "short_answer",
+      "stem": "What does matrix chain multiplication optimise?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It finds the parenthesisation of the chain that minimises the total number of scalar multiplications."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that it minimises scalar multiplications via parenthesisation.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": null,
+      "expected_score": 0.0,
+      "note": "blank answer -> must score 0"
+    },
+    {
+      "id": "acc-085",
+      "question_type": "short_answer",
+      "stem": "Explain why binary search requires a sorted array.",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that ordering lets you discard half the range.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-086",
+      "question_type": "short_answer",
+      "stem": "Why is Dijkstra's algorithm called greedy?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It always chooses the unvisited vertex with the smallest known distance from the source."
+      },
+      "rubric_criteria": [
+        {
+          "description": "Identifies that it expands the nearest unvisited vertex.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "It always chooses the unvisited vertex with the smallest known distance from the source.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-087",
+      "question_type": "short_answer",
+      "stem": "What does matrix chain multiplication optimise?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It finds the parenthesisation of the chain that minimises the total number of scalar multiplications."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that it minimises scalar multiplications via parenthesisation.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": null,
+      "expected_score": 0.0,
+      "note": "blank answer -> must score 0"
+    },
+    {
+      "id": "acc-088",
+      "question_type": "short_answer",
+      "stem": "Explain why binary search requires a sorted array.",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that ordering lets you discard half the range.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "Because the array is ordered, comparing with the middle element tells you which half can contain the target, so the other half is discarded.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-089",
+      "question_type": "short_answer",
+      "stem": "Why is Dijkstra's algorithm called greedy?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It always chooses the unvisited vertex with the smallest known distance from the source."
+      },
+      "rubric_criteria": [
+        {
+          "description": "Identifies that it expands the nearest unvisited vertex.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": "It always chooses the unvisited vertex with the smallest known distance from the source.",
+      "expected_score": 2.0,
+      "note": "model answer -> full marks"
+    },
+    {
+      "id": "acc-090",
+      "question_type": "short_answer",
+      "stem": "What does matrix chain multiplication optimise?",
+      "options": null,
+      "answer_key": {
+        "correct_answer": "It finds the parenthesisation of the chain that minimises the total number of scalar multiplications."
+      },
+      "rubric_criteria": [
+        {
+          "description": "States that it minimises scalar multiplications via parenthesisation.",
+          "max_points": 2.0
+        }
+      ],
+      "max_points": 2.0,
+      "student_answer_text": null,
+      "expected_score": 0.0,
+      "note": "blank answer -> must score 0"
+    },
+    {
+      "id": "acc-091",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-092",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-093",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-094",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-095",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-096",
+      "question_type": "mcq",
+      "stem": "What is the time complexity of binary search on a sorted array?",
+      "options": [
+        "A. O(n)",
+        "B. O(log n)",
+        "C. O(n log n)",
+        "D. O(1)"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-097",
+      "question_type": "mcq",
+      "stem": "Which algorithm always expands the nearest unvisited vertex?",
+      "options": [
+        "A. Bellman-Ford",
+        "B. Kruskal",
+        "C. Dijkstra",
+        "D. Prim"
+      ],
+      "answer_key": {
+        "correct_answer": "C"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "C",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-098",
+      "question_type": "mcq",
+      "stem": "In Huffman coding, which characters receive the shortest codes?",
+      "options": [
+        "A. The rarest",
+        "B. The most frequent",
+        "C. Alphabetically first",
+        "D. The longest"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-099",
+      "question_type": "mcq",
+      "stem": "Which technique does merge sort use?",
+      "options": [
+        "A. Greedy",
+        "B. Divide and conquer",
+        "C. Backtracking",
+        "D. Branch and bound"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    },
+    {
+      "id": "acc-100",
+      "question_type": "mcq",
+      "stem": "Which problem allows taking fractions of items?",
+      "options": [
+        "A. 0/1 knapsack",
+        "B. Fractional knapsack",
+        "C. Subset sum",
+        "D. Bin packing"
+      ],
+      "answer_key": {
+        "correct_answer": "B"
+      },
+      "max_points": 1.0,
+      "student_answer_choice": "B",
+      "expected_score": 1.0
+    }
+  ]
+}

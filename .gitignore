@@ -76,3 +76,76 @@ $RECYCLE.BIN/
 
 
 docs/
+# ---------------------------------------------------------------------------
+# Additional ignores
+# ---------------------------------------------------------------------------
+
+# Python (extra)
+.tox/
+.nox/
+.cache/
+.ipynb_checkpoints/
+__pypackages__/
+pip-wheel-metadata/
+.coverage.*
+coverage.xml
+nosetests.xml
+.venv*/
+venv*/
+ENV/
+.python-version
+
+# Node / frontend (extra)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.eslintcache
+*.tsbuildinfo
+frontend/build/
+.parcel-cache/
+.turbo/
+
+# Test / report artifacts
+test-results/
+playwright-report/
+blob-report/
+junit.xml
+pytest-report.xml
+.vitest/
+
+# Local databases / dumps
+*.sqlite
+*.sqlite3
+*.db-journal
+*.dump
+*.sql.gz
+
+# Secrets / credentials (never commit)
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+service-account*.json
+.env.backup
+
+# Generated eval run output (regenerate with the eval runner)
+backend/eval/results/
+
+# Editors / tooling (extra)
+*.sublime-workspace
+*.sublime-project
+.fleet/
+.zed/
+.history/
+.direnv/
+
+# Archives / stray snapshots
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar

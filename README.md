@@ -24,9 +24,7 @@ TutorForge AI is a full-stack educational platform where every AI response is **
 
 ## Screenshots
 
-<!-- Add UI screenshots to docs/screenshots/ and embed them here -->
-
-_Screenshots coming soon — see [`docs/screenshots/`](docs/screenshots/)._
+_Screenshots coming soon._
 
 ## Architecture
 
@@ -83,7 +81,6 @@ Every agent calls `is_grounded()` before invoking the LLM. Not grounded → refu
 │       ├── components/ layout + reusable UI
 │       ├── lib/api/  typed API clients
 │       └── store/    AuthContext
-├── docs/             project brief, roadmap, setup guides
 ├── .github/          CI workflow
 ├── render.yaml       Render deployment (backend)
 └── frontend/vercel.json   Vercel deployment (frontend)
@@ -125,9 +122,6 @@ python -m db.seed
 uvicorn main:app --reload --port 8000
 ```
 
-> Windows-specific setup notes: [`docs/SETUP_WINDOWS.md`](docs/SETUP_WINDOWS.md).
-> Database troubleshooting: [`docs/DATABASE_SETUP.md`](docs/DATABASE_SETUP.md).
-
 ### Frontend
 
 ```bash
@@ -150,7 +144,7 @@ npm run dev                # → http://localhost:5173
 | `CHROMA_PERSIST_PATH`  | `data/chroma`            | ChromaDB persistence directory                          |
 | `JWT_SECRET_KEY`       | *(change in production)* | JWT signing secret                                      |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)  |
-| `LLM_PROVIDER`         | `mock`                   | AI backend: `mock` (offline stub) · `gemini` (real API, required in production) · `ollama` (local dev only — see [docs/OLLAMA_DEV_SETUP.md](docs/OLLAMA_DEV_SETUP.md)) |
+| `LLM_PROVIDER`         | `mock`                   | AI backend: `mock` (offline stub) · `gemini` (real API, required in production) · `ollama` (local dev only) |
 | `OLLAMA_BASE_URL`      | `http://localhost:11434` | Ollama daemon URL (only used when `LLM_PROVIDER=ollama`) |
 | `OLLAMA_GENERATION_MODEL` | `qwen2.5:7b-instruct` | Local generation model                                  |
 | `OLLAMA_EMBEDDING_MODEL`  | `nomic-embed-text`    | Local embedding model (768-dim, matches Gemini)         |
@@ -183,7 +177,7 @@ cd frontend && npm run build
 
 ## Roadmap
 
-Phased delivery — see [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full plan and [`docs/PROJECT-BRIEF.md`](docs/PROJECT-BRIEF.md) for the product vision.
+Phased delivery:
 
 - ✅ Core platform: auth, course ingestion, retrieval, tutoring, assessments, grading
 - ✅ Production hardening: rate limiting, prompt safety, security headers, health checks, job recovery

@@ -1,0 +1,118 @@
+{
+  "description": "Labeled calibration set for the distractor-quality judge. Each MCQ carries the band a competent reviewer would place it in, so the suite can measure whether the judge can tell a good question from a bad one BEFORE its mean over real questions is quoted. Two of the bad items are real failures the judge itself surfaced in a live run (a near-tautology, and a question whose distractors it called 'absurd and unrelated'); the rest are constructed to cover the other ways a distractor set fails. Items are drawn from DSA/general-CS topics so harness.retrieve_evidence() returns usable context.",
+  "corpus": "DSA",
+  "good_min_overall": 4,
+  "bad_max_overall": 3,
+  "items": [
+    {
+      "id": "dq-good-01",
+      "stem": "What is the worst-case time complexity of binary search on a sorted array of n elements?",
+      "options": ["A. O(1)", "B. O(log n)", "C. O(n)", "D. O(n log n)"],
+      "correct_answer": "B",
+      "expected_band": "good",
+      "note": "Every distractor is a complexity class a student genuinely confuses with the answer."
+    },
+    {
+      "id": "dq-good-02",
+      "stem": "Which algorithm can compute shortest paths on a graph containing negative edge weights?",
+      "options": ["A. Dijkstra", "B. Bellman-Ford", "C. Kruskal", "D. Prim"],
+      "correct_answer": "B",
+      "expected_band": "good",
+      "note": "Distractors are all real graph algorithms; Dijkstra is the classic misconception."
+    },
+    {
+      "id": "dq-good-03",
+      "stem": "In the 0/1 knapsack problem, what does the '0/1' constraint mean for each item?",
+      "options": [
+        "A. Each item may be taken whole or not at all",
+        "B. Each item may be taken as a fraction",
+        "C. Each item may be taken at most twice",
+        "D. Items must be taken in pairs"
+      ],
+      "correct_answer": "A",
+      "expected_band": "good",
+      "note": "Distractor B is the fractional-knapsack confusion, which is the real one."
+    },
+    {
+      "id": "dq-good-04",
+      "stem": "In Huffman coding, which characters receive the shortest binary codes?",
+      "options": [
+        "A. The most frequently occurring characters",
+        "B. The least frequently occurring characters",
+        "C. The characters that appear first alphabetically",
+        "D. The characters with the largest ASCII values"
+      ],
+      "correct_answer": "A",
+      "expected_band": "good",
+      "note": "B is the exact inversion a student makes; C and D are plausible-sounding orderings."
+    },
+    {
+      "id": "dq-good-05",
+      "stem": "What is the primary reason merge sort is described as a divide-and-conquer algorithm?",
+      "options": [
+        "A. It splits the input in half, sorts each half, then merges the results",
+        "B. It repeatedly selects the smallest remaining element",
+        "C. It partitions around a pivot chosen at random",
+        "D. It builds a heap and extracts the maximum repeatedly"
+      ],
+      "correct_answer": "A",
+      "expected_band": "good",
+      "note": "Distractors are selection sort, quicksort and heapsort — all real, all confusable."
+    },
+    {
+      "id": "dq-bad-tautology-01",
+      "stem": "In the context of Dynamic Programming, what does 'DP' stand for?",
+      "options": ["A. Dynamic Programming", "B. Data Processing", "C. Depth Priority", "D. Direct Path"],
+      "correct_answer": "A",
+      "expected_band": "bad",
+      "failure_mode": "near_tautology",
+      "note": "REAL failure from a live run: the stem contains the answer verbatim. The judge scored this 3/5 overall with plausibility 2."
+    },
+    {
+      "id": "dq-bad-absurd-01",
+      "stem": "According to the course material, when did modern humans emerge in Africa?",
+      "options": [
+        "A. Approximately 300,000 years ago",
+        "B. Last Tuesday",
+        "C. During the reign of Henry VIII",
+        "D. In the year 3000"
+      ],
+      "correct_answer": "A",
+      "expected_band": "bad",
+      "failure_mode": "absurd_distractors",
+      "note": "REAL failure from a live run: the judge itself wrote 'Distractors are absurd and unrelated' and scored it 1/5 overall."
+    },
+    {
+      "id": "dq-bad-duplicate-01",
+      "stem": "What is the time complexity of a linear scan over an array of n elements?",
+      "options": ["A. O(n)", "B. Linear time", "C. Proportional to n", "D. O(n^2)"],
+      "correct_answer": "A",
+      "expected_band": "bad",
+      "failure_mode": "duplicate_options",
+      "note": "A, B and C are the same answer in different words — three defensible 'correct' options."
+    },
+    {
+      "id": "dq-bad-multiple-correct-01",
+      "stem": "Which of the following is a comparison-based sorting algorithm?",
+      "options": ["A. Merge sort", "B. Quicksort", "C. Heapsort", "D. Counting sort"],
+      "correct_answer": "A",
+      "expected_band": "bad",
+      "failure_mode": "multiple_correct",
+      "note": "A, B and C are all comparison-based; only one is marked. The question has no single defensible answer."
+    },
+    {
+      "id": "dq-bad-giveaway-01",
+      "stem": "Which data structure does Dijkstra's algorithm use to always select the nearest unvisited vertex efficiently?",
+      "options": [
+        "A. A priority queue (min-heap)",
+        "B. A bicycle",
+        "C. The colour blue",
+        "D. A cheese sandwich"
+      ],
+      "correct_answer": "A",
+      "expected_band": "bad",
+      "failure_mode": "absurd_distractors",
+      "note": "Answerable without knowing any course content — the distractors are not even category-appropriate."
+    }
+  ]
+}

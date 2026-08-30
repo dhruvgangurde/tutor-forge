@@ -46,6 +46,7 @@ from agents.assessment.prompts import (
 )
 from agents.assessment.state import AssessmentState
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
+from progress.tagging import load_course_concepts, tag_question_at_generation
 
 if TYPE_CHECKING:
     from retrieval.service import RetrievalService
@@ -573,11 +574,45 @@ async def persist_assessment_node(
         )
         return {**state, "status": "failed", "error": "Placeholder assessment not found."}
 
+    # ── Concept tagging (enrichment; never fatal) ─────────────────────────────
+    # Questions carry a nullable concept_id so per-concept mastery can be
+    # derived from graded work later (progress/). This is the durable tagging
+    # path: everything generated from here on gets tagged at write time.
+    #
+    # Wrapped so it cannot break generation. If the lookup or the match fails
+    # for any reason, every question is written with concept_id=None, which is a
+    # valid state — such a question still counts toward course-level progress,
+    # it just claims no concept mastery.
+    concept_candidates: list = []
+    try:
+        concept_candidates = await load_course_concepts(state["course_id"], db)
+    except Exception as exc:  # noqa: BLE001 - tagging must never fail generation
+        logger.warning(
+            "Concept lookup failed for course %s; questions will be untagged: %s",
+            state["course_id"],
+            exc,
+        )
+
+    topic = config.get("topic", "") or ""
+
+    def _concept_for(stem: str) -> uuid.UUID | None:
+        if not concept_candidates:
+            return None
+        try:
+            return tag_question_at_generation(stem, topic, concept_candidates)
+        except Exception as exc:  # noqa: BLE001 - same contract as above
+            logger.warning("Concept tagging failed for a question: %s", exc)
+            return None
+
     # ── Batch-create Question + RubricCriterion rows ──────────────────────────
     question_orm_list = []
+    tagged_count = 0
     for idx, (q_data, rubric, ans) in enumerate(
         zip(state["questions"], state["rubric_criteria"], state["answer_key"])
     ):
+        concept_id = _concept_for(q_data["stem"])
+        if concept_id is not None:
+            tagged_count += 1
         question = Question(
             assessment_id=assessment_id,
             question_type=q_data["question_type"],
@@ -588,9 +623,19 @@ async def persist_assessment_node(
             difficulty=q_data.get("difficulty"),
             max_points=q_data["max_points"],
             order_index=idx,
+            concept_id=concept_id,
         )
         db.add(question)
         question_orm_list.append((question, rubric))
+
+    logger.info(
+        "persist_assessment_node: tagged %d/%d questions to concepts "
+        "(%d concept candidates for course %s).",
+        tagged_count,
+        len(question_orm_list),
+        len(concept_candidates),
+        state["course_id"],
+    )
 
     # Single flush to obtain all question IDs in one round-trip
     await db.flush()
@@ -615,7 +660,11 @@ async def persist_assessment_node(
     # ── Langfuse trace (non-fatal) ────────────────────────────────────────────
     trace_id: str | None = None
     try:
-        trace = langfuse.trace(
+        # langfuse v4 removed the v2 `.trace()` method; `start_observation()` is
+        # its replacement. The span must be ended explicitly or the OTel exporter
+        # never ships it, and the trace-level id is `.trace_id` (`.id` is the
+        # span id). Same shape as the tutor's emit_pedagogy_trace_node.
+        span = langfuse.start_observation(
             name="assessment_generation",
             input={
                 "course_id": str(state["course_id"]),
@@ -636,9 +685,18 @@ async def persist_assessment_node(
                 "retrieval_ms": state.get("retrieval_cache", {}).get("retrieval_ms"),
             },
         )
-        trace_id = trace.id
-    except Exception as exc:
-        logger.warning("Langfuse trace failed (non-fatal): %s", exc)
+        span.end()
+        trace_id = span.trace_id
+    except Exception:  # noqa: BLE001 - tracing must never fail generation
+        # Loud on purpose. This call sat broken on the removed v2 API for an
+        # entire major version because a bare warning hid it; observability
+        # coverage is itself an acceptance criterion, so a dead trace is a
+        # defect and must look like one in the logs.
+        logger.exception(
+            "Langfuse trace FAILED for assessment %s - the assessment itself "
+            "was persisted successfully, but this run is missing from tracing.",
+            assessment_id,
+        )
 
     logger.info(
         "Assessment %s persisted: %d questions, status=draft, trace_id=%s",

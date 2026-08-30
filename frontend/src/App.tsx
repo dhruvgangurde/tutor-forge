@@ -11,6 +11,7 @@ import { AssessmentTakePage } from './features/assessments/AssessmentTakePage'
 import { MySubmissionsPage } from './features/assessments/MySubmissionsPage'
 import { SubmissionDetailPage } from './features/assessments/SubmissionDetailPage'
 import { GradingPage } from './features/grading/GradingPage'
+import { ProgressPage } from './features/progress/ProgressPage'
 import { AppShell } from './components/layout/AppShell'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="/assessments/:assessmentId/take" element={<AssessmentTakePage />} />
             <Route path="/assessments/submissions" element={<MySubmissionsPage />} />
             <Route path="/assessments/submissions/:submissionId" element={<SubmissionDetailPage />} />
+            <Route path="/progress" element={<ProgressPage />} />
             <Route path="/tutor" element={<SessionsPage />} />
             <Route path="/tutor/:sessionId" element={<TutorPage />} />
           </Route>

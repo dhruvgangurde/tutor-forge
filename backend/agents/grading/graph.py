@@ -9,6 +9,8 @@ Node execution sequence:
           ↓
     retrieve_evidence
           ↓
+    check_groundedness
+          ↓
     grade_responses ──[failure or no responses]──→ END
           ↓ (ok)
     persist_recommendation
@@ -30,6 +32,7 @@ from typing import Literal
 from langgraph.graph import END, StateGraph
 
 from agents.grading.nodes import (
+    check_evidence_groundedness_node,
     grade_responses_node,
     load_submission_node,
     persist_recommendation_node,
@@ -87,6 +90,10 @@ def build_grading_graph(
         partial(retrieve_evidence_node, retrieval_service=retrieval_service),
     )
     builder.add_node(
+        "check_groundedness",
+        partial(check_evidence_groundedness_node, retrieval_service=retrieval_service),
+    )
+    builder.add_node(
         "grade_responses",
         partial(grade_responses_node, gemini_pro=gemini_pro),
     )
@@ -105,7 +112,8 @@ def build_grading_graph(
         {"retrieve": "retrieve_evidence", "end": END},
     )
 
-    builder.add_edge("retrieve_evidence", "grade_responses")
+    builder.add_edge("retrieve_evidence", "check_groundedness")
+    builder.add_edge("check_groundedness", "grade_responses")
 
     builder.add_conditional_edges(
         "grade_responses",

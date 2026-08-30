@@ -15,6 +15,7 @@ const TEACHER_NAV: NavItem[] = [
 const STUDENT_NAV: NavItem[] = [
   { to: '/tutor', label: 'Tutor', icon: '🧑‍🏫' },
   { to: '/assessments', label: 'Assessments', icon: '📝' },
+  { to: '/progress', label: 'Progress', icon: '📈' },
 ]
 
 /** Role-aware navigation sidebar. Uses the existing `.sidebar` CSS system (index.css). */

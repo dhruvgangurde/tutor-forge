@@ -366,7 +366,13 @@ def emit_pedagogy_trace_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception as exc:  # noqa: BLE001 - tracing must never break the turn
-        logger.warning("Langfuse trace failed for tutor interaction (non-fatal): %s", exc)
+    except Exception:  # noqa: BLE001 - tracing must never break the turn
+        # Loud on purpose: observability coverage is an acceptance criterion, so
+        # a silently dead trace is a defect, not a footnote.
+        logger.exception(
+            "Langfuse trace FAILED for tutor interaction on session %s - the "
+            "turn itself succeeded, but this one is missing from tracing.",
+            state.get("session_id"),
+        )
 
     return {**state, "pedagogy_trace": {**state.get("pedagogy_trace", {}), "trace_id": trace_id}}

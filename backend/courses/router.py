@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.service import require_teacher, require_student
 from core.config import settings
-from core.dependencies import get_db_session, get_gemini_pro, get_retrieval_service
+from core.dependencies import (
+    get_db_session,
+    get_gemini_pro,
+    get_langfuse_client,
+    get_retrieval_service,
+)
 from courses.schemas import CourseDetail, CourseStructure, CourseSummary, CourseUploadResponse
 from courses.service import create_course, get_course_structure
 from db.models import Course, User
@@ -64,6 +69,7 @@ async def upload_course(
     teacher: User = Depends(require_teacher),
     retrieval_service=Depends(get_retrieval_service),
     gemini_pro=Depends(get_gemini_pro),
+    langfuse=Depends(get_langfuse_client),
 ) -> CourseUploadResponse:
     """Upload course files; creates ingestion job as a background task."""
     if len(files) > settings.max_upload_files:
@@ -92,6 +98,7 @@ async def upload_course(
         background_tasks=background_tasks,
         retrieval_service=retrieval_service,
         gemini_pro=gemini_pro,
+        langfuse=langfuse,
     )
 
     return CourseUploadResponse(

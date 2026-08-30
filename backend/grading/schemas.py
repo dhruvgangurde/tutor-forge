@@ -15,7 +15,8 @@ Schema hierarchy
   Response (detail):
     EvidenceCitation  — one cited passage from the course corpus
     CriterionGrade    — score + feedback for one rubric criterion
-    GradingDetail     — full recommendation with per-criterion breakdown
+    QuestionGrade     — one question and the criteria belonging to it
+    GradingDetail     — full recommendation, grouped by question
 
   Ack:
     GradingAck        — immediate 202 response after trigger_grading
@@ -53,6 +54,39 @@ class CriterionGrade(BaseModel):
     max_points: Annotated[float, Field(gt=0.0)]
     feedback: str                            # always labelled as "Suggested Feedback"
     citations: list[EvidenceCitation] = Field(default_factory=list)
+    requires_review: bool = Field(
+        default=False,
+        description=(
+            "True when the groundedness gate could not evaluate this criterion "
+            "against course evidence. The score is 0 because nothing was judged, "
+            "NOT because the answer was wrong - the teacher must decide."
+        ),
+    )
+
+
+# ── Per-question grouping ─────────────────────────────────────────────────────
+
+class QuestionGrade(BaseModel):
+    """
+    One question of the assessment and the criteria scored against it.
+
+    GradingDetail used to expose a single flat ``criteria`` list, which threw
+    away the grouping the stored rationale already has
+    (``rationale["questions"][*]["criteria"]``). On a multi-question assessment
+    that left a reviewing teacher unable to tell which criterion belonged to
+    which question.
+
+    ``stem`` is hydrated from the questions table at read time rather than read
+    out of the rationale, because the grading agent does not store it (see
+    agents/grading/nodes.py, where each entry carries only question_id,
+    question_type and criteria). Hydrating instead of changing what the agent
+    writes means recommendations produced before this change group correctly
+    too. It is None if the question has since been deleted.
+    """
+    question_id: uuid.UUID | None = None
+    question_type: str = ""
+    stem: str | None = None
+    criteria: list[CriterionGrade] = Field(default_factory=list)
 
 
 # ── Queue item (list view) ────────────────────────────────────────────────────
@@ -77,7 +111,9 @@ class GradingQueueItem(BaseModel):
 class GradingDetail(BaseModel):
     """
     Full grading recommendation for teacher review.
-    Includes per-criterion scores, suggested feedback, and evidence citations.
+
+    Scores and suggested feedback are grouped by question; ``evidence_citations``
+    stays flat as the union of everything cited across the submission.
     """
     recommendation_id: uuid.UUID
     submission_id: uuid.UUID
@@ -86,7 +122,7 @@ class GradingDetail(BaseModel):
     recommended_score: float
     max_score: float
     status: str
-    criteria: list[CriterionGrade] = Field(default_factory=list)
+    questions: list[QuestionGrade] = Field(default_factory=list)
     evidence_citations: list[EvidenceCitation] = Field(default_factory=list)
     created_at: datetime
 

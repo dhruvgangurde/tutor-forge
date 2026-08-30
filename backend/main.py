@@ -33,6 +33,7 @@ from courses.router import router as courses_router
 from grading.router import router as grading_router
 from health.router import router as health_router
 from tutoring.router import router as tutoring_router
+from progress.router import router as progress_router
 from core.config import assert_safe_production_config, legacy_env_warnings, settings
 from core.exceptions import register_exception_handlers
 from core.logging import RequestIdMiddleware, configure_logging
@@ -362,6 +363,7 @@ def create_app() -> FastAPI:
     app.include_router(assessments_router)
     app.include_router(grading_router)
     app.include_router(tutoring_router)
+    app.include_router(progress_router)
 
     return app
 

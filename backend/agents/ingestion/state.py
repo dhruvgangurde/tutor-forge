@@ -17,3 +17,4 @@ class IngestionState(TypedDict):
     chunks: list[dict]            # flattened chunks ready for embedding
     status: str                   # "pending" | "running" | "complete" | "failed"
     error: str | None
+    trace_id: str | None          # Langfuse trace id; None if tracing failed

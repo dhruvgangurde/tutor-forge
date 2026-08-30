@@ -1,0 +1,51 @@
+{
+  "description": "Paraphrase-equivalent answers for the bias suite (AC: paraphrase score delta <= 5%). Each group holds semantically equivalent answers to one question; a fair grader scores every variant in a group identically. Variants deliberately vary register, hedging, length and voice -- the surface features a length- or fluency-biased grader would reward.",
+  "groups": [
+    {
+      "id": "binary-search-complexity",
+      "question_stem": "Explain the time complexity of binary search and why it holds.",
+      "max_points": 3.0,
+      "rubric": [
+        {"description": "States the complexity as O(log n).", "max_points": 2.0},
+        {"description": "Explains that the search interval halves each step.", "max_points": 1.0}
+      ],
+      "variants": [
+        {"id": "formal", "text": "Binary search runs in O(log n) time because each comparison halves the remaining search interval."},
+        {"id": "casual", "text": "it's O(log n) - every step you throw away half the array so it shrinks really fast"},
+        {"id": "verbose", "text": "The time complexity of binary search is O(log n). The reason for this is that on every single iteration of the algorithm, the portion of the array that still needs to be examined is reduced to one half of its previous size, and repeatedly halving n reaches one in logarithmic time."},
+        {"id": "terse", "text": "O(log n); interval halves each step."},
+        {"id": "hedged", "text": "I think it's probably O(log n), because I believe each step cuts the search range in half."}
+      ]
+    },
+    {
+      "id": "dijkstra-greedy",
+      "question_stem": "Why is Dijkstra's algorithm described as greedy?",
+      "max_points": 2.0,
+      "rubric": [
+        {"description": "Identifies that it always expands the nearest unvisited vertex.", "max_points": 2.0}
+      ],
+      "variants": [
+        {"id": "formal", "text": "It is greedy because at each step it selects the unvisited vertex with the smallest known distance from the source."},
+        {"id": "casual", "text": "cause it just always grabs whatever node is closest next"},
+        {"id": "verbose", "text": "Dijkstra's algorithm is characterised as a greedy algorithm because, at every stage of its execution, it makes the locally optimal choice: it picks whichever unvisited vertex currently has the smallest tentative distance from the source vertex."},
+        {"id": "terse", "text": "Always picks the closest unvisited vertex."},
+        {"id": "hedged", "text": "I'd say it's greedy since it seems to always choose the nearest unvisited node at each point."}
+      ]
+    },
+    {
+      "id": "huffman-frequency",
+      "question_stem": "How does Huffman coding decide which characters get shorter codes?",
+      "max_points": 2.0,
+      "rubric": [
+        {"description": "States that more frequent characters receive shorter codes.", "max_points": 2.0}
+      ],
+      "variants": [
+        {"id": "formal", "text": "Characters that occur more frequently in the input are assigned shorter binary codes."},
+        {"id": "casual", "text": "the letters you use a lot get the short codes"},
+        {"id": "verbose", "text": "Huffman coding assigns code lengths on the basis of frequency of occurrence: the characters which appear most often in the source text are given the shortest binary representations, while rarer characters receive longer ones."},
+        {"id": "terse", "text": "More frequent characters get shorter codes."},
+        {"id": "hedged", "text": "I think the more common characters probably end up with the shorter codes."}
+      ]
+    }
+  ]
+}

@@ -31,6 +31,7 @@ from db.models import (
     FinalGrade,
     GradeAuditRecord,
     GradeRecommendation,
+    Question,
     Submission,
     SubmissionResponse,
     User,
@@ -49,6 +50,71 @@ def _sanitise_error(exc: Exception) -> str:
     if len(msg) > _MAX_ERROR_LEN:
         msg = msg[:_MAX_ERROR_LEN].rstrip() + "…"
     return msg
+
+
+def _coerce_uuid(value) -> uuid.UUID | None:
+    """Parse a question_id out of stored JSON, tolerating junk."""
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def group_question_grades(rationale: dict, questions_by_id: dict) -> list[dict]:
+    """
+    Turn ``rationale["questions"]`` into the per-question grouping the API serves.
+
+    Pure on purpose — the DB read happens in get_grading_detail and the result
+    is passed in as ``questions_by_id`` — so the grouping and ordering rules are
+    unit-testable without a session.
+
+    Two things it does beyond a straight copy:
+      - hydrates ``stem``, which the grading agent never stores (each entry
+        carries only question_id / question_type / criteria). Doing it here
+        rather than changing what the agent writes means recommendations
+        produced before this existed group correctly too.
+      - orders by the question's ``order_index``, so the teacher sees the
+        questions in the order the student answered them. The rationale's own
+        order follows ``submission.responses``, which is unordered.
+
+    A question that has since been deleted keeps its entry, with stem=None and
+    its original position — losing a graded criterion from the review screen
+    would be worse than showing one without its wording.
+    """
+    entries = rationale.get("questions") or []
+    grouped: list[dict] = []
+
+    for position, entry in enumerate(entries):
+        qid = _coerce_uuid(entry.get("question_id"))
+        question = questions_by_id.get(qid) if qid else None
+        grouped.append(
+            {
+                "question_id": qid,
+                "question_type": entry.get("question_type")
+                or (question.question_type if question else ""),
+                "stem": question.stem if question else None,
+                "criteria": entry.get("criteria") or [],
+                "_order": question.order_index if question else position,
+                "_position": position,
+            }
+        )
+
+    grouped.sort(key=lambda g: (g["_order"], g["_position"]))
+    for g in grouped:
+        del g["_order"]
+        del g["_position"]
+    return grouped
+
+
+def question_ids_in(rationale: dict) -> list[uuid.UUID]:
+    """Every parseable question_id referenced by a stored rationale."""
+    ids = [
+        _coerce_uuid(entry.get("question_id"))
+        for entry in (rationale.get("questions") or [])
+    ]
+    return [qid for qid in ids if qid is not None]
 
 
 # ── 1. trigger_grading ────────────────────────────────────────────────────────
@@ -209,8 +275,10 @@ async def get_grading_detail(
     Returns a plain dict for the router to serialise; raises ValueError
     if no recommendation exists yet.
 
-    The rationale field (stored as JSON) is parsed and returned as a dict
-    so the API can serve structured per-criterion data.
+    The rationale field (stored as JSON) is parsed, and its per-question
+    criteria are returned under ``questions`` — grouped, stem-hydrated and
+    ordered by group_question_grades(). ``rationale`` itself is still returned
+    raw for any caller that wants the unprocessed record.
     """
     result = await db.execute(
         select(GradeRecommendation)
@@ -235,6 +303,16 @@ async def get_grading_detail(
         except json.JSONDecodeError:
             logger.warning("Could not parse rationale JSON for recommendation %s", rec.id)
 
+    # One extra round trip to hydrate question stems, which the rationale does
+    # not store. Skipped entirely when the rationale references no questions.
+    questions_by_id: dict = {}
+    referenced_ids = question_ids_in(rationale)
+    if referenced_ids:
+        q_result = await db.execute(
+            select(Question).where(Question.id.in_(referenced_ids))
+        )
+        questions_by_id = {q.id: q for q in q_result.scalars().all()}
+
     citations: list = []
     if rec.evidence_citations:
         try:
@@ -251,6 +329,7 @@ async def get_grading_detail(
         "max_score": rec.max_score,
         "status": rec.status,
         "rationale": rationale,
+        "questions": group_question_grades(rationale, questions_by_id),
         "evidence_citations": citations,
         "created_at": rec.created_at,
     }
@@ -373,6 +452,25 @@ async def finalize_grade(
 
     # ── UPDATE GradeRecommendation.status ──────────────────────────────────────
     rec.status = action  # "approved" | "overridden"
+
+    # ── Fold the released grade into per-concept mastery ──────────────────────
+    # In this transaction on purpose: mastery must reflect exactly the set of
+    # released grades, so it lands with the FinalGrade or not at all.
+    # Best-effort by contract — a submission whose questions are untagged, or
+    # whose recommendation has no per-question breakdown, simply contributes
+    # nothing. Finalizing a grade must never fail because mastery could not be
+    # computed, so any error is logged and the grade still lands.
+    try:
+        from progress.mastery import apply_finalized_grade_to_mastery
+
+        await apply_finalized_grade_to_mastery(
+            submission_id=submission_id, final_score=final_score, db=db
+        )
+    except Exception:  # noqa: BLE001 - never block a teacher's decision
+        logger.exception(
+            "Mastery update failed for submission %s; the grade is still finalized.",
+            submission_id,
+        )
 
     await db.commit()
 
