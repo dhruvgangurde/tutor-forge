@@ -297,10 +297,14 @@ async def list_student_sessions(
 
     return [
         SessionSummary(
-            id=s.id,
-            course_id=s.course_id,
-            current_hint_level=s.current_hint_level,
-            created_at=s.created_at,
+            id=item.session.id,
+            course_id=item.session.course_id,
+            course_name=item.course_name,
+            title=item.title,
+            message_count=item.message_count,
+            last_activity_at=item.last_activity_at,
+            current_hint_level=item.session.current_hint_level,
+            created_at=item.session.created_at,
         )
-        for s in sessions
+        for item in sessions
     ]

@@ -79,6 +79,16 @@ export function AssessmentsPage() {
               <div className={styles.cardContent}>
                 <p className="text-sm text-gray-600">
                   {assessment.question_count} question{assessment.question_count !== 1 ? 's' : ''}
+                  {' · '}
+                  {assessment.total_points} point{assessment.total_points !== 1 ? 's' : ''}
+                </p>
+                {/* Two assessments on one course can carry the same title.
+                    Without a date the cards are indistinguishable, and a
+                    student has no way to know which one they are opening. */}
+                <p className={styles.cardDate}>
+                  {assessment.published_at
+                    ? `Published ${new Date(assessment.published_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}`
+                    : `Created ${new Date(assessment.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
                 </p>
               </div>
 

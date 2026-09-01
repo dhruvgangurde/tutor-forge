@@ -17,6 +17,14 @@ class CourseSummary(BaseModel):
     name: str
     status: str
     created_at: datetime
+    archived_at: datetime | None = None
+    is_archived: bool = False
+
+
+class DeletionBlockedDetail(BaseModel):
+    """Why a hard delete was refused, itemised so the teacher can act on it."""
+    detail: str
+    impact: dict
 
 
 class ConceptSummary(BaseModel):

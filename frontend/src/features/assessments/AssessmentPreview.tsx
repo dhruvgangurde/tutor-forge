@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useAssessmentDraft, usePublishAssessment } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { QuestionEditForm } from './QuestionEditForm'
 import { Badge } from '../../components/ui/Badge'
 import { statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -18,6 +20,7 @@ interface AssessmentPreviewProps {
  * publish action while the assessment is still a draft.
  */
 export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewProps) {
+  const [editingId, setEditingId] = useState<string | null>(null)
   const { data: draft, isLoading, isError, error } = useAssessmentDraft(assessmentId)
   const publish = usePublishAssessment(courseId)
   const { showToast } = useToast()
@@ -64,8 +67,21 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
       <ol className="question-list">
         {draft.questions.map((q, idx) => (
           <li key={q.id} className="question-item">
-            <div className="question-stem">
-              {idx + 1}. {q.stem}
+            <div className="question-stem-row">
+              <div className="question-stem">
+                {idx + 1}. {q.stem}
+              </div>
+              {/* Draft only: a published paper must not change underneath
+                  students who have already answered it. */}
+              {draft.status === 'draft' && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setEditingId(editingId === q.id ? null : q.id)}
+                >
+                  {editingId === q.id ? 'Cancel' : 'Edit'}
+                </button>
+              )}
             </div>
             <div className="question-meta">
               <Badge variant="info">{q.question_type}</Badge>
@@ -76,8 +92,13 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
 
             {q.options && (
               <ul className="question-options">
-                {q.options.map((opt) => (
-                  <li key={opt}>{opt}</li>
+                {/* Options are stored as plain text; the letter comes from
+                    position, exactly as the student-facing take page does it.
+                    Rendering the raw string here would show no letter at all. */}
+                {q.options.map((opt, idx) => (
+                  <li key={`${idx}-${opt}`}>
+                    {String.fromCharCode(65 + idx)}. {opt}
+                  </li>
                 ))}
               </ul>
             )}
@@ -90,6 +111,14 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
                   </li>
                 ))}
               </ul>
+            )}
+
+            {editingId === q.id && (
+              <QuestionEditForm
+                assessmentId={assessmentId}
+                question={q}
+                onDone={() => setEditingId(null)}
+              />
             )}
           </li>
         ))}

@@ -64,6 +64,7 @@ from agents.tutor.query_resolution import (
     resolve_retrieval_query,
 )
 from agents.tutor.state import TutorState
+from core.context_phrasing import mentions_context, strip_context_references
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 
 logger = logging.getLogger(__name__)
@@ -293,13 +294,35 @@ def generate_guiding_question_node(
         f"Student question:\n{wrap_untrusted(topic, 'STUDENT QUESTION')}\n\n"
         f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
     )
-    response = gemini_pro.generate(
+    raw_response = gemini_pro.generate(
         prompt,
         temperature=TUTOR_TEMPERATURE,
         system_instruction=system_instruction_for_level(hint_level)
         + "\n\n"
         + UNTRUSTED_CONTENT_NOTICE,
     )
+
+    # Every ladder rung now tells the model never to mention "the context", but
+    # that instruction is exactly what was already failing — a student was shown
+    # "the course context provided does not directly mention...". So the output
+    # is sanitised too, on the same principle as the grading groundedness gate:
+    # an instruction the model may ignore is not an enforcement.
+    response = strip_context_references(raw_response)
+    if response != raw_response:
+        logger.info(
+            "Stripped context framing from tutor response (session %s).",
+            state.get("session_id"),
+        )
+    elif mentions_context(response):
+        # The sanitiser did not match but the phrase is present: a wording this
+        # module does not handle yet. Loud so it can be added, not shipped
+        # silently.
+        logger.warning(
+            "Tutor response still mentions the context and was NOT sanitised "
+            "(session %s): %r",
+            state.get("session_id"),
+            response[:160],
+        )
 
     return {
         **state,

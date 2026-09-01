@@ -16,6 +16,8 @@ export interface CourseSummary {
   name: string
   status: string
   created_at: string
+  archived_at: string | null
+  is_archived: boolean
 }
 
 export interface CourseDetail {
@@ -65,6 +67,11 @@ export interface SessionCreated {
 export interface SessionSummary {
   id: string
   course_id: string
+  course_name: string
+  /** First question the student asked, truncated. Null for an empty session. */
+  title: string | null
+  message_count: number
+  last_activity_at: string
   current_hint_level: number
   created_at: string
 }
@@ -196,6 +203,8 @@ export interface PublishedAssessmentSummary {
   course_id: string
   course_name: string
   question_count: number
+  total_points: number
+  published_at: string | null
   created_at: string
 }
 
@@ -364,4 +373,45 @@ export interface CourseProgressDetail {
   tutoring_messages: number
   /** Set when there are released grades but no concept breakdown to show. */
   untagged_note: string | null
+}
+
+/** What a permanent course delete would destroy. Backend: GET /courses/{id}/deletion-impact */
+export interface CourseDeletionImpact {
+  course_id: string
+  can_hard_delete: boolean
+  impact: {
+    assessments: number
+    submissions: number
+    recommendations: number
+    final_grades: number
+    audit_records: number
+    tutoring_sessions: number
+    tutoring_messages: number
+    concept_mastery_rows: number
+  }
+  blocking_reason: string | null
+}
+
+export interface CourseLifecycleAck {
+  course_id: string
+  action: 'archived' | 'restored' | 'deleted'
+  message: string
+}
+
+/** Backend: PATCH /assessments/{id}/questions/{qid} */
+export interface QuestionUpdateRequest {
+  stem?: string
+  options?: string[]
+  correct_answer?: string
+  worked_solution?: string
+  max_points?: number
+  rubric_criteria?: { description: string; max_points: number }[]
+}
+
+export interface QuestionUpdateAck {
+  question_id: string
+  assessment_id: string
+  updated_fields: string[]
+  /** 'unchanged' | 'revalidated' | 'cleared' — what happened to the concept tag. */
+  concept_tag: string
 }

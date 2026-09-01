@@ -1,5 +1,12 @@
 import api from './client'
-import type { CourseDetail, CourseStructure, CourseSummary, CourseUploadResponse } from './types'
+import type {
+  CourseDeletionImpact,
+  CourseDetail,
+  CourseLifecycleAck,
+  CourseStructure,
+  CourseSummary,
+  CourseUploadResponse,
+} from './types'
 
 /**
  * Upload a new course with one or more files (PDF/PPTX/TXT).
@@ -49,5 +56,42 @@ export async function getCourseStructure(courseId: string): Promise<CourseStruct
  */
 export async function getAvailableCourses(): Promise<CourseSummary[]> {
   const resp = await api.get<CourseSummary[]>('/courses/available')
+  return resp.data
+}
+
+/**
+ * Archive a course (default) or permanently delete one with no student work.
+ * Backend: DELETE /courses/{course_id}[?hard=true] (teacher only, owner-scoped)
+ *
+ * Archiving is always safe and reversible. A hard delete is refused with 409
+ * when the course has submissions — released grades are education records.
+ */
+export async function deleteCourse(
+  courseId: string,
+  hard = false
+): Promise<CourseLifecycleAck> {
+  const resp = await api.delete<CourseLifecycleAck>(`/courses/${courseId}`, {
+    params: hard ? { hard: true } : undefined,
+  })
+  return resp.data
+}
+
+/**
+ * Un-archive a course, making it available to students again.
+ * Backend: POST /courses/{course_id}/restore (teacher only, owner-scoped)
+ */
+export async function restoreCourse(courseId: string): Promise<CourseLifecycleAck> {
+  const resp = await api.post<CourseLifecycleAck>(`/courses/${courseId}/restore`)
+  return resp.data
+}
+
+/**
+ * What a permanent delete would destroy — used to warn before asking.
+ * Backend: GET /courses/{course_id}/deletion-impact (teacher only)
+ */
+export async function getCourseDeletionImpact(
+  courseId: string
+): Promise<CourseDeletionImpact> {
+  const resp = await api.get<CourseDeletionImpact>(`/courses/${courseId}/deletion-impact`)
   return resp.data
 }

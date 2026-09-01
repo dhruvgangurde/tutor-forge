@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react'
 import { useApproveGrade, useGradingReview, useOverrideGrade } from './hooks'
 import { CitationList } from './CitationList'
 import { Badge } from '../../components/ui/Badge'
+import { Markdown } from '../../components/ui/Markdown'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { statusToVariant } from '../../lib/statusVariant'
@@ -184,10 +185,13 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
                             </Badge>
                           )}
                         </div>
-                        <p className="criterion-feedback">
+                        <div className="criterion-feedback">
                           <span className="criterion-feedback-label">Suggested feedback:</span>{' '}
-                          {c.feedback}
-                        </p>
+                          {/* Model output, so it arrives with markdown in it. */}
+                          <Markdown className="criterion-feedback-body">
+                            {c.feedback}
+                          </Markdown>
+                        </div>
                         <CitationList citations={c.citations} />
                       </li>
                     ))}

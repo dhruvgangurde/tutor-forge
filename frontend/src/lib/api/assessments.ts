@@ -6,6 +6,8 @@ import type {
   GenerateAssessmentRequest,
   PublishAssessmentAck,
   PublishedAssessmentSummary,
+  QuestionUpdateAck,
+  QuestionUpdateRequest,
   StudentAssessmentDetail,
   StudentSubmissionDetail,
   StudentSubmissionSummary,
@@ -106,6 +108,26 @@ export async function getMySubmissions(courseId?: string): Promise<StudentSubmis
 export async function getSubmissionDetail(submissionId: string): Promise<StudentSubmissionDetail> {
   const resp = await api.get<StudentSubmissionDetail>(
     `/assessments/submissions/${submissionId}`
+  )
+  return resp.data
+}
+
+/**
+ * Edit one question of a DRAFT assessment.
+ * Backend: PATCH /assessments/{assessment_id}/questions/{question_id}
+ *
+ * Partial payload: send only what changed. The backend refuses with 409 if the
+ * assessment is already published, since editing it would change the paper
+ * underneath students who have already answered.
+ */
+export async function updateDraftQuestion(
+  assessmentId: string,
+  questionId: string,
+  body: QuestionUpdateRequest
+): Promise<QuestionUpdateAck> {
+  const resp = await api.patch<QuestionUpdateAck>(
+    `/assessments/${assessmentId}/questions/${questionId}`,
+    body
   )
   return resp.data
 }

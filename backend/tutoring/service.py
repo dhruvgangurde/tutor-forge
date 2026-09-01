@@ -22,9 +22,11 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -92,6 +94,13 @@ async def create_session(
     course = result.scalar_one_or_none()
     if not course:
         raise ValueError(f"Course {course_id} not found.")
+    if course.archived_at is not None:
+        # Archiving hides a course from NEW activity only. Existing sessions
+        # keep working, so a student mid-conversation is not cut off.
+        raise ValueError(
+            "This course has been archived by the teacher and is no longer "
+            "available for new tutoring sessions."
+        )
     if course.status != "ready":
         raise ValueError(
             f"Course ingestion is not complete (status='{course.status}'). "
@@ -306,14 +315,116 @@ async def get_messages(
     return list(result.scalars().all())
 
 
+#: Longest session title shown in the list. Long enough that two sessions on
+#: neighbouring topics stay distinguishable, short enough for one card line.
+SESSION_TITLE_MAX_CHARS = 70
+
+
+def derive_session_title(first_question: str | None) -> str | None:
+    """
+    A recognisable name for a session, from the first thing the student asked.
+
+    Returns None when the session has no student turn yet; the caller decides
+    what to show for an empty session. Chat clients title threads this way for
+    the same reason it applies here: a student scanning their list recognises
+    "How does photosynthesis convert light" instantly and "Session 4bc8fb2b"
+    never.
+
+    Collapses whitespace first so a pasted multi-line question does not become
+    a multi-line card title, and truncates on a word boundary so the label does
+    not end mid-word.
+    """
+    if first_question is None:
+        return None
+    text = " ".join(first_question.split())
+    if not text:
+        return None
+    if len(text) <= SESSION_TITLE_MAX_CHARS:
+        return text
+    clipped = text[:SESSION_TITLE_MAX_CHARS]
+    # Prefer a word boundary, but only if one exists reasonably near the end —
+    # a single very long token should still be cut rather than returned whole.
+    space = clipped.rfind(" ")
+    if space > SESSION_TITLE_MAX_CHARS // 2:
+        clipped = clipped[:space]
+    return clipped.rstrip(" ,;:.") + "…"
+
+
+@dataclass(frozen=True)
+class SessionListItem:
+    """One row of the student's session list, with everything needed to name it."""
+
+    session: TutoringSession
+    course_name: str
+    title: str | None
+    message_count: int
+    last_activity_at: datetime
+
+
 async def list_sessions(
     student_id: uuid.UUID,
     db: AsyncSession,
-) -> list[TutoringSession]:
-    """Fetch all tutoring sessions for a student, newest first."""
+) -> list[SessionListItem]:
+    """
+    Every tutoring session for a student, newest first, with display metadata.
+
+    The title comes from the session's first *student* message. It is derived at
+    read time rather than stored: the first question is already persisted, so a
+    stored copy would be a second source of truth that could drift, and deriving
+    it means existing sessions get titles with no backfill.
+
+    ``current_hint_level`` deliberately does not appear in the title. It is the
+    depth of the ladder on the last question only, so as a list-level label it
+    is close to meaningless -- it says nothing about what the session is about.
+    """
     result = await db.execute(
-        select(TutoringSession)
+        select(TutoringSession, Course.name)
+        .join(Course, TutoringSession.course_id == Course.id)
         .where(TutoringSession.student_id == student_id)
         .order_by(TutoringSession.created_at.desc())
     )
-    return list(result.scalars().all())
+    rows = result.all()
+    if not rows:
+        return []
+
+    session_ids = [row[0].id for row in rows]
+
+    # First student message per session, in one query rather than one per row.
+    first_q_rows = await db.execute(
+        select(TutoringMessage.session_id, TutoringMessage.content)
+        .where(
+            TutoringMessage.session_id.in_(session_ids),
+            TutoringMessage.role == "student",
+        )
+        .order_by(TutoringMessage.session_id, TutoringMessage.created_at.asc())
+    )
+    first_question: dict[uuid.UUID, str] = {}
+    for session_id, content in first_q_rows.all():
+        first_question.setdefault(session_id, content)
+
+    stats_rows = await db.execute(
+        select(
+            TutoringMessage.session_id,
+            func.count(TutoringMessage.id),
+            func.max(TutoringMessage.created_at),
+        )
+        .where(TutoringMessage.session_id.in_(session_ids))
+        .group_by(TutoringMessage.session_id)
+    )
+    stats = {row[0]: (row[1], row[2]) for row in stats_rows.all()}
+
+    items = []
+    for session, course_name in rows:
+        count, last_at = stats.get(session.id, (0, None))
+        items.append(
+            SessionListItem(
+                session=session,
+                course_name=course_name,
+                title=derive_session_title(first_question.get(session.id)),
+                message_count=count,
+                # An empty session has no messages; its own creation time is the
+                # only activity there has been.
+                last_activity_at=last_at or session.created_at,
+            )
+        )
+    return items

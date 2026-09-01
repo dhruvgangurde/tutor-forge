@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useSubmissionDetail } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
+import { Markdown } from '../../components/ui/Markdown'
 import styles from './assessments.module.css'
 
 export function SubmissionDetailPage() {
@@ -112,7 +113,7 @@ export function SubmissionDetailPage() {
         {submission.status === 'graded' && submission.feedback && (
           <div className={styles.feedbackCard}>
             <h2 className={styles.sectionTitle}>Instructor Feedback</h2>
-            <div className={styles.feedbackContent}>{submission.feedback}</div>
+            <Markdown className={styles.feedbackContent}>{submission.feedback}</Markdown>
             {submission.graded_at && (
               <p className="text-sm text-gray-500 mt-4">
                 Graded on {new Date(submission.graded_at).toLocaleString()}

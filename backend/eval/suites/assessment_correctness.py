@@ -49,6 +49,7 @@ import re
 
 from eval.harness import (
     DATASETS,
+    MIN_JUDGE_ACCURACY,
     SuiteResult,
     build_services,
     courses_by_name,
@@ -58,9 +59,10 @@ from eval.harness import (
 
 TARGET_RATE = 0.95
 
-#: Minimum judge accuracy on the labeled set before the corpus rate is treated
-#: as a measurement rather than as an indication.
-MIN_JUDGE_ACCURACY = 0.80
+# MIN_JUDGE_ACCURACY now lives in eval.harness and is shared with the
+# distractor-quality suite: one bar, one definition, so two LLM-as-judge suites
+# cannot drift apart on what "trustworthy enough to quote" means. Re-exported
+# above so existing references keep working.
 
 #: Cap on real questions judged per run — one LLM call each.
 MAX_CORPUS_QUESTIONS = 12

@@ -9,6 +9,7 @@ import {
   listCourseAssessments,
   publishAssessment,
   submitAssessment,
+  updateDraftQuestion,
 } from '../../lib/api/assessments'
 import { queryKeys } from '../../lib/queryKeys'
 import { POLL_INTERVAL_MS } from '../../lib/constants'
@@ -16,6 +17,7 @@ import type {
   AssessmentDraft,
   AssessmentSummary,
   GenerateAssessmentRequest,
+  QuestionUpdateRequest,
   SubmissionResponseItem,
 } from '../../lib/api/types'
 
@@ -129,6 +131,30 @@ export function useSubmitAssessment() {
     }) => submitAssessment(assessmentId, responses),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['grading', 'my-grades'] })
+    },
+  })
+}
+
+/**
+ * Edit a question in a draft assessment.
+ *
+ * Invalidates the assessment detail so the preview redraws with the saved text
+ * — a teacher who edits and then publishes must be publishing what they see.
+ */
+export function useUpdateDraftQuestion(assessmentId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      questionId,
+      body,
+    }: {
+      questionId: string
+      body: QuestionUpdateRequest
+    }) => updateDraftQuestion(assessmentId, questionId, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.assessments.detail(assessmentId),
+      })
     },
   })
 }

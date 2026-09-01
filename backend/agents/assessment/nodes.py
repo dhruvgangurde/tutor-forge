@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from typing import TYPE_CHECKING
@@ -45,6 +46,7 @@ from agents.assessment.prompts import (
     IMPROVE_DISTRACTORS_PROMPT,
 )
 from agents.assessment.state import AssessmentState
+from core.context_phrasing import strip_context_references
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from progress.tagging import load_course_concepts, tag_question_at_generation
 
@@ -85,6 +87,81 @@ _MAX_DISTRACTOR_IMPROVEMENTS = 3
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+#: Leading "A. " / "B) " / "(C) " / "D - " that the model bakes into option text.
+#: The UI renders the letter from the option's POSITION, so a prefix here is
+#: shown twice: live evidence was an option reading "A. A. Two billion years ago".
+_OPTION_PREFIX_RE = re.compile(r"^\s*\(?\s*([A-Da-d])\s*[.):\-]\s+")
+
+
+def _strip_option_prefix(option: str) -> str:
+    """
+    Remove a leading letter label from one option.
+
+    Defensive: the prompts now ask for plain text, but prompt-following is
+    exactly what failed here, so the stored value is normalised regardless.
+    Only a single leading label is removed, and only A-D — an option that
+    legitimately starts with something like "B cells produce antibodies" keeps
+    its text because the pattern requires a delimiter after the letter.
+    """
+    if not isinstance(option, str):
+        return option
+    return _OPTION_PREFIX_RE.sub("", option, count=1).strip()
+
+
+def _normalise_answer(text: str) -> str:
+    """Loose form for comparing an option against another question's answer."""
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+#: An answer shorter than this is too generic to attribute to one question
+#: ("4", "yes"), so matching on it would produce false positives.
+_MIN_LEAK_LENGTH = 4
+
+
+def _other_question_answers(question_list: list[dict], skip_idx: int) -> set[str]:
+    """
+    Normalised correct answers belonging to every OTHER question in the batch.
+
+    MCQ answers are excluded: they are bare letters ("B"), which carry no text
+    to collide with.
+    """
+    out: set[str] = set()
+    for i, other in enumerate(question_list):
+        if i == skip_idx or other.get("question_type") == "mcq":
+            continue
+        norm = _normalise_answer(str(other.get("correct_answer", "")))
+        if len(norm) >= _MIN_LEAK_LENGTH:
+            out.add(norm)
+    return out
+
+
+def _leaking_options(options: list[str], foreign_answers: set[str]) -> list[str]:
+    """
+    Options that reproduce another question's answer.
+
+    This is the distractor-pool contamination bug, and it is a different defect
+    from weak plausibility: an option can be perfectly plausible prose and still
+    be the wrong CATEGORY of thing. Live evidence, twice in two runs, on
+    "When did humans emerge in Africa?":
+
+        run 1: option D = "5.972168x10^24 kg"   <- that batch's numeric answer
+        run 2: option D = "510072000 km2"       <- that batch's numeric answer
+
+    A mass and an area are not wrong answers to a "when" question; they are not
+    answers at all. Matching is containment-based because the model often welds
+    the foreign answer into a longer string ("148940000 km2 emerged 300,000
+    years ago in Africa and have spread").
+    """
+    hits = []
+    for option in options or []:
+        norm = _normalise_answer(option)
+        if not norm:
+            continue
+        if any(f in norm or norm in f for f in foreign_answers):
+            hits.append(option)
+    return hits
+
 
 def _strip_json_fences(raw: str) -> str:
     """
@@ -474,9 +551,22 @@ def generate_questions_node(
                 improved_raw = gemini_flash.generate(improve_prompt, temperature=0.3)
                 improved_raw = _strip_json_fences(improved_raw)
                 improved = json.loads(improved_raw)
-                if isinstance(improved.get("improved_options"), list) and len(improved["improved_options"]) == 4:
-                    q["options"] = improved["improved_options"]
-                    mcq_improved += 1
+                candidate = improved.get("improved_options")
+                if isinstance(candidate, list) and len(candidate) == 4:
+                    # Refuse an "improvement" that pulls in another question's
+                    # answer — that is a regression, not an improvement.
+                    foreign = _other_question_answers(question_list, question_list.index(q))
+                    leaked = _leaking_options(candidate, foreign)
+                    if leaked:
+                        logger.warning(
+                            "Distractor improvement REJECTED for %r: option(s) %r "
+                            "reproduce another question's answer in this batch.",
+                            q.get("stem", "")[:60],
+                            [x[:40] for x in leaked],
+                        )
+                    else:
+                        q["options"] = candidate
+                        mcq_improved += 1
             except Exception:
                 # Non-fatal — keep original options on any failure
                 pass
@@ -485,6 +575,8 @@ def generate_questions_node(
     questions_out: list[dict] = []
     bloom_tags: list[str] = []
     distractors: list[list[str]] = []
+    option_prefixes_stripped = 0
+    context_phrases_stripped = 0
     rubric_criteria: list[list[dict]] = []
     answer_key: list[dict] = []
 
@@ -501,23 +593,73 @@ def generate_questions_node(
             c.get("max_points", 1.0) for c in (rubric or [{"max_points": 1.0}])
         ))
 
+        # Strip the prompt-block framing the model leaks into stems
+        # ("...according to the context?"). The student never saw a context
+        # block; see core/context_phrasing.py.
+        raw_stem = q.get("stem", "").strip()
+        stem = strip_context_references(raw_stem)
+        if stem != raw_stem:
+            context_phrases_stripped += 1
+            logger.info(
+                "Stripped context framing from stem: %r -> %r", raw_stem[:70], stem[:70]
+            )
+
+        raw_options = q.get("options")
+        options = (
+            [_strip_option_prefix(o) for o in raw_options]
+            if isinstance(raw_options, list)
+            else raw_options
+        )
+        if isinstance(raw_options, list) and options != raw_options:
+            option_prefixes_stripped += 1
+
         questions_out.append({
             "order_index": idx,
             "question_type": q_type,
-            "stem": q.get("stem", "").strip(),
-            "options": q.get("options"),
+            "stem": stem,
+            "options": options,
             "bloom_level": bloom,
             "difficulty": diff,
             "max_points": points,
         })
         bloom_tags.append(bloom)
-        distractors.append(q.get("options") or [])
+        distractors.append(options or [])
         rubric_criteria.append(rubric)
         answer_key.append({
             "order_index": idx,
             "correct_answer": q.get("correct_answer", ""),
             "worked_solution": q.get("worked_solution", ""),
         })
+
+    # ── Audit: contamination that survived from the original generation ───────
+    # The improvement pass can only refuse to ADD leakage; if the first
+    # generation already produced it, it is still here. Logged loudly rather
+    # than silently shipped — there is no safe automatic repair (dropping an
+    # option would leave an MCQ with three).
+    contaminated = 0
+    for idx, q in enumerate(question_list):
+        if q.get("question_type") != "mcq":
+            continue
+        leaked = _leaking_options(
+            questions_out[idx].get("options") or [],
+            _other_question_answers(question_list, idx),
+        )
+        if leaked:
+            contaminated += 1
+            logger.warning(
+                "[DISTRACTOR-CONTAMINATION] question %r carries option(s) %r that "
+                "answer a DIFFERENT question in this batch. Teacher review needed.",
+                questions_out[idx]["stem"][:60],
+                [x[:40] for x in leaked],
+            )
+
+    logger.info(
+        "Post-processing: stripped %d option letter prefix(es), %d context "
+        "phrase(s) from stems; %d question(s) still carry cross-question options.",
+        option_prefixes_stripped,
+        context_phrases_stripped,
+        contaminated,
+    )
 
     logger.info(
         "Generated %d questions (gen_ms=%d, improved_distractors=%d) for course_id=%s",

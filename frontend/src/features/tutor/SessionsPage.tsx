@@ -8,6 +8,17 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
 import { useToast } from '../../hooks/useToast'
 
+/**
+ * The student's list of tutoring sessions.
+ *
+ * Cards are titled by the session's first question (derived server-side, see
+ * tutoring/service.py derive_session_title). They used to read
+ * "Session 4bc8fb2b" with a "Level 3" badge: the UUID prefix is not something
+ * a student can recognise their own work by, and the level was the hint-ladder
+ * depth of the last question only — it said nothing about what the session was
+ * about, and moved every time a hint was requested. The course name replaces
+ * it, which is a real distinguisher when a student tutors across two courses.
+ */
 export function SessionsPage() {
   const navigate = useNavigate()
   const { data: sessions, isLoading, isError, error } = useSessions()
@@ -74,11 +85,15 @@ export function SessionsPage() {
               onClick={() => navigate(`/tutor/${session.id}`)}
             >
               <div className="session-card-header">
-                <h3 className="session-title">Session {session.id.slice(0, 8)}</h3>
-                <span className="session-hint-level">Level {session.current_hint_level}</span>
+                <h3 className="session-title">
+                  {session.title ?? 'New session — no questions yet'}
+                </h3>
+                <span className="session-course">{session.course_name}</span>
               </div>
               <p className="session-meta">
-                Started {new Date(session.created_at).toLocaleDateString()}
+                {session.message_count > 0
+                  ? `${session.message_count} message${session.message_count === 1 ? '' : 's'} · last active ${new Date(session.last_activity_at).toLocaleDateString()}`
+                  : `Started ${new Date(session.created_at).toLocaleDateString()}`}
               </p>
             </button>
           ))}

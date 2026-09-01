@@ -22,6 +22,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from progress.concept_matching import (
+    BACKFILL_MIN_MARGIN,
+    BACKFILL_MIN_SCORE,
     GENERATION_MIN_MARGIN,
     GENERATION_MIN_SCORE,
     match_concept,
@@ -52,6 +54,35 @@ async def load_course_concepts(
         .where(Chapter.course_id == course_id)
     )
     return [(row[0], row[1], row[2]) for row in result.all()]
+
+
+def retag_question_after_edit(
+    stem: str,
+    candidates: list[ConceptCandidate],
+) -> uuid.UUID | None:
+    """
+    Re-match an edited question's concept, or None if no longer confident.
+
+    Deliberately does NOT reuse the assessment's generation topic, unlike
+    tag_question_at_generation. The topic describes what was *generated*, not
+    what the teacher just wrote, so including it drags the match back to the
+    original concept: rewriting a binary-search stem into "What is the capital
+    city of Peru?" still re-matched to Binary Search purely on the topic string.
+    A test caught exactly that.
+
+    With only the stem to go on, this uses the stricter backfill thresholds —
+    the same reasoning as db/backfill_concept_tags.py: less evidence, higher
+    bar, and clear the tag rather than keep a doubtful one.
+    """
+    if not candidates:
+        return None
+    match = match_concept(
+        stem,
+        candidates,
+        min_score=BACKFILL_MIN_SCORE,
+        min_margin=BACKFILL_MIN_MARGIN,
+    )
+    return None if match is None else match.concept_id  # type: ignore[return-value]
 
 
 def tag_question_at_generation(

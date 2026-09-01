@@ -51,6 +51,8 @@ from assessments.schemas import (
     StudentSubmissionResponse,
     StudentSubmissionSummary,
     SubmissionAck,
+    QuestionUpdate,
+    QuestionUpdateAck,
     SubmitRequest,
 )
 from assessments.service import (
@@ -59,14 +61,27 @@ from assessments.service import (
     list_assessments_for_course,
     list_published_assessments,
 )
+from agents.assessment.nodes import _strip_option_prefix
 from auth.service import require_student, require_teacher
+from core.context_phrasing import strip_context_references
+from progress.tagging import load_course_concepts, retag_question_after_edit
 from core.dependencies import (
     get_db_session,
     get_gemini_flash,
     get_langfuse_client,
     get_retrieval_service,
 )
-from db.models import Assessment, Course, FinalGrade, GradeRecommendation, Submission, SubmissionResponse, User
+from db.models import (
+    Assessment,
+    Course,
+    FinalGrade,
+    GradeRecommendation,
+    Question,
+    RubricCriterion,
+    Submission,
+    SubmissionResponse,
+    User,
+)
 from grading.service import trigger_grading
 
 logger = logging.getLogger(__name__)
@@ -99,6 +114,11 @@ async def generate_assessment(
     course = result.scalar_one_or_none()
     if not course or course.owner_id != teacher.id:
         raise HTTPException(status_code=404, detail="Course not found.")
+    if course.archived_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="This course is archived. Restore it before generating assessments.",
+        )
     if course.status != "ready":
         raise HTTPException(
             status_code=400,
@@ -215,6 +235,8 @@ async def list_published_assessments_endpoint(
             course_id=a.course_id,
             course_name=courses_by_id.get(a.course_id, ""),
             question_count=len(a.questions or []),
+            total_points=round(sum(q.max_points for q in (a.questions or [])), 2),
+            published_at=a.published_at,
             created_at=a.created_at,
         )
         for a in assessments
@@ -314,6 +336,15 @@ async def get_assessment_for_student(
     """
     assessment = await get_assessment_detail(assessment_id, db)
     if not assessment or assessment.status != "published":
+        raise HTTPException(
+            status_code=404, detail="Assessment not found or not published."
+        )
+    # An archived course is not available to students; reported as not-found
+    # for the same reason an unpublished assessment is.
+    course = (
+        await db.execute(select(Course).where(Course.id == assessment.course_id))
+    ).scalar_one_or_none()
+    if course is None or course.archived_at is not None:
         raise HTTPException(
             status_code=404, detail="Assessment not found or not published."
         )
@@ -442,6 +473,14 @@ async def submit_assessment(
     assessment = result.scalar_one_or_none()
     if not assessment or assessment.status != "published":
         raise HTTPException(status_code=404, detail="Assessment not found or not published.")
+
+    course = (
+        await db.execute(select(Course).where(Course.id == assessment.course_id))
+    ).scalar_one_or_none()
+    if course is None or course.archived_at is not None:
+        raise HTTPException(
+            status_code=404, detail="Assessment not found or not published."
+        )
 
     # ── Duplicate submission check ────────────────────────────────────────────
     existing = await db.execute(
@@ -702,4 +741,181 @@ def _assessment_to_student_view(assessment: Assessment) -> StudentAssessmentDeta
             )
             for q in sorted(questions, key=lambda x: x.order_index)
         ],
+    )
+
+
+# ── PATCH /assessments/{assessment_id}/questions/{question_id} ────────────────
+
+
+@router.patch(
+    "/{assessment_id}/questions/{question_id}",
+    response_model=QuestionUpdateAck,
+    summary="Edit a question in a draft assessment",
+    description=(
+        "Update a generated question before publishing. Draft status only, and "
+        "owner-scoped like every other teacher route here."
+    ),
+)
+async def update_draft_question(
+    assessment_id: uuid.UUID,
+    question_id: uuid.UUID,
+    body: QuestionUpdate,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> QuestionUpdateAck:
+    """
+    Apply a teacher's edit to one draft question.
+
+    Draft-only is the load-bearing rule: editing a published assessment would
+    change the paper underneath students who have already answered it, and any
+    grade already released against the old wording would silently stop matching
+    what the question now says.
+    """
+    result = await db.execute(select(Assessment).where(Assessment.id == assessment_id))
+    assessment = result.scalar_one_or_none()
+    if not assessment:
+        raise HTTPException(status_code=404, detail="Assessment not found.")
+
+    course = (
+        await db.execute(select(Course).where(Course.id == assessment.course_id))
+    ).scalar_one_or_none()
+    if not course or course.owner_id != teacher.id:
+        raise HTTPException(status_code=404, detail="Assessment not found.")
+
+    if assessment.status != "draft":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only draft assessments can be edited; this one is "
+                f"'{assessment.status}'. Published questions cannot change "
+                "underneath students who have already answered them."
+            ),
+        )
+
+    question = (
+        await db.execute(
+            select(Question)
+            .options(selectinload(Question.rubric_criteria))
+            .where(Question.id == question_id, Question.assessment_id == assessment_id)
+        )
+    ).scalar_one_or_none()
+    if not question:
+        raise HTTPException(
+            status_code=404, detail="Question not found in this assessment."
+        )
+
+    updated: list[str] = []
+    content_changed = False
+
+    if body.stem is not None and body.stem != question.stem:
+        # Same sanitiser the generator runs: a teacher pasting from the draft
+        # could reintroduce the "according to the context" phrasing.
+        question.stem = strip_context_references(body.stem.strip())
+        updated.append("stem")
+        content_changed = True
+
+    if body.options is not None:
+        if question.question_type != "mcq":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Options apply to MCQ questions only; this is "
+                    f"'{question.question_type}'."
+                ),
+            )
+        cleaned = [_strip_option_prefix(o).strip() for o in body.options]
+        question.options = json.dumps(cleaned)
+        updated.append("options")
+        content_changed = True
+
+    if body.correct_answer is not None or body.worked_solution is not None:
+        try:
+            key = json.loads(question.answer_key) if question.answer_key else {}
+        except json.JSONDecodeError:
+            key = {}
+        if body.correct_answer is not None:
+            answer = body.correct_answer.strip()
+            if question.question_type == "mcq":
+                answer = answer.upper()
+                if answer not in {"A", "B", "C", "D"}:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="For an MCQ, correct_answer must be one of A, B, C, D.",
+                    )
+            key["correct_answer"] = answer
+            updated.append("correct_answer")
+        if body.worked_solution is not None:
+            key["worked_solution"] = strip_context_references(
+                body.worked_solution.strip()
+            )
+            updated.append("worked_solution")
+        question.answer_key = json.dumps(key)
+
+    if body.max_points is not None:
+        question.max_points = body.max_points
+        updated.append("max_points")
+
+    if body.rubric_criteria is not None:
+        if question.question_type != "short_answer":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Rubric criteria apply to short-answer questions only; this "
+                    f"is '{question.question_type}'."
+                ),
+            )
+        for existing in list(question.rubric_criteria):
+            await db.delete(existing)
+        for order, criterion in enumerate(body.rubric_criteria):
+            db.add(
+                RubricCriterion(
+                    question_id=question.id,
+                    description=criterion.description.strip(),
+                    max_points=criterion.max_points,
+                    order_index=order,
+                )
+            )
+        # Points follow the rubric unless the teacher set them explicitly.
+        if body.max_points is None:
+            question.max_points = sum(c.max_points for c in body.rubric_criteria)
+        updated.append("rubric_criteria")
+
+    # ── Concept tag: re-validate or clear ─────────────────────────────────────
+    # A tag written against the generated wording must not survive a rewrite
+    # that changed what the question asks. Re-matching is cheap and reuses the
+    # generation-time matcher, so a still-correct tag is kept rather than
+    # thrown away.
+    concept_tag = "unchanged"
+    if content_changed and question.concept_id is not None:
+        try:
+            candidates = await load_course_concepts(assessment.course_id, db)
+            rematched = retag_question_after_edit(question.stem, candidates)
+            if rematched == question.concept_id:
+                concept_tag = "revalidated"
+            else:
+                question.concept_id = rematched
+                concept_tag = "revalidated" if rematched else "cleared"
+        except Exception:  # noqa: BLE001 - tagging must never block an edit
+            logger.exception(
+                "Concept re-validation failed for question %s; clearing the tag "
+                "rather than leaving a stale one.",
+                question_id,
+            )
+            question.concept_id = None
+            concept_tag = "cleared"
+
+    await db.commit()
+    logger.info(
+        "Draft question %s updated by teacher %s: fields=%s concept_tag=%s",
+        question_id,
+        teacher.id,
+        updated,
+        concept_tag,
+    )
+
+    return QuestionUpdateAck(
+        question_id=question_id,
+        assessment_id=assessment_id,
+        updated_fields=updated,
+        concept_tag=concept_tag,
     )

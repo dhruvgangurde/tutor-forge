@@ -57,7 +57,13 @@ MAX_HINT_LEVEL = FULL_EXPLANATION_LEVEL
 _GROUNDING_CLAUSE = (
     "Base your response ONLY on the provided course context. Never use general "
     "knowledge, and never invent material that is not in the context. If the "
-    "context does not contain what you need, say so plainly."
+    "course material does not contain what you need, say so plainly.\n"
+    "NEVER mention \"the context\", \"the provided context\", \"the course "
+    "context\", or \"the information provided\" to the student. They are having a "
+    "conversation with a tutor and have never seen your context block, so "
+    "\"the course context provided does not directly mention that\" is confusing "
+    "and breaks the illusion of a tutor who simply knows the material. Say \"the "
+    "course material doesn't cover that\" instead, and otherwise just answer."
 )
 
 

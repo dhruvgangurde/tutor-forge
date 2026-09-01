@@ -441,3 +441,124 @@ class TestAssessmentCorrectnessSuite:
         assert "Assessment correctness" not in _UNCOVERED
         # The genuinely manual one must still be listed with its reason.
         assert "Hint ladder demo" in _UNCOVERED
+
+
+# ── Shared judge calibration ──────────────────────────────────────────────────
+
+
+class TestSharedCalibration:
+    """
+    Both LLM-as-judge suites gate on harness.calibrate() at the same bar. The
+    gate is not decoration: it caught the assessment-correctness judge at 69%,
+    which would otherwise have published "8% assessment correctness" — a false
+    claim about the generator rather than a measurement of it.
+    """
+
+    def _fn(self):
+        from eval.harness import calibrate
+
+        return calibrate
+
+    def test_perfect_judge_passes(self):
+        rows = [{"judged": 5, "agrees": True} for _ in range(5)]
+        cal = self._fn()(rows)
+        assert cal.accuracy == 1.0
+        assert cal.passed is True
+
+    def test_judge_below_the_bar_fails(self):
+        rows = [{"judged": 5, "agrees": i < 6} for i in range(10)]
+        cal = self._fn()(rows)
+        assert cal.accuracy == 0.6
+        assert cal.passed is False
+
+    def test_bar_is_inclusive(self):
+        from eval.harness import MIN_JUDGE_ACCURACY
+
+        rows = [{"judged": 1, "agrees": i < 8} for i in range(10)]
+        cal = self._fn()(rows)
+        assert cal.accuracy == MIN_JUDGE_ACCURACY
+        assert cal.passed is True, "exactly at the bar must count as calibrated"
+
+    def test_unparseable_items_leave_the_denominator(self):
+        # An unparseable judge response is a harness problem, not evidence about
+        # judgement, so counting it as a miss would understate the judge.
+        rows = [
+            {"judged": 5, "agrees": True},
+            {"judged": 4, "agrees": True},
+            {"judged": None, "agrees": False},
+        ]
+        cal = self._fn()(rows)
+        assert cal.items == 2
+        assert cal.accuracy == 1.0
+
+    def test_no_scorable_items_never_passes(self):
+        cal = self._fn()([{"judged": None, "agrees": False}])
+        assert cal.items == 0
+        assert cal.passed is False, "an empty calibration must not read as calibrated"
+
+    def test_metrics_expose_the_bar_alongside_the_score(self):
+        from eval.harness import MIN_JUDGE_ACCURACY
+
+        m = self._fn()([{"judged": 5, "agrees": True}]).as_metrics()
+        assert m["judge_accuracy"] == 1.0
+        assert m["min_judge_accuracy"] == MIN_JUDGE_ACCURACY
+        assert m["judge_calibration_passed"] is True
+
+    def test_both_judge_suites_use_the_same_bar_object(self):
+        # A per-suite copy would let the two definitions of "trustworthy" drift.
+        from eval.harness import MIN_JUDGE_ACCURACY as shared
+        from eval.suites.assessment_correctness import MIN_JUDGE_ACCURACY as ac
+        from eval.suites.distractor_quality import MIN_JUDGE_ACCURACY as dq
+
+        assert ac is shared and dq is shared
+
+
+class TestDistractorCalibrationDataset:
+    def _data(self):
+        with open(DATASETS / "distractor_calibration.json", encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_has_both_bands_in_useful_numbers(self):
+        # An all-good set would certify a judge that says 5/5 to everything.
+        items = self._data()["items"]
+        good = [i for i in items if i["expected_band"] == "good"]
+        bad = [i for i in items if i["expected_band"] == "bad"]
+        assert len(good) >= 4
+        assert len(bad) >= 4
+
+    def test_every_item_is_well_formed_and_unique(self):
+        ids = []
+        for item in self._data()["items"]:
+            ids.append(item["id"])
+            assert item["expected_band"] in {"good", "bad"}
+            assert item["stem"].strip()
+            assert len(item["options"]) >= 3
+            assert item["correct_answer"]
+        assert len(ids) == len(set(ids))
+
+    def test_bad_items_name_their_failure_mode(self):
+        # Naming it is what lets the report say WHICH defect the judge missed.
+        for item in self._data()["items"]:
+            if item["expected_band"] == "bad":
+                assert item.get("failure_mode"), f"{item['id']} needs a failure_mode"
+
+    def test_covers_the_distinct_ways_an_mcq_fails(self):
+        modes = {
+            i.get("failure_mode")
+            for i in self._data()["items"]
+            if i["expected_band"] == "bad"
+        }
+        assert {"near_tautology", "absurd_distractors"} <= modes
+        assert len(modes) >= 3
+
+    def test_bands_do_not_overlap(self):
+        data = self._data()
+        assert data["bad_max_overall"] < data["good_min_overall"], (
+            "an item cannot be simultaneously good and bad"
+        )
+
+    def test_target_sits_at_the_good_band_floor(self):
+        # Calibration must test the discrimination the target actually needs.
+        from eval.suites.distractor_quality import TARGET_SCORE
+
+        assert self._data()["good_min_overall"] == TARGET_SCORE

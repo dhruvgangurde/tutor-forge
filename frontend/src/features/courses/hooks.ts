@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getCourse, getCourseStructure, listCourses, uploadCourse } from '../../lib/api/courses'
+import {
+  deleteCourse,
+  getCourse,
+  getCourseDeletionImpact,
+  getCourseStructure,
+  listCourses,
+  restoreCourse,
+  uploadCourse,
+} from '../../lib/api/courses'
 import { queryKeys } from '../../lib/queryKeys'
 import { POLL_INTERVAL_MS } from '../../lib/constants'
 import type { CourseDetail, CourseSummary } from '../../lib/api/types'
@@ -49,5 +57,49 @@ export function useUploadCourse() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.courses.list() })
     },
+  })
+}
+
+/**
+ * Archive a course, or hard-delete one with no student work.
+ *
+ * Invalidates the courses list either way. Archiving is reversible and is the
+ * default; a hard delete is refused by the backend with 409 when submissions
+ * exist, and that message is surfaced verbatim rather than swallowed.
+ */
+export function useDeleteCourse() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ courseId, hard }: { courseId: string; hard?: boolean }) =>
+      deleteCourse(courseId, hard ?? false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.all() })
+    },
+  })
+}
+
+/** Un-archive a course. Archiving is not a one-way door. */
+export function useRestoreCourse() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (courseId: string) => restoreCourse(courseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.all() })
+    },
+  })
+}
+
+/**
+ * What a permanent delete would destroy.
+ *
+ * Fetched only when the teacher opens the delete flow (`enabled`), because a
+ * teacher must be able to tell a disposable mis-upload from a course with
+ * students' released grades behind it BEFORE confirming.
+ */
+export function useCourseDeletionImpact(courseId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.courses.deletionImpact(courseId),
+    queryFn: () => getCourseDeletionImpact(courseId),
+    enabled: Boolean(courseId) && enabled,
   })
 }

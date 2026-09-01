@@ -49,6 +49,12 @@
   flex-grow: 1;
 }
 
+.cardDate {
+  font-size: 0.8125rem;
+  color: #6b7280;
+  margin: 0.375rem 0 0 0;
+}
+
 .cardFooter {
   padding: 0 1rem 1rem 1rem;
   border-top: 1px solid #f3f4f6;

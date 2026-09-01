@@ -91,6 +91,16 @@ class Course(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+        comment=(
+            "Set when a teacher archives the course. Archived courses are hidden "
+            "from all NEW student activity (tutoring, taking assessments, "
+            "generation) but every historical row is preserved: a released "
+            "FinalGrade is an education record and must survive the teacher "
+            "tidying their course list. NULL = active. Reversible via restore."
+        ),
+    )
 
     owner: Mapped["User"] = relationship("User", back_populates="owned_courses")
     chapters: Mapped[list["Chapter"]] = relationship(

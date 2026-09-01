@@ -26,6 +26,12 @@ from core.dependencies import (
     get_retrieval_service,
 )
 from courses.schemas import CourseDetail, CourseStructure, CourseSummary, CourseUploadResponse
+from courses.lifecycle import (
+    archive_course,
+    deletion_impact,
+    hard_delete_course,
+    restore_course,
+)
 from courses.service import create_course, get_course_structure
 from db.models import Course, User
 
@@ -118,7 +124,16 @@ async def list_courses(
         select(Course).where(Course.owner_id == teacher.id).order_by(Course.created_at.desc())
     )
     return [
-        CourseSummary(id=c.id, name=c.name, status=c.status, created_at=c.created_at)
+        # The teacher sees archived courses, clearly marked — archiving is for
+        # tidying their own list, not for hiding a course from themselves.
+        CourseSummary(
+            id=c.id,
+            name=c.name,
+            status=c.status,
+            created_at=c.created_at,
+            archived_at=c.archived_at,
+            is_archived=c.archived_at is not None,
+        )
         for c in result.scalars().all()
     ]
 
@@ -130,10 +145,19 @@ async def list_available_courses(
 ) -> list[CourseSummary]:
     """List all ready (fully ingested) courses available for tutoring sessions."""
     result = await db.execute(
-        select(Course).where(Course.status == "ready").order_by(Course.created_at.desc())
+        select(Course)
+        .where(Course.status == "ready", Course.archived_at.is_(None))
+        .order_by(Course.created_at.desc())
     )
     return [
-        CourseSummary(id=c.id, name=c.name, status=c.status, created_at=c.created_at)
+        CourseSummary(
+            id=c.id,
+            name=c.name,
+            status=c.status,
+            created_at=c.created_at,
+            archived_at=None,
+            is_archived=False,
+        )
         for c in result.scalars().all()
     ]
 
@@ -168,3 +192,109 @@ async def get_structure(
     if structure is None:
         raise HTTPException(status_code=404, detail="Course not found.")
     return structure
+
+
+# ── Course lifecycle: archive / restore / delete ──────────────────────────────
+
+
+async def _require_owned_course(
+    course_id: uuid.UUID, teacher: User, db: AsyncSession
+) -> Course:
+    """Load a course and verify the caller owns it. 404 hides existence."""
+    result = await db.execute(select(Course).where(Course.id == course_id))
+    course = result.scalar_one_or_none()
+    if not course or course.owner_id != teacher.id:
+        raise HTTPException(status_code=404, detail="Course not found.")
+    return course
+
+
+@router.delete("/{course_id}", response_model=dict)
+async def delete_course(
+    course_id: uuid.UUID,
+    hard: bool = False,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+    retrieval_service=Depends(get_retrieval_service),
+) -> dict:
+    """
+    Archive a course, or permanently delete one that has no student work.
+
+    Default (``hard=false``) archives: the course vanishes from every
+    student-facing surface but every historical row survives. This is always
+    safe and always reversible via POST /courses/{id}/restore.
+
+    ``hard=true`` permanently deletes, and is refused with 409 when the course
+    has any student submissions. Every FK from courses downward is ON DELETE
+    CASCADE, so a hard delete would otherwise destroy released grades and their
+    audit records — a student's marked work is an education record, not the
+    teacher's to erase by tidying a list.
+    """
+    course = await _require_owned_course(course_id, teacher, db)
+
+    if not hard:
+        await archive_course(course, db)
+        return {
+            "course_id": str(course.id),
+            "action": "archived",
+            "message": (
+                "Course archived. Students can no longer start new work on it; "
+                "all existing submissions, grades and history are preserved. "
+                "Restore it at any time."
+            ),
+        }
+
+    impact = await deletion_impact(course_id, db)
+    if impact.blocks_hard_delete:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot permanently delete this course: it has {impact.describe()}. "
+                "Deleting it would destroy student work that has already been "
+                "marked. Archive it instead."
+            ),
+        )
+
+    await hard_delete_course(course, db, retrieval_service=retrieval_service)
+    return {
+        "course_id": str(course_id),
+        "action": "deleted",
+        "message": "Course permanently deleted. It had no student submissions.",
+    }
+
+
+@router.post("/{course_id}/restore", response_model=dict)
+async def restore_archived_course(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> dict:
+    """Un-archive a course, making it available to students again."""
+    course = await _require_owned_course(course_id, teacher, db)
+    await restore_course(course, db)
+    return {
+        "course_id": str(course.id),
+        "action": "restored",
+        "message": "Course restored. Students can start new work on it again.",
+    }
+
+
+@router.get("/{course_id}/deletion-impact", response_model=dict)
+async def get_deletion_impact(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> dict:
+    """
+    What a permanent delete would destroy — so the UI can warn before asking.
+
+    A teacher cannot otherwise tell a disposable mis-upload from a course with
+    two students' released grades behind it.
+    """
+    await _require_owned_course(course_id, teacher, db)
+    impact = await deletion_impact(course_id, db)
+    return {
+        "course_id": str(course_id),
+        "can_hard_delete": not impact.blocks_hard_delete,
+        "impact": impact.as_dict(),
+        "blocking_reason": impact.describe() if impact.blocks_hard_delete else None,
+    }

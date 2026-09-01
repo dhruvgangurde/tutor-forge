@@ -41,10 +41,25 @@ class SessionCreated(BaseModel):
 
 
 class SessionSummary(BaseModel):
-    """Lightweight summary of a tutoring session."""
+    """
+    One row of a student's session list.
+
+    ``title`` is derived from the session's first student message, not stored:
+    a raw UUID prefix ("Session 4bc8fb2b") is not something a student can
+    recognise their own work by. It is None for a session with no questions
+    yet, which the UI labels rather than inventing a title for.
+
+    ``current_hint_level`` is still returned because the session detail view
+    uses it, but it is not a list-level identifier: it describes the ladder
+    depth of the most recent question only.
+    """
 
     id: uuid.UUID
     course_id: uuid.UUID
+    course_name: str
+    title: str | None
+    message_count: int
+    last_activity_at: datetime
     current_hint_level: int
     created_at: datetime
 

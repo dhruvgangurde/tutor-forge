@@ -210,6 +210,73 @@ class RubricCriterionUpdate(BaseModel):
     max_points: Annotated[float, Field(gt=0)]
 
 
+# ── Request: draft question edit ──────────────────────────────────────────────
+
+class QuestionUpdate(BaseModel):
+    """
+    Teacher edit to one generated question, before publishing.
+
+    Every field is optional: the form sends only what changed, so an untouched
+    rubric is not round-tripped and cannot be corrupted by a partial payload.
+
+    Draft-status only. Editing a published assessment would change the paper
+    underneath students who have already answered it.
+    """
+    stem: Annotated[str, Field(min_length=1, max_length=4000)] | None = None
+    options: list[Annotated[str, Field(min_length=1)]] | None = Field(
+        default=None,
+        description=(
+            "MCQ options as PLAIN text, no 'A.'/'B.' prefix — the letter comes "
+            "from position, and a stored prefix renders twice."
+        ),
+    )
+    correct_answer: str | None = Field(
+        default=None,
+        description="MCQ: a single letter A-D. Numeric/short answer: the answer text.",
+    )
+    worked_solution: str | None = Field(default=None, max_length=4000)
+    max_points: Annotated[float, Field(gt=0)] | None = None
+    rubric_criteria: list[RubricCriterionUpdate] | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> "QuestionUpdate":
+        if all(
+            getattr(self, f) is None
+            for f in (
+                "stem",
+                "options",
+                "correct_answer",
+                "worked_solution",
+                "max_points",
+                "rubric_criteria",
+            )
+        ):
+            raise ValueError("Provide at least one field to update.")
+        return self
+
+    @field_validator("options")
+    @classmethod
+    def four_options(cls, v: list[str] | None) -> list[str] | None:
+        # The UI renders exactly A-D and the grader matches a single letter, so
+        # any other count would produce an unanswerable question.
+        if v is not None and len(v) != 4:
+            raise ValueError("An MCQ must have exactly 4 options.")
+        return v
+
+
+class QuestionUpdateAck(BaseModel):
+    """Result of a draft edit, including what it did to the concept tag."""
+    question_id: uuid.UUID
+    assessment_id: uuid.UUID
+    updated_fields: list[str]
+    concept_tag: str = Field(
+        description=(
+            "'unchanged', 'revalidated' (content changed, still matches the same "
+            "concept), or 'cleared' (content changed and no longer matches)."
+        )
+    )
+
+
 # ── Request: student submission ───────────────────────────────────────────────
 
 class SubmissionResponseItem(BaseModel):
@@ -275,12 +342,22 @@ class SubmissionAck(BaseModel):
 # ── Response: published assessment (student view - no rubric) ─────────────────
 
 class PublishedAssessmentSummary(BaseModel):
-    """Assessment summary for students (published only, no questions or rubric)."""
+    """
+    Assessment summary for students (published only, no questions or rubric).
+
+    ``published_at`` is carried alongside ``created_at`` because a teacher can
+    generate two assessments with the same title on the same course, and the
+    student list then shows two cards a student cannot tell apart. The date the
+    paper became available is the one that means something to them; created_at
+    is when generation ran, which they never saw.
+    """
     id: uuid.UUID
     title: str
     course_id: uuid.UUID
     course_name: str  # populated by router
     question_count: int
+    total_points: float
+    published_at: datetime | None
     created_at: datetime
 
 

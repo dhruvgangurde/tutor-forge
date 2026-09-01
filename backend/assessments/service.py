@@ -26,7 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from db.models import Assessment, Question
+from db.models import Assessment, Course, Question
 
 if TYPE_CHECKING:
     from retrieval.service import RetrievalService
@@ -246,10 +246,14 @@ async def list_published_assessments(
     Questions are eagerly loaded for question_count calculation.
     Sorted newest first.
     """
+    # Join Course to exclude archived ones. Archiving hides a course from new
+    # student activity WITHOUT mutating assessment rows, so restore is a single
+    # column write and can never leave assessments half-published.
     query = (
         select(Assessment)
         .options(selectinload(Assessment.questions))
-        .where(Assessment.status == "published")
+        .join(Course, Assessment.course_id == Course.id)
+        .where(Assessment.status == "published", Course.archived_at.is_(None))
     )
     if course_id:
         query = query.where(Assessment.course_id == course_id)
