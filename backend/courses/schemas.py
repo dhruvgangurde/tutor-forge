@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class CourseUploadResponse(BaseModel):
@@ -55,3 +55,14 @@ class CourseDetail(BaseModel):
     created_at: datetime
     chapter_count: int
     concept_count: int
+
+
+class EnrollRequest(BaseModel):
+    """Teacher adds a student to their course by the student's account email."""
+    email: EmailStr
+
+
+class EnrollmentOut(BaseModel):
+    student_id: uuid.UUID
+    email: str
+    enrolled_at: datetime

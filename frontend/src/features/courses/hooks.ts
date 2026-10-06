@@ -1,10 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   deleteCourse,
+  enrollStudent,
   getCourse,
   getCourseDeletionImpact,
   getCourseStructure,
   listCourses,
+  listEnrollments,
+  removeEnrollment,
   restoreCourse,
   uploadCourse,
 } from '../../lib/api/courses'
@@ -103,3 +106,34 @@ export function useCourseDeletionImpact(courseId: string, enabled: boolean) {
     enabled: Boolean(courseId) && enabled,
   })
 }
+
+/** Students enrolled in one of the teacher's courses. */
+export function useEnrollments(courseId: string) {
+  return useQuery({
+    queryKey: queryKeys.courses.enrollments(courseId),
+    queryFn: () => listEnrollments(courseId),
+    enabled: Boolean(courseId),
+  })
+}
+
+/** Enroll a student by email; refreshes the roster on success. */
+export function useEnrollStudent(courseId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (email: string) => enrollStudent(courseId, email),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.enrollments(courseId) })
+    },
+  })
+}
+
+/** Remove a student from the course; refreshes the roster on success. */
+export function useRemoveEnrollment(courseId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (studentId: string) => removeEnrollment(courseId, studentId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.courses.enrollments(courseId) })
+    },
+  })
+}

@@ -12,6 +12,7 @@ export const queryKeys = {
     structure: (courseId: string) => ['courses', courseId, 'structure'] as const,
     deletionImpact: (courseId: string) =>
       ['courses', courseId, 'deletion-impact'] as const,
+    enrollments: (courseId: string) => ['courses', courseId, 'enrollments'] as const,
   },
   tutor: {
     all: () => ['tutor'] as const,

@@ -18,6 +18,7 @@ from jose import JWTError
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 
+from auth.schemas import LoginRequest, RegisterRequest
 from core.exceptions import DomainError, register_exception_handlers
 from core.logging import REQUEST_ID_HEADER, RequestIdFilter, RequestIdMiddleware
 
@@ -54,6 +55,16 @@ def client() -> TestClient:
     @app.post("/validated")
     async def _validated(body: _Body):  # pragma: no cover - never reached on 422
         return {"ok": body.name}
+
+    # The real auth request schemas, so the password-redaction tests exercise
+    # the actual password fields and validators without needing a database.
+    @app.post("/auth/register")
+    async def _register(body: RegisterRequest):  # pragma: no cover - never reached on 422
+        return {"ok": True}
+
+    @app.post("/auth/login")
+    async def _login(body: LoginRequest):  # pragma: no cover - never reached on 422
+        return {"ok": True}
 
     app.add_middleware(RequestIdMiddleware)
 
@@ -157,3 +168,66 @@ def test_validation_detail_truncates_long_error_lists():
     detail = _validation_detail(errors)
     assert "(+3 more)" in detail
     assert "body" not in detail  # location noise stripped
+
+
+# ── Raw input values never reach the response or the log ─────────────────────
+# Pydantic puts the submitted value under each error's `input` key. For a bad
+# /auth/register or /auth/login body that is the user's password, and it used
+# to be both returned in the 422 and written to the WARNING log line.
+# validation_error_handler now strips `input` from every error.
+
+def _validation_log_text(caplog) -> str:
+    return "\n".join(
+        r.getMessage() for r in caplog.records if "Request validation failed" in r.getMessage()
+    )
+
+
+def test_short_register_password_is_not_echoed_or_logged(client, caplog):
+    password = "Pw1234"  # 6 chars: fails RegisterRequest's min_length=8
+    with caplog.at_level(logging.WARNING, logger="core.exceptions"):
+        resp = client.post("/auth/register", json={"email": "a@b.com", "password": password})
+    assert resp.status_code == 422
+    assert password not in resp.text
+
+    errors = resp.json()["errors"]
+    assert len(errors) == 1
+    # Only `input` is removed; the rest of the error shape is untouched.
+    assert set(errors[0]) == {"type", "loc", "msg", "ctx"}
+    assert errors[0]["type"] == "string_too_short"
+    assert errors[0]["loc"] == ["body", "password"]
+
+    logged = _validation_log_text(caplog)
+    assert logged, "handler did not log"  # guards against a vacuous pass below
+    assert password not in logged
+
+
+def test_non_string_login_password_is_not_echoed_or_logged(client, caplog):
+    password = "Secr3tGuess9"
+    with caplog.at_level(logging.WARNING, logger="core.exceptions"):
+        resp = client.post("/auth/login", json={"email": "a@b.com", "password": [password]})
+    assert resp.status_code == 422
+    assert password not in resp.text
+
+    errors = resp.json()["errors"]
+    assert len(errors) == 1
+    assert set(errors[0]) == {"type", "loc", "msg"}
+    assert errors[0]["loc"] == ["body", "password"]
+
+    logged = _validation_log_text(caplog)
+    assert logged, "handler did not log"
+    assert password not in logged
+
+
+def test_whole_body_input_is_not_echoed_or_logged(client, caplog):
+    # A body that is not a JSON object fails at the model level, where Pydantic's
+    # `input` is the entire payload -- on any route, not just /auth/*.
+    payload = '{"email": "a@b.com", "password": "WholeBody#77"}'
+    with caplog.at_level(logging.WARNING, logger="core.exceptions"):
+        resp = client.post("/auth/login", json=payload)  # JSON string, not an object
+    assert resp.status_code == 422
+    assert "WholeBody#77" not in resp.text
+    assert all("input" not in err for err in resp.json()["errors"])
+
+    logged = _validation_log_text(caplog)
+    assert logged, "handler did not log"
+    assert "WholeBody#77" not in logged

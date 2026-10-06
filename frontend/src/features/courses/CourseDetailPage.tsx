@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useCourse, useCourseStructure } from './hooks'
 import { useCourseAssessments } from '../assessments/hooks'
 import { ConceptTree } from './ConceptTree'
+import { CourseEnrollmentPanel } from './CourseEnrollmentPanel'
 import { AssessmentGenerateForm } from '../assessments/AssessmentGenerateForm'
 import { AssessmentList } from '../assessments/AssessmentList'
 import { AssessmentPreview } from '../assessments/AssessmentPreview'
@@ -111,6 +112,13 @@ export function CourseDetailPage() {
           </section>
         </>
       )}
+
+      {/* Independent of ingestion status: a teacher can set up the class roster
+          while the material is still being processed. */}
+      <section className="detail-section">
+        <h2 className="section-title">Students</h2>
+        <CourseEnrollmentPanel courseId={courseId ?? ''} />
+      </section>
     </>
   )
 }

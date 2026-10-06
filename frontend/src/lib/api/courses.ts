@@ -6,6 +6,8 @@ import type {
   CourseStructure,
   CourseSummary,
   CourseUploadResponse,
+  Enrollment,
+  EnrollmentRemovedAck,
 } from './types'
 
 /**
@@ -51,7 +53,7 @@ export async function getCourseStructure(courseId: string): Promise<CourseStruct
 }
 
 /**
- * List all ready (fully ingested) courses available for tutoring sessions.
+ * List the ready (fully ingested) courses the student is enrolled in.
  * Backend: GET /courses/available (student only)
  */
 export async function getAvailableCourses(): Promise<CourseSummary[]> {
@@ -95,3 +97,37 @@ export async function getCourseDeletionImpact(
   const resp = await api.get<CourseDeletionImpact>(`/courses/${courseId}/deletion-impact`)
   return resp.data
 }
+
+/**
+ * Students enrolled in a course.
+ * Backend: GET /courses/{course_id}/enrollments (teacher only, owner-scoped)
+ */
+export async function listEnrollments(courseId: string): Promise<Enrollment[]> {
+  const resp = await api.get<Enrollment[]>(`/courses/${courseId}/enrollments`)
+  return resp.data
+}
+
+/**
+ * Enroll an existing student account in a course, by email.
+ * Backend: POST /courses/{course_id}/enrollments (teacher only, owner-scoped)
+ *
+ * 404 when no student account has that email; 409 when already enrolled.
+ */
+export async function enrollStudent(courseId: string, email: string): Promise<Enrollment> {
+  const resp = await api.post<Enrollment>(`/courses/${courseId}/enrollments`, { email })
+  return resp.data
+}
+
+/**
+ * Remove a student from a course. Their existing work and grades are kept.
+ * Backend: DELETE /courses/{course_id}/enrollments/{student_id} (teacher only, owner-scoped)
+ */
+export async function removeEnrollment(
+  courseId: string,
+  studentId: string
+): Promise<EnrollmentRemovedAck> {
+  const resp = await api.delete<EnrollmentRemovedAck>(
+    `/courses/${courseId}/enrollments/${studentId}`
+  )
+  return resp.data
+}

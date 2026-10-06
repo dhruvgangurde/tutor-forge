@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from auth.service import require_student
+from courses.enrollment import is_enrolled
 from core.dependencies import (
     get_db_session,
     get_gemini_pro,
@@ -89,6 +90,25 @@ async def _require_student_owns_session(
     return session
 
 
+async def _require_still_enrolled(
+    session: TutoringSession,
+    student: User,
+    db: AsyncSession,
+) -> None:
+    """
+    Refuse new tutor turns once the student has been removed from the course.
+
+    The session is the student's own, so this is a 403 rather than the
+    existence-hiding 404 used where a course id is named directly. Reading the
+    session's past messages is still allowed: that history is the student's.
+    """
+    if not await is_enrolled(db, student_id=student.id, course_id=session.course_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not enrolled in this course.",
+        )
+
+
 # ── POST /tutor/sessions ──────────────────────────────────────────────────────
 
 
@@ -107,8 +127,13 @@ async def create_tutoring_session(
     """
     Create a new tutoring session for the current student on a course.
 
-    The course must exist and have status='ready'.
+    The student must be enrolled in the course, and the course must be ready.
+    Not enrolled -- including a course id that does not exist -- is the same
+    404, so this endpoint cannot be used to probe which course ids exist.
     """
+    if not await is_enrolled(db, student_id=student.id, course_id=body.course_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Course not found.")
+
     try:
         session = await create_session(
             course_id=body.course_id,
@@ -160,6 +185,7 @@ async def send_tutor_chat(
     is_grounded=True.
     """
     session = await _require_student_owns_session(session_id, student, db)
+    await _require_still_enrolled(session, student, db)
 
     final_state = await send_chat_message(
         session=session,
@@ -213,6 +239,7 @@ async def request_tutor_hint(
     Requests past level 4 keep returning level 4.
     """
     session = await _require_student_owns_session(session_id, student, db)
+    await _require_still_enrolled(session, student, db)
 
     try:
         final_state = await request_hint(

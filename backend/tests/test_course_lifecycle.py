@@ -28,6 +28,7 @@ from db.models import (
     Chapter,
     Concept,
     Course,
+    Enrollment,
     FinalGrade,
     GradeRecommendation,
     Question,
@@ -103,6 +104,10 @@ async def _seed_course(*, owner_email="teacher@demo.com", name="Test Course") ->
         owner = (await db.execute(select(User).where(User.email == owner_email))).scalar_one()
         course = Course(name=name, owner_id=owner.id, status="ready")
         db.add(course)
+        await db.flush()
+        # Course access requires an enrollment; the seeded student is in this class.
+        student = (await db.execute(select(User).where(User.email == "student@demo.com"))).scalar_one()
+        db.add(Enrollment(course_id=course.id, student_id=student.id))
         await db.commit()
         return course.id
 

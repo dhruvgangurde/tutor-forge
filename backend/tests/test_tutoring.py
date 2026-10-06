@@ -29,7 +29,7 @@ from core.dependencies import (
     get_retrieval_service,
 )
 from core.security import hash_password
-from db.models import Course, TutoringSession, User
+from db.models import Course, Enrollment, TutoringSession, User
 from main import app
 
 # ── Test database ─────────────────────────────────────────────────────────────
@@ -149,6 +149,9 @@ async def setup_db():
             status="ready",
         )
         db.add(course)
+        await db.flush()
+        # Course access requires an enrollment; the seeded student is in this class.
+        db.add(Enrollment(course_id=course.id, student_id=student.id))
         await db.commit()
 
     yield
@@ -220,7 +223,9 @@ async def test_create_session_nonexistent_course(client, student_token):
         json={"course_id": str(fake_course_id)},
         headers={"Authorization": f"Bearer {student_token}"},
     )
-    assert resp.status_code == 400
+    # 404, not the old 400: enrollment is checked first, and a course id that
+    # does not exist answers exactly like one the student is not enrolled in.
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio

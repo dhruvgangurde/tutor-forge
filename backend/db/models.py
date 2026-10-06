@@ -548,3 +548,37 @@ class StudentConceptMastery(Base):
 
     student: Mapped["User"] = relationship("User")
     concept: Mapped["Concept"] = relationship("Concept")
+
+
+# ── 18. Enrollment ────────────────────────────────────────────────────────────
+
+class Enrollment(Base):
+    """
+    A student's access grant to one course.
+
+    Every student-facing course surface -- listing available courses, starting
+    or continuing a tutoring session, listing, taking and submitting assessments
+    -- requires a row here. Rows are created and removed only by the course's
+    owning teacher (courses/enrollment.py, behind the owner-scoped
+    /courses/{course_id}/enrollments routes); self-registration grants access to
+    nothing.
+    """
+    __tablename__ = "enrollments"
+    __table_args__ = (
+        UniqueConstraint("course_id", "student_id", name="uq_enrollments_course_student"),
+        # The unique constraint already indexes course_id-first lookups; this one
+        # serves "which courses is this student in", asked on every student page.
+        Index("ix_enrollments_student_id", "student_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
+    )
+    student_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    enrolled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    course: Mapped["Course"] = relationship("Course")
+    student: Mapped["User"] = relationship("User")

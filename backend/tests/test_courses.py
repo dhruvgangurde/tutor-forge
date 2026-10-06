@@ -8,15 +8,18 @@ The ingestion background task is stubbed by conftest (stub_background_jobs), so
 these tests exercise only the request/validation/authz path.
 """
 
+import uuid
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from core.config import settings
 from core.database import Base
 from core.dependencies import get_db_session
 from core.security import hash_password
-from db.models import User
+from db.models import Chapter, Concept, Course, User
 from main import app
 
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
@@ -41,6 +44,7 @@ async def setup_db():
         await conn.run_sync(Base.metadata.create_all)
     async with _Session() as db:
         db.add(User(email="teacher@demo.com", hashed_password=hash_password("password123"), role="teacher"))
+        db.add(User(email="other@demo.com", hashed_password=hash_password("password123"), role="teacher"))
         db.add(User(email="student@demo.com", hashed_password=hash_password("password123"), role="student"))
         await db.commit()
     yield
@@ -132,3 +136,49 @@ async def test_upload_requires_auth(client):
         files={"files": ("notes.txt", b"content", "text/plain")},
     )
     assert resp.status_code == 401
+
+
+# ── Course structure is owner-scoped ──────────────────────────────────────────
+# GET /courses/{id}/structure used to check only the teacher role, so any
+# teacher could read another teacher's full chapter/concept outline by id. It
+# now calls _require_owned_course() like every other course route.
+
+
+async def _seed_course_with_structure(*, owner_email: str = "teacher@demo.com") -> uuid.UUID:
+    async with _Session() as db:
+        owner = (await db.execute(select(User).where(User.email == owner_email))).scalar_one()
+        course = Course(name="SQL Joins", owner_id=owner.id, status="ready")
+        db.add(course)
+        await db.flush()
+        chapter = Chapter(course_id=course.id, title="Inner Joins", order_index=0)
+        db.add(chapter)
+        await db.flush()
+        db.add(Concept(
+            chapter_id=chapter.id, name="Join condition",
+            description="Rows are paired where the ON clause is true.", order_index=0,
+        ))
+        await db.commit()
+        return course.id
+
+
+async def test_structure_is_hidden_from_a_teacher_who_does_not_own_the_course(client):
+    course_id = await _seed_course_with_structure(owner_email="teacher@demo.com")
+    token = await _token(client, "other@demo.com")
+    resp = await client.get(f"/courses/{course_id}/structure", headers=_auth(token))
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Course not found."
+    # Same 404 as a nonexistent id, and none of the outline leaks through.
+    assert "Inner Joins" not in resp.text
+    assert "Join condition" not in resp.text
+
+
+async def test_structure_is_returned_to_the_owning_teacher(client):
+    course_id = await _seed_course_with_structure(owner_email="teacher@demo.com")
+    token = await _token(client, "teacher@demo.com")
+    resp = await client.get(f"/courses/{course_id}/structure", headers=_auth(token))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["course_id"] == str(course_id)
+    assert body["name"] == "SQL Joins"
+    assert [ch["title"] for ch in body["chapters"]] == ["Inner Joins"]
+    assert [c["name"] for c in body["chapters"][0]["concepts"]] == ["Join condition"]

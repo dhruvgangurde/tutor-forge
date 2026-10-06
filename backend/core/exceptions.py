@@ -71,6 +71,19 @@ def _validation_detail(errors: list[dict]) -> str:
     return "; ".join(parts)
 
 
+def _strip_inputs(errors: list[dict]) -> list[dict]:
+    """
+    Drop Pydantic's ``input`` key from every validation error.
+
+    ``input`` is the raw submitted value — for a bad /auth/login or
+    /auth/register body that is the user's password, and for a body that is
+    not an object at all it is the entire payload. It must never reach a log
+    line or a response. Stripped globally rather than per-route or per-field
+    so a password can't leak through a route or field name nobody listed.
+    """
+    return [{k: v for k, v in err.items() if k != "input"} for err in errors]
+
+
 class DomainError(Exception):
     """
     Raised by service/business logic for an expected, client-safe validation
@@ -105,8 +118,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         # ours over it so a rejected request body is as traceable as any other
         # error, and so the body carries a string `detail` like every other
         # handler here (the frontend's getErrorMessage reads `detail`). The raw
-        # per-field errors are preserved under `errors`.
-        errors = jsonable_encoder(exc.errors())
+        # per-field errors are preserved under `errors`, minus the raw `input`
+        # values (see _strip_inputs) in both the log line and the response.
+        errors = _strip_inputs(jsonable_encoder(exc.errors()))
         with bind_request_id(request) as rid:
             logger.warning(
                 "Request validation failed on %s %s: %s",

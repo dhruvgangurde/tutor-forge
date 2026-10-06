@@ -27,6 +27,7 @@ from core.security import hash_password
 from db.models import (
     Assessment,
     Course,
+    Enrollment,
     Question,
     TutoringMessage,
     TutoringSession,
@@ -94,6 +95,12 @@ async def _seed_course(name: str = "Earth Science") -> uuid.UUID:
         ).scalar_one()
         course = Course(name=name, owner_id=owner.id, status="ready")
         db.add(course)
+        await db.flush()
+        # Course access requires an enrollment; the seeded student is in this class.
+        student = (
+            await db.execute(select(User).where(User.email == "student@demo.com"))
+        ).scalar_one()
+        db.add(Enrollment(course_id=course.id, student_id=student.id))
         await db.commit()
         return course.id
 

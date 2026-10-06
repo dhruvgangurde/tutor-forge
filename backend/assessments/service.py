@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from courses.enrollment import enrolled_course_ids
 from db.models import Assessment, Course, Question
 
 if TYPE_CHECKING:
@@ -238,9 +239,12 @@ async def list_assessments_for_course(
 async def list_published_assessments(
     course_id: uuid.UUID | None,
     db: AsyncSession,
+    *,
+    student_id: uuid.UUID,
 ) -> list[Assessment]:
     """
-    Return published assessments (student view).
+    Return published assessments (student view) for courses the student is
+    enrolled in.
 
     If course_id is provided, filter to that course.
     Questions are eagerly loaded for question_count calculation.
@@ -253,7 +257,11 @@ async def list_published_assessments(
         select(Assessment)
         .options(selectinload(Assessment.questions))
         .join(Course, Assessment.course_id == Course.id)
-        .where(Assessment.status == "published", Course.archived_at.is_(None))
+        .where(
+            Assessment.status == "published",
+            Course.archived_at.is_(None),
+            Course.id.in_(enrolled_course_ids(student_id)),
+        )
     )
     if course_id:
         query = query.where(Assessment.course_id == course_id)

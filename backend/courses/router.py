@@ -8,12 +8,15 @@ Routes:
   GET    /courses                     — list courses owned by current teacher
   GET    /courses/{course_id}         — get course status/detail
   GET    /courses/{course_id}/structure — get full chapter/concept hierarchy
-  GET    /courses/available           — list ready courses available for tutoring (student only)
+  GET    /courses/available           — list ready courses the student is enrolled in (student only)
+  GET    /courses/{course_id}/enrollments              — course roster (owner only)
+  POST   /courses/{course_id}/enrollments              — enroll a student by email (owner only)
+  DELETE /courses/{course_id}/enrollments/{student_id} — remove a student (owner only)
 """
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +28,23 @@ from core.dependencies import (
     get_langfuse_client,
     get_retrieval_service,
 )
-from courses.schemas import CourseDetail, CourseStructure, CourseSummary, CourseUploadResponse
+from courses.enrollment import (
+    AlreadyEnrolledError,
+    NotEnrolledError,
+    StudentNotFoundError,
+    enroll_student,
+    enrolled_course_ids,
+    list_enrollments,
+    remove_enrollment,
+)
+from courses.schemas import (
+    CourseDetail,
+    CourseStructure,
+    CourseSummary,
+    CourseUploadResponse,
+    EnrollmentOut,
+    EnrollRequest,
+)
 from courses.lifecycle import (
     archive_course,
     deletion_impact,
@@ -143,10 +162,14 @@ async def list_available_courses(
     db: AsyncSession = Depends(get_db_session),
     student: User = Depends(require_student),
 ) -> list[CourseSummary]:
-    """List all ready (fully ingested) courses available for tutoring sessions."""
+    """List the ready (fully ingested) courses this student is enrolled in."""
     result = await db.execute(
         select(Course)
-        .where(Course.status == "ready", Course.archived_at.is_(None))
+        .where(
+            Course.status == "ready",
+            Course.archived_at.is_(None),
+            Course.id.in_(enrolled_course_ids(student.id)),
+        )
         .order_by(Course.created_at.desc())
     )
     return [
@@ -188,6 +211,7 @@ async def get_structure(
     db: AsyncSession = Depends(get_db_session),
     teacher: User = Depends(require_teacher),
 ) -> CourseStructure:
+    await _require_owned_course(course_id, teacher, db)
     structure = await get_course_structure(course_id, db)
     if structure is None:
         raise HTTPException(status_code=404, detail="Course not found.")
@@ -297,4 +321,69 @@ async def get_deletion_impact(
         "can_hard_delete": not impact.blocks_hard_delete,
         "impact": impact.as_dict(),
         "blocking_reason": impact.describe() if impact.blocks_hard_delete else None,
+    }
+
+
+# ── Enrollment (roster management, owner only) ────────────────────────────────
+
+
+@router.get("/{course_id}/enrollments", response_model=list[EnrollmentOut])
+async def get_enrollments(
+    course_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> list[EnrollmentOut]:
+    """Students currently enrolled in this course."""
+    await _require_owned_course(course_id, teacher, db)
+    return [
+        EnrollmentOut(student_id=user.id, email=user.email, enrolled_at=enrollment.enrolled_at)
+        for enrollment, user in await list_enrollments(course_id, db)
+    ]
+
+
+@router.post(
+    "/{course_id}/enrollments",
+    response_model=EnrollmentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_enrollment(
+    course_id: uuid.UUID,
+    body: EnrollRequest,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> EnrollmentOut:
+    """Enroll an existing student account in this course, by email."""
+    await _require_owned_course(course_id, teacher, db)
+    try:
+        enrollment, student = await enroll_student(course_id, body.email, db)
+    except StudentNotFoundError:
+        raise HTTPException(status_code=404, detail="No student account with that email.")
+    except AlreadyEnrolledError:
+        raise HTTPException(status_code=409, detail="That student is already enrolled in this course.")
+    return EnrollmentOut(
+        student_id=student.id, email=student.email, enrolled_at=enrollment.enrolled_at
+    )
+
+
+@router.delete("/{course_id}/enrollments/{student_id}", response_model=dict)
+async def delete_enrollment(
+    course_id: uuid.UUID,
+    student_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+    teacher: User = Depends(require_teacher),
+) -> dict:
+    """
+    Remove a student from this course. They lose access immediately; their
+    sessions, submissions and grades are kept.
+    """
+    await _require_owned_course(course_id, teacher, db)
+    try:
+        await remove_enrollment(course_id, student_id, db)
+    except NotEnrolledError:
+        raise HTTPException(status_code=404, detail="That student is not enrolled in this course.")
+    return {
+        "course_id": str(course_id),
+        "student_id": str(student_id),
+        "action": "removed",
+        "message": "Student removed. Their existing work and grades are kept.",
     }

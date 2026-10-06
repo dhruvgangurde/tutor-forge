@@ -49,7 +49,9 @@ export function CoursePickerModal({
           {isLoadingCourses ? (
             <Spinner label="Loading available courses..." />
           ) : courses.length === 0 ? (
-            <p className="modal-empty">No courses available. Check back when courses are ready.</p>
+            <p className="modal-empty">
+              You're not enrolled in any ready courses yet. Ask your teacher to add you.
+            </p>
           ) : (
             <ul className="course-picker-list">
               {courses.map((course) => (

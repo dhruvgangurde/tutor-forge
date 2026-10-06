@@ -392,6 +392,21 @@ export interface CourseDeletionImpact {
   blocking_reason: string | null
 }
 
+/** Backend: GET/POST /courses/{course_id}/enrollments (teacher only, owner-scoped) */
+export interface Enrollment {
+  student_id: string
+  email: string
+  enrolled_at: string
+}
+
+/** Backend: DELETE /courses/{course_id}/enrollments/{student_id} */
+export interface EnrollmentRemovedAck {
+  course_id: string
+  student_id: string
+  action: 'removed'
+  message: string
+}
+
 export interface CourseLifecycleAck {
   course_id: string
   action: 'archived' | 'restored' | 'deleted'

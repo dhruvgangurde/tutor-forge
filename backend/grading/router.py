@@ -3,9 +3,10 @@ grading/router.py
 ------------------
 REST endpoints for the Grading Agent.
 
-All endpoints require authentication. The approve/override endpoints additionally
-require the caller to be the assessment's owning teacher (enforced via
-_require_teacher_owns_submission).
+All endpoints require the teacher role (require_teacher). The per-submission
+endpoints additionally require the caller to be the assessment's owning teacher
+(enforced via _require_teacher_owns_submission); the queue is scoped to courses
+the caller owns.
 
 Endpoints
 ---------
@@ -24,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from auth.service import get_current_user
+from auth.service import require_teacher
 from core.dependencies import get_db_session, get_langfuse_client, get_retrieval_service, get_gemini_pro
 from db.models import Assessment, Course, Submission, User
 from grading.schemas import (
@@ -113,7 +114,7 @@ async def grade_submission(
     request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_teacher),
 ) -> GradingAck:
     """
     Validates the submission and enqueues a background grading task.
@@ -156,7 +157,7 @@ async def grade_submission(
 )
 async def get_grading_queue(
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_teacher),
 ) -> list[GradingQueueItem]:
     try:
         items = await list_grading_queue(
@@ -200,7 +201,7 @@ async def get_grading_queue(
 async def get_grading_recommendation(
     submission_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_teacher),
 ) -> GradingDetail:
     # Ownership check
     await _require_teacher_owns_submission(submission_id, current_user, db)
@@ -273,7 +274,7 @@ async def approve_grade(
     submission_id: uuid.UUID,
     body: ApproveRequest,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_teacher),
 ) -> FinalGradeResponse:
     sub = await _require_teacher_owns_submission(submission_id, current_user, db)
 
@@ -322,7 +323,7 @@ async def override_grade(
     submission_id: uuid.UUID,
     body: OverrideRequest,
     db: AsyncSession = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_teacher),
 ) -> FinalGradeResponse:
     await _require_teacher_owns_submission(submission_id, current_user, db)
 

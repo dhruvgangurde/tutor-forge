@@ -63,6 +63,7 @@ from assessments.service import (
 )
 from agents.assessment.nodes import _strip_option_prefix
 from auth.service import require_student, require_teacher
+from courses.enrollment import is_enrolled
 from core.context_phrasing import strip_context_references
 from progress.tagging import load_course_concepts, retag_question_after_edit
 from core.dependencies import (
@@ -217,7 +218,7 @@ async def list_published_assessments_endpoint(
 
     Optional course_id query param filters to a single course.
     """
-    assessments = await list_published_assessments(course_id, db)
+    assessments = await list_published_assessments(course_id, db, student_id=student.id)
 
     # Hydrate with course names
     course_ids = {a.course_id for a in assessments}
@@ -345,6 +346,12 @@ async def get_assessment_for_student(
         await db.execute(select(Course).where(Course.id == assessment.course_id))
     ).scalar_one_or_none()
     if course is None or course.archived_at is not None:
+        raise HTTPException(
+            status_code=404, detail="Assessment not found or not published."
+        )
+    # Not enrolled in the assessment's course: the same not-found, so an
+    # assessment id from another course confirms nothing.
+    if not await is_enrolled(db, student_id=student.id, course_id=course.id):
         raise HTTPException(
             status_code=404, detail="Assessment not found or not published."
         )
@@ -478,6 +485,10 @@ async def submit_assessment(
         await db.execute(select(Course).where(Course.id == assessment.course_id))
     ).scalar_one_or_none()
     if course is None or course.archived_at is not None:
+        raise HTTPException(
+            status_code=404, detail="Assessment not found or not published."
+        )
+    if not await is_enrolled(db, student_id=student.id, course_id=course.id):
         raise HTTPException(
             status_code=404, detail="Assessment not found or not published."
         )

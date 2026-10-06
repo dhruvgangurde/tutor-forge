@@ -24,7 +24,7 @@ from assessments.schemas import GenerateRequest
 from core.database import Base
 from core.dependencies import get_db_session, get_gemini_flash, get_retrieval_service
 from core.security import hash_password
-from db.models import Assessment, Course, User
+from db.models import Assessment, Course, Enrollment, User
 from main import app
 
 # ── Test database ─────────────────────────────────────────────────────────────
@@ -145,6 +145,9 @@ async def setup_db():
             status="ready",
         )
         db.add(course)
+        await db.flush()
+        # Course access requires an enrollment; the seeded student is in this class.
+        db.add(Enrollment(course_id=course.id, student_id=student.id))
         await db.commit()
 
     yield
