@@ -16,6 +16,8 @@ export function TutorPage() {
   // Derive hint level from messages
   const hintLevel =
     messages && messages.length > 0 ? Math.max(...messages.map((m) => m.hint_level), 0) : 0
+  // A hint needs a question to build on; the backend 400s without one.
+  const hasQuestion = (messages ?? []).some((m) => m.role === 'student')
 
   if (isLoading) return <Spinner label="Loading session…" />
   if (isError) return <ErrorBanner message={getErrorMessage(error)} />
@@ -35,16 +37,31 @@ export function TutorPage() {
         <ChatThread messages={messages ?? []} isLoading={isLoading} />
 
         <div className="tutor-controls">
+          {/* A failed hint used to be an unhandled promise rejection with
+              nothing on screen. The mutation's error is shown here instead. */}
+          {requestHint.isError && (
+            <ErrorBanner
+              message={getErrorMessage(requestHint.error, 'Could not get a hint. Please try again.')}
+            />
+          )}
+
           <HintButton
             currentHintLevel={hintLevel}
+            hasQuestion={hasQuestion}
             onRequestHint={async () => {
-              await requestHint.mutateAsync()
+              try {
+                await requestHint.mutateAsync()
+              } catch {
+                // Surfaced via requestHint.isError above.
+              }
             }}
             isLoading={requestHint.isPending}
           />
 
           <ChatInput
             onSendMessage={async (question) => {
+              // A new question makes any earlier hint error stale.
+              requestHint.reset()
               await sendChat.mutateAsync(question)
             }}
             isLoading={sendChat.isPending}

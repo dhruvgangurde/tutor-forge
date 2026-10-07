@@ -165,6 +165,14 @@ class RubricCriterionDetail(BaseModel):
 # ── Response: question detail (used in draft/preview) ────────────────────────
 
 class QuestionDetail(BaseModel):
+    """
+    One question as the owning TEACHER sees it in the draft/preview.
+
+    Includes the answer key: a teacher reviewing a generated assessment has to
+    be able to see -- and correct -- what the grader will treat as right before
+    students are graded against it. The student take view is a separate schema
+    (StudentQuestion) that never carries the key.
+    """
     id: uuid.UUID
     question_type: str
     stem: str
@@ -173,6 +181,11 @@ class QuestionDetail(BaseModel):
     difficulty: str | None
     max_points: float
     rubric_criteria: list[RubricCriterionDetail]
+    # From Question.answer_key. MCQ: the letter the grader matches exactly
+    # (strip + upper) against the student's choice. Numeric / short answer:
+    # the expected answer text. None when no key is stored.
+    correct_answer: str | None = None
+    worked_solution: str | None = None
 
 
 # ── Response: assessment summary (list view — no question content) ──────────────────

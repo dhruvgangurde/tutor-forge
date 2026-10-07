@@ -83,6 +83,7 @@ from db.models import (
     SubmissionResponse,
     User,
 )
+from grading.numeric import parse_numeric_answer
 from grading.service import trigger_grading
 
 logger = logging.getLogger(__name__)
@@ -681,6 +682,26 @@ async def get_student_submission(
 
 # ── Private helper ────────────────────────────────────────────────────────────
 
+def _answer_key_fields(question: Question) -> dict:
+    """
+    The teacher-visible parts of Question.answer_key, tolerating a missing or
+    unparseable key (shown as "no key" in the preview rather than failing the
+    whole draft).
+    """
+    try:
+        key = json.loads(question.answer_key) if question.answer_key else {}
+    except json.JSONDecodeError:
+        key = {}
+    if not isinstance(key, dict):
+        key = {}
+    answer = key.get("correct_answer")
+    solution = key.get("worked_solution")
+    return {
+        "correct_answer": str(answer) if answer is not None else None,
+        "worked_solution": str(solution) if solution is not None else None,
+    }
+
+
 def _assessment_to_draft(assessment: Assessment) -> AssessmentDraft:
     """Convert an Assessment ORM object to the AssessmentDraft response schema."""
     questions = assessment.questions or []
@@ -710,6 +731,7 @@ def _assessment_to_draft(assessment: Assessment) -> AssessmentDraft:
                     )
                     for rc in sorted(q.rubric_criteria, key=lambda x: x.order_index)
                 ],
+                **_answer_key_fields(q),
             )
             for q in sorted(questions, key=lambda x: x.order_index)
         ],
@@ -853,6 +875,16 @@ async def update_draft_question(
                         status_code=400,
                         detail="For an MCQ, correct_answer must be one of A, B, C, D.",
                     )
+            elif question.question_type == "numeric" and parse_numeric_answer(answer) is None:
+                # The grader can only compare numbers; any other key scores
+                # every student 0. Reject it here, where the teacher can fix it.
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "For a numeric question, the answer key must be a number or a "
+                        "comma-separated list of numbers, e.g. 20 or 3,27,38,43."
+                    ),
+                )
             key["correct_answer"] = answer
             updated.append("correct_answer")
         if body.worked_solution is not None:

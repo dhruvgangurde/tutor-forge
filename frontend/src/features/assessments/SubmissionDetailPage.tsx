@@ -2,6 +2,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useSubmissionDetail } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { Markdown } from '../../components/ui/Markdown'
+import { GradeStatus } from './GradeStatus'
+import { gradeState } from './gradeState'
 import styles from './assessments.module.css'
 
 export function SubmissionDetailPage() {
@@ -45,6 +47,8 @@ export function SubmissionDetailPage() {
     )
   }
 
+  const released = gradeState(submission).released
+
   return (
     <>
       <div className="page-header">
@@ -63,22 +67,14 @@ export function SubmissionDetailPage() {
 
             <div>
               <p className="text-sm text-gray-600">Status</p>
-              <p className={`font-medium ${submission.status === 'graded' ? 'text-green-600' : 'text-yellow-600'}`}>
-                {submission.status === 'pending_grading' ? 'Pending Review' : 'Graded'}
-              </p>
+              {/* No score (and no "0%") until the teacher finalizes it. */}
+              <GradeStatus submission={submission} showPercent />
+              {!released && (
+                <p className={styles.statusNote}>
+                  Your score will appear here once your teacher has reviewed it.
+                </p>
+              )}
             </div>
-
-            {submission.final_score !== undefined && submission.max_score !== undefined && (
-              <div>
-                <p className="text-sm text-gray-600">Score</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {submission.final_score} / {submission.max_score}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {Math.round((submission.final_score / submission.max_score) * 100)}%
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
@@ -109,8 +105,8 @@ export function SubmissionDetailPage() {
           ))}
         </div>
 
-        {/* Feedback (if graded) */}
-        {submission.status === 'graded' && submission.feedback && (
+        {/* Instructor feedback exists only once the grade is finalized. */}
+        {released && submission.feedback && (
           <div className={styles.feedbackCard}>
             <h2 className={styles.sectionTitle}>Instructor Feedback</h2>
             <Markdown className={styles.feedbackContent}>{submission.feedback}</Markdown>

@@ -3,6 +3,7 @@ import { useAssessmentDraft, usePublishAssessment } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { QuestionEditForm } from './QuestionEditForm'
+import { mcqKeyIndex } from './answerKey'
 import { Badge } from '../../components/ui/Badge'
 import { statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -15,9 +16,9 @@ interface AssessmentPreviewProps {
 }
 
 /**
- * Teacher preview of a generated assessment: questions, rubric criteria
- * (read-only — there is no rubric-editing endpoint on the backend), and a
- * publish action while the assessment is still a draft.
+ * Teacher preview of a generated assessment: questions, the answer key (the
+ * option marked correct, or the expected answer for numeric / short answer),
+ * rubric criteria, and a publish action while the assessment is still a draft.
  */
 export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -95,12 +96,37 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
                 {/* Options are stored as plain text; the letter comes from
                     position, exactly as the student-facing take page does it.
                     Rendering the raw string here would show no letter at all. */}
-                {q.options.map((opt, idx) => (
-                  <li key={`${idx}-${opt}`}>
-                    {String.fromCharCode(65 + idx)}. {opt}
-                  </li>
-                ))}
+                {q.options.map((opt, idx) => {
+                  // The option the grader will accept. A teacher has to be able
+                  // to check this at a glance before publishing: a generated
+                  // key can be wrong, and grading follows the key exactly.
+                  const isKey = idx === mcqKeyIndex(q.correct_answer, q.options?.length ?? 0)
+                  return (
+                    <li
+                      key={`${idx}-${opt}`}
+                      className={isKey ? 'question-option-correct' : undefined}
+                    >
+                      {String.fromCharCode(65 + idx)}. {opt}
+                      {isKey && <span className="answer-key-tag">✓ Marked correct</span>}
+                    </li>
+                  )
+                })}
               </ul>
+            )}
+
+            {q.question_type === 'mcq' &&
+              mcqKeyIndex(q.correct_answer, q.options?.length ?? 0) === null && (
+                <p className="field-error">
+                  No valid answer key
+                  {q.correct_answer ? ` (stored as “${q.correct_answer}”)` : ''} — students
+                  cannot score on this question. Edit it to mark the correct option.
+                </p>
+              )}
+
+            {q.question_type !== 'mcq' && q.correct_answer && (
+              <p className="answer-key-line">
+                <span className="answer-key-label">Answer key:</span> {q.correct_answer}
+              </p>
             )}
 
             {q.rubric_criteria.length > 0 && (
