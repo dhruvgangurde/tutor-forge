@@ -2,7 +2,7 @@
 
 > Grounded AI tutoring, assessment generation, and deterministic grading — with a strict *zero-hallucination* guarantee and mandatory teacher review.
 
-![Python](https://img.shields.io/badge/Python-3.11%20--%203.14-3776AB?logo=python&logoColor=white)
+![Python](<https://img.shields.io/badge/Python-3.11%20--%203.14-3776AB?logo=python&logoColor=white>)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
@@ -54,13 +54,13 @@ Every agent calls `is_grounded()` before invoking the LLM. Not grounded → refu
 
 ## Technology stack
 
-| Layer        | Technologies                                                                 |
-|--------------|------------------------------------------------------------------------------|
-| **Frontend** | React 18, TypeScript 5, Vite 5, TanStack Query, React Router, Axios, Vitest   |
-| **Backend**  | FastAPI, Uvicorn, Pydantic v2, SQLAlchemy 2 (async), Alembic                  |
-| **AI / ML**  | LangGraph, Google Gemini (Pro / Flash), Gemini embeddings, ChromaDB          |
-| **Data**     | PostgreSQL 16 (application data), ChromaDB (vector store)                     |
-| **Tooling**  | pytest, ruff, mypy, ESLint, Docker, GitHub Actions CI                         |
+| Layer              | Technologies                                                                |
+| ------------------ | --------------------------------------------------------------------------- |
+| **Frontend** | React 18, TypeScript 5, Vite 5, TanStack Query, React Router, Axios, Vitest |
+| **Backend**  | FastAPI, Uvicorn, Pydantic v2, SQLAlchemy 2 (async), Alembic                |
+| **AI / ML**  | LangGraph, Google Gemini (Pro / Flash), Gemini embeddings, ChromaDB         |
+| **Data**     | PostgreSQL 16 (application data), ChromaDB (vector store)                   |
+| **Tooling**  | pytest, ruff, mypy, ESLint, Docker, GitHub Actions CI                       |
 
 ## Project structure
 
@@ -134,29 +134,29 @@ npm run dev                # → http://localhost:5173
 
 ### Environment variables (backend)
 
-| Variable               | Default                  | Description                                             |
-|------------------------|--------------------------|---------------------------------------------------------|
-| `DATABASE_URL`         | —                        | PostgreSQL async URL (required)                         |
-| `GEMINI_API_KEY`       | —                        | Gemini API key (required for real LLM calls)            |
-| `GEMINI_PRO_MODEL`     | `gemini-2.5-pro`         | Gemini Pro model name                                   |
-| `GEMINI_FLASH_MODEL`   | `gemini-2.5-flash`       | Gemini Flash model name                                 |
-| `EMBEDDING_MODEL`      | `text-embedding-004`     | Embedding model name                                    |
-| `CHROMA_PERSIST_PATH`  | `data/chroma`            | ChromaDB persistence directory                          |
-| `JWT_SECRET_KEY`       | *(change in production)* | JWT signing secret                                      |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)  |
-| `LLM_PROVIDER`         | `mock`                   | AI backend: `mock` (offline stub) · `gemini` (real API, required in production) · `ollama` (local dev only) |
-| `OLLAMA_BASE_URL`      | `http://localhost:11434` | Ollama daemon URL (only used when `LLM_PROVIDER=ollama`) |
-| `OLLAMA_GENERATION_MODEL` | `qwen2.5:7b-instruct` | Local generation model                                  |
-| `OLLAMA_EMBEDDING_MODEL`  | `nomic-embed-text`    | Local embedding model (768-dim, matches Gemini)         |
+| Variable                    | Default                    | Description                                                                                                        |
+| --------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`            | —                         | PostgreSQL async URL (required)                                                                                    |
+| `GEMINI_API_KEY`          | —                         | Gemini API key (required for real LLM calls)                                                                       |
+| `GEMINI_PRO_MODEL`        | `gemini-2.5-pro`         | Gemini Pro model name                                                                                              |
+| `GEMINI_FLASH_MODEL`      | `gemini-2.5-flash`       | Gemini Flash model name                                                                                            |
+| `EMBEDDING_MODEL`         | `text-embedding-004`     | Embedding model name                                                                                               |
+| `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                     |
+| `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                 |
+| `CORS_ALLOWED_ORIGINS`    | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)                                                             |
+| `LLM_PROVIDER`            | `mock`                   | AI backend:`mock` (offline stub) · `gemini` (real API, required in production) · `ollama` (local dev only) |
+| `OLLAMA_BASE_URL`         | `http://localhost:11434` | Ollama daemon URL (only used when`LLM_PROVIDER=ollama`)                                                          |
+| `OLLAMA_GENERATION_MODEL` | `qwen2.5:7b-instruct`    | Local generation model                                                                                             |
+| `OLLAMA_EMBEDDING_MODEL`  | `nomic-embed-text`       | Local embedding model (768-dim, matches Gemini)                                                                    |
 
 ### Demo credentials
 
 Created by the seed script (`python -m db.seed`). Stored only in the database.
 
-| Role    | Email             | Password      |
-|---------|-------------------|---------------|
-| Teacher | teacher@demo.com  | `password123` |
-| Student | student@demo.com  | `password123` |
+| Role    | Email            | Password        |
+| ------- | ---------------- | --------------- |
+| Teacher | teacher@demo.com | `password123` |
+| Student | student@demo.com | `password123` |
 
 ## Running tests
 
