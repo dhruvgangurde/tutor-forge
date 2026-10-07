@@ -136,7 +136,7 @@ class OllamaClient:
 
     # ── Transport ─────────────────────────────────────────────────────────────
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, timeout: float | None = None) -> dict:
         """
         POST JSON to Ollama and return the decoded response.
 
@@ -151,7 +151,9 @@ class OllamaClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            with urllib.request.urlopen(
+                request, timeout=timeout if timeout is not None else self._timeout
+            ) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = ""
@@ -177,13 +179,24 @@ class OllamaClient:
         prompt: str,
         temperature: float = 0.7,
         system_instruction: str = "",
+        *,
+        timeout: float | None = None,
+        num_predict: int | None = None,
     ) -> str:
         """
-        Generate text. Signature matches GeminiProClient/GeminiFlashClient exactly.
+        Generate text. The positional signature matches GeminiProClient /
+        GeminiFlashClient exactly.
 
         `system_instruction` is threaded into Ollama's top-level `system` field,
         the analogue of Gemini's system-instruction channel. Empty string means
         no system field is sent at all (matching Gemini's `or None` behaviour).
+
+        Ollama-only, keyword-only extras, used by callers that already know they
+        are on the Ollama provider (ingestion's hierarchy step): `timeout`
+        overrides OLLAMA_TIMEOUT_SECONDS for this call -- a long structured
+        answer can legitimately take minutes on a laptop GPU -- and
+        `num_predict` caps the answer length so a runaway generation cannot run
+        on indefinitely. Both default to the existing behaviour.
         """
         payload: dict = {
             "model": self._model_name,
@@ -197,11 +210,13 @@ class OllamaClient:
                 "num_ctx": self._num_ctx,
             },
         }
+        if num_predict is not None:
+            payload["options"]["num_predict"] = num_predict
         if system_instruction:
             payload["system"] = system_instruction
 
         def _call() -> str:
-            data = self._post("/api/generate", payload)
+            data = self._post("/api/generate", payload, timeout=timeout)
             return data.get("response", "")
 
         return call_with_retry(
