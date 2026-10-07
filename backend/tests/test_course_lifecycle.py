@@ -534,6 +534,95 @@ async def test_an_empty_payload_is_rejected(client, teacher_token):
 
 
 @pytest.mark.asyncio
+async def test_teacher_draft_shows_the_answer_key(client, teacher_token):
+    # A teacher has to see what the grader will accept before publishing: a
+    # generated key can be wrong, and grading matches it exactly.
+    course_id = await _seed_course()
+    aid, mcq_id, sa_id = await _seed_draft_with_questions(course_id)
+    resp = await client.get(f"/assessments/{aid}", headers=_auth(teacher_token))
+    assert resp.status_code == 200
+    by_id = {q["id"]: q for q in resp.json()["questions"]}
+    assert by_id[str(mcq_id)]["correct_answer"] == "A"
+    assert by_id[str(mcq_id)]["worked_solution"] == "because"
+    assert by_id[str(sa_id)]["correct_answer"] == "x"
+
+
+@pytest.mark.asyncio
+async def test_correcting_the_mcq_key_persists_and_the_draft_shows_it(client, teacher_token):
+    course_id = await _seed_course()
+    aid, qid, _sa = await _seed_draft_with_questions(course_id)
+    resp = await client.patch(
+        f"/assessments/{aid}/questions/{qid}",
+        json={"correct_answer": "c"},  # normalised to the letter the grader matches
+        headers=_auth(teacher_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["updated_fields"] == ["correct_answer"]
+
+    draft = await client.get(f"/assessments/{aid}", headers=_auth(teacher_token))
+    q = next(x for x in draft.json()["questions"] if x["id"] == str(qid))
+    assert q["correct_answer"] == "C"
+    # The rest of the key survives a correct-answer edit.
+    assert q["worked_solution"] == "because"
+
+
+@pytest.mark.asyncio
+async def test_unparseable_answer_key_shows_as_no_key_rather_than_failing(client, teacher_token):
+    course_id = await _seed_course()
+    aid, qid, _sa = await _seed_draft_with_questions(course_id)
+    async with _Session() as db:
+        q = (await db.execute(select(Question).where(Question.id == qid))).scalar_one()
+        q.answer_key = "not json"
+        await db.commit()
+    resp = await client.get(f"/assessments/{aid}", headers=_auth(teacher_token))
+    assert resp.status_code == 200
+    q = next(x for x in resp.json()["questions"] if x["id"] == str(qid))
+    assert q["correct_answer"] is None
+
+
+async def _seed_numeric_question(assessment_id: uuid.UUID, key: str = "20") -> uuid.UUID:
+    async with _Session() as db:
+        q = Question(
+            assessment_id=assessment_id, question_type="numeric", stem="How many?",
+            answer_key=json.dumps({"correct_answer": key}), max_points=1.0, order_index=2,
+        )
+        db.add(q)
+        await db.commit()
+        return q.id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", ["7", "3,27,38,43", "[3, 27, 38, 43]"])
+async def test_numeric_key_accepts_a_number_or_a_list(client, teacher_token, key):
+    course_id = await _seed_course()
+    aid, _mcq, _sa = await _seed_draft_with_questions(course_id)
+    qid = await _seed_numeric_question(aid)
+    resp = await client.patch(
+        f"/assessments/{aid}/questions/{qid}", json={"correct_answer": key},
+        headers=_auth(teacher_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_numeric_key_that_is_not_a_number_is_rejected_with_a_clear_message(client, teacher_token):
+    # The grader can only compare numbers; anything else would score every
+    # student 0. Rejected at save time, where the teacher can fix it.
+    course_id = await _seed_course()
+    aid, _mcq, _sa = await _seed_draft_with_questions(course_id)
+    qid = await _seed_numeric_question(aid)
+    resp = await client.patch(
+        f"/assessments/{aid}/questions/{qid}", json={"correct_answer": "about twenty"},
+        headers=_auth(teacher_token),
+    )
+    assert resp.status_code == 400
+    assert "number or a comma-separated list of numbers" in resp.json()["detail"]
+    async with _Session() as db:
+        q = (await db.execute(select(Question).where(Question.id == qid))).scalar_one()
+    assert json.loads(q.answer_key)["correct_answer"] == "20"  # unchanged
+
+
+@pytest.mark.asyncio
 async def test_mcq_correct_answer_must_be_a_letter(client, teacher_token):
     course_id = await _seed_course()
     aid, qid, _sa = await _seed_draft_with_questions(course_id)

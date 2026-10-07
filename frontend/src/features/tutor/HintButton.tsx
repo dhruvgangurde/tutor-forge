@@ -5,7 +5,15 @@ interface HintButtonProps {
   maxHintLevel?: number
   onRequestHint: () => Promise<void>
   isLoading?: boolean
+  /**
+   * Whether the student has asked anything yet. A hint builds on the latest
+   * question, and the backend answers 400 without one -- which used to fail
+   * silently. Defaults to true so other callers keep their behaviour.
+   */
+  hasQuestion?: boolean
 }
+
+export const HINT_NEEDS_QUESTION = 'Ask a question first — hints build on your most recent question.'
 
 /**
  * Top of the ladder. Mirrors MAX_HINT_LEVEL in
@@ -37,9 +45,11 @@ export function HintButton({
   maxHintLevel = MAX_HINT_LEVEL,
   onRequestHint,
   isLoading,
+  hasQuestion = true,
 }: HintButtonProps) {
   const canRequestHint = currentHintLevel < maxHintLevel
   const nextLevel = currentHintLevel + 1
+  const blockedReason = hasQuestion ? undefined : HINT_NEEDS_QUESTION
 
   return (
     <div className="hint-button-container">
@@ -48,18 +58,28 @@ export function HintButton({
         <Badge variant="info">{levelLabel(currentHintLevel)}</Badge>
       </div>
       {canRequestHint && (
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={onRequestHint}
-          disabled={isLoading}
-        >
-          {isLoading
-            ? nextLevel >= FULL_EXPLANATION_LEVEL
-              ? 'Working through it...'
-              : 'Requesting hint...'
-            : buttonLabel(nextLevel)}
-        </button>
+        // The tooltip sits on a wrapper: browsers do not fire hover events on
+        // a disabled button, so a title on the button itself never shows.
+        <span title={blockedReason}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={onRequestHint}
+            disabled={isLoading || !hasQuestion}
+            aria-describedby={blockedReason ? 'hint-needs-question' : undefined}
+          >
+            {isLoading
+              ? nextLevel >= FULL_EXPLANATION_LEVEL
+                ? 'Working through it...'
+                : 'Requesting hint...'
+              : buttonLabel(nextLevel)}
+          </button>
+          {blockedReason && (
+            <span id="hint-needs-question" className="sr-only">
+              {blockedReason}
+            </span>
+          )}
+        </span>
       )}
       {!canRequestHint && (
         <span className="hint-max">

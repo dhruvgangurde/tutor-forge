@@ -132,6 +132,13 @@ export interface QuestionDetail {
   difficulty: string | null
   max_points: number
   rubric_criteria: RubricCriterionDetail[]
+  /**
+   * Teacher draft only (never in the student take view). MCQ: the letter the
+   * grader matches exactly against the student's choice. Numeric / short
+   * answer: the expected answer text. Null when no key is stored.
+   */
+  correct_answer?: string | null
+  worked_solution?: string | null
 }
 
 export interface AssessmentSummary {
@@ -216,8 +223,9 @@ export interface StudentSubmissionSummary {
   course_name: string
   submitted_at: string
   status: string // "pending_grading" | "graded"
-  final_score?: number
-  max_score?: number
+  /** null until the teacher finalizes the grade (the API sends null, not undefined). */
+  final_score?: number | null
+  max_score?: number | null
 }
 
 export interface StudentSubmissionResponse {
@@ -238,8 +246,9 @@ export interface StudentSubmissionDetail {
   submitted_at: string
   status: string // "pending_grading" | "graded"
   responses: StudentSubmissionResponse[]
-  final_score?: number
-  max_score?: number
+  /** null until the teacher finalizes the grade (the API sends null, not undefined). */
+  final_score?: number | null
+  max_score?: number | null
   graded_at?: string
   feedback?: string
 }

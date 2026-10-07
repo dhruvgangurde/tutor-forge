@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useAssessmentForStudent, useSubmitAssessment } from './hooks'
+import { useAssessmentForStudent, useMySubmissions, useSubmitAssessment } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { GradeStatus } from './GradeStatus'
 import type { StudentQuestion, SubmissionResponseItem } from '../../lib/api/types'
 import { getErrorMessage } from '../../lib/api/errors'
 import styles from './assessments.module.css'
@@ -13,6 +15,9 @@ export function AssessmentTakePage() {
   // Student-scoped route: the teacher-only GET /assessments/{id} that this
   // used to call returns 403 for a student, which rendered as "not found".
   const { data: assessment, isLoading, error } = useAssessmentForStudent(assessmentId || '')
+  // Each assessment is submitted once. Without this check a submitted quiz
+  // opened as a fresh attempt and only failed (409) at the final submit.
+  const mySubmissions = useMySubmissions()
   const submitMutation = useSubmitAssessment()
 
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -24,7 +29,7 @@ export function AssessmentTakePage() {
     return <div className="text-center py-8">Invalid assessment ID</div>
   }
 
-  if (isLoading) {
+  if (isLoading || mySubmissions.isLoading) {
     return (
       <>
         <div className="page-header">
@@ -32,6 +37,48 @@ export function AssessmentTakePage() {
         </div>
         <div className="flex justify-center py-8">
           <Spinner />
+        </div>
+      </>
+    )
+  }
+
+  const existing = mySubmissions.data?.find((s) => s.assessment_id === assessmentId)
+  if (existing) {
+    return (
+      <>
+        <div className="page-header">
+          <h1 className="page-title">{assessment?.title ?? existing.assessment_title}</h1>
+          <p className="page-subtitle">{existing.course_name}</p>
+        </div>
+        <div className={styles.noticeCard} role="status">
+          <h2>You have already submitted this assessment</h2>
+          <p>
+            Each assessment can be submitted once. You submitted this one on{' '}
+            {new Date(existing.submitted_at).toLocaleString()}.
+          </p>
+          <GradeStatus
+            submission={existing}
+            showPercent
+            leading={
+              <span className={`${styles.statusPill} ${styles.statusSubmitted}`}>Submitted</span>
+            }
+          />
+          <div className={styles.noticeActions}>
+            <button
+              type="button"
+              className={styles.cardButton}
+              onClick={() => navigate(`/assessments/submissions/${existing.submission_id}`)}
+            >
+              View your submission
+            </button>
+            <button
+              type="button"
+              className={styles.cardButtonSecondary}
+              onClick={() => navigate('/assessments')}
+            >
+              Back to Assessments
+            </button>
+          </div>
         </div>
       </>
     )
@@ -165,6 +212,19 @@ export function AssessmentTakePage() {
           })}
         </div>
 
+        {/* Above the buttons, styled, where it is seen. Surfaces the server's
+            actual detail (same helper the tutor chat uses) -- a hardcoded
+            string hid real causes such as a 409 duplicate submission (e.g.
+            submitted from another tab) or a 422 validation failure. */}
+        {submitMutation.error && (
+          <ErrorBanner
+            message={getErrorMessage(
+              submitMutation.error,
+              'Error submitting assessment. Please try again.'
+            )}
+          />
+        )}
+
         <div className={styles.buttonGroup}>
           <button
             onClick={() => setIsReviewing(false)}
@@ -180,20 +240,6 @@ export function AssessmentTakePage() {
             {submitMutation.isPending ? 'Submitting...' : 'Submit Assessment'}
           </button>
         </div>
-
-        {submitMutation.error && (
-          <div className="text-center py-4 text-red-600">
-            {/* Surface the server's actual detail (same helper the tutor chat
-                error path uses) — a hardcoded string hid real causes such as
-                a 409 duplicate submission or a 422 validation failure. */}
-            <p>
-              {getErrorMessage(
-                submitMutation.error,
-                'Error submitting assessment. Please try again.'
-              )}
-            </p>
-          </div>
-        )}
 
         <ConfirmDialog
           open={showSubmitConfirm}
@@ -343,12 +389,15 @@ function NumericQuestion({ value, onChange }: { value: string; onChange: (text: 
   return (
     <fieldset>
       <legend className="sr-only">Enter your numeric answer</legend>
+      {/* Text, not type="number": some answers are an ordered list of
+          numbers ("3, 27, 38, 43"), and a number input refuses commas. The
+          grader parses a single number or a comma-separated list. */}
       <input
-        type="number"
-        inputMode="decimal"
+        type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Enter a number..."
+        placeholder="Enter a number (separate several values with commas)"
+        aria-label="Numeric answer"
         className={styles.numberInput}
       />
     </fieldset>

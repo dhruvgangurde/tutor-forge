@@ -1,5 +1,5 @@
 import { Badge } from '../../components/ui/Badge'
-import { statusToVariant } from '../../lib/statusVariant'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import type { GradingQueueItem } from '../../lib/api/types'
 
 interface GradingQueueProps {
@@ -35,7 +35,7 @@ export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps)
               {item.recommended_score} / {item.max_score}
             </td>
             <td>
-              <Badge variant={statusToVariant(item.status)}>{item.status}</Badge>
+              <Badge variant={statusToVariant(item.status)}>{statusLabel(item.status)}</Badge>
             </td>
             <td>
               {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : '—'}

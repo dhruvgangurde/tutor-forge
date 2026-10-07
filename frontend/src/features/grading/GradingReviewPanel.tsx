@@ -5,7 +5,7 @@ import { Badge } from '../../components/ui/Badge'
 import { Markdown } from '../../components/ui/Markdown'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
-import { statusToVariant } from '../../lib/statusVariant'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
 import { useToast } from '../../hooks/useToast'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -118,7 +118,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
     <div className="grading-review">
       <div className="card-header-row">
         <h3 className="card-title">{data.assessment_title ?? 'Submission'}</h3>
-        <Badge variant={statusToVariant(data.status)}>{data.status}</Badge>
+        <Badge variant={statusToVariant(data.status)}>{statusLabel(data.status)}</Badge>
       </div>
 
       <p className="card-meta">
