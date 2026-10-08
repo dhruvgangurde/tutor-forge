@@ -68,6 +68,15 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
         <Badge variant={statusToVariant(draft.status)}>{statusLabel(draft.status)}</Badge>
       </div>
 
+      {/* Every draft, not only one with a broken key: a generated key can be
+          wrong while still naming a real option. */}
+      {draft.status === 'draft' && (
+        <p className="answer-key-notice">
+          <AlertIcon size={18} className="answer-key-warning-icon" />
+          Check every answer key before you publish.
+        </p>
+      )}
+
       <ol className="question-list">
         {draft.questions.map((q, idx) => (
           <li key={q.id} className="question-item">
