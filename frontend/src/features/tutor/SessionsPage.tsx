@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSessions, useCreateSession } from './hooks'
 import { CoursePickerModal } from './CoursePickerModal'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonCards } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -66,14 +66,11 @@ export function SessionsPage() {
         />
       )}
 
-      {isLoading && <Spinner label="Loading sessions…" />}
+      {isLoading && <SkeletonCards label="Loading sessions…" count={3} />}
       {isError && <ErrorBanner message={getErrorMessage(error)} />}
 
       {!isLoading && !isError && sessions && sessions.length === 0 && (
-        <EmptyState
-          icon="🧑‍🏫"
-          label="No tutoring sessions yet. Start your first session!"
-        />
+        <EmptyState label="No tutoring sessions yet. Start your first session!" />
       )}
 
       {!isLoading && !isError && sessions && sessions.length > 0 && (
@@ -85,12 +82,10 @@ export function SessionsPage() {
               className="session-card"
               onClick={() => navigate(`/tutor/${session.id}`)}
             >
-              <div className="session-card-header">
-                <h3 className="session-title">
-                  {session.title ?? 'New session — no questions yet'}
-                </h3>
-                <span className="session-course">{session.course_name}</span>
-              </div>
+              <span className="session-course">{session.course_name}</span>
+              <h3 className="session-title">
+                {session.title ?? 'New session — no questions yet'}
+              </h3>
               <p className="session-meta">
                 {session.message_count > 0
                   ? `${plural(session.message_count, 'message')} · last active ${new Date(session.last_activity_at).toLocaleDateString()}`

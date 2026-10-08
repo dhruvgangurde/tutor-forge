@@ -1,4 +1,4 @@
-import { Badge } from '../../components/ui/Badge'
+import { LightbulbIcon } from '../../components/ui/icons'
 
 interface HintButtonProps {
   currentHintLevel: number
@@ -53,14 +53,10 @@ export function HintButton({
 
   return (
     <div className="hint-button-container">
-      <div className="hint-status">
-        <span className="hint-label">Hint level:</span>
-        <Badge variant="info">{levelLabel(currentHintLevel)}</Badge>
-      </div>
       {canRequestHint && (
         // The tooltip sits on a wrapper: browsers do not fire hover events on
         // a disabled button, so a title on the button itself never shows.
-        <span title={blockedReason}>
+        <span title={blockedReason} className="hint-button-wrap">
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -68,17 +64,24 @@ export function HintButton({
             disabled={isLoading || !hasQuestion}
             aria-describedby={blockedReason ? 'hint-needs-question' : undefined}
           >
+            <LightbulbIcon size={16} />
             {isLoading
               ? nextLevel >= FULL_EXPLANATION_LEVEL
                 ? 'Working through it...'
                 : 'Requesting hint...'
               : buttonLabel(nextLevel)}
           </button>
-          {blockedReason && (
-            <span id="hint-needs-question" className="sr-only">
-              {blockedReason}
-            </span>
-          )}
+        </span>
+      )}
+      {blockedReason && canRequestHint ? (
+        // The existing reason, now visible beside the disabled button.
+        <span id="hint-needs-question" className="hint-reason">
+          {blockedReason}
+        </span>
+      ) : (
+        <span className="hint-status">
+          <span className="hint-label">Hint level:</span>{' '}
+          <span className="hint-level">{levelLabel(currentHintLevel)}</span>
         </span>
       )}
       {!canRequestHint && (

@@ -21,6 +21,7 @@ vi.mock('./hooks', () => ({
   useMessages: () => ({ data: messages, isLoading: false, isError: false, error: null }),
   useSendChat: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
   useRequestHint: () => hint,
+  useSessions: () => ({ data: [] }),
 }))
 
 function studentQuestion(): TutoringMessageOut {

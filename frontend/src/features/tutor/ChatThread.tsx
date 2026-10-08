@@ -1,10 +1,42 @@
 import { Fragment, useEffect, useRef } from 'react'
 import { ChatBubble } from './ChatBubble'
+import { BookIcon } from '../../components/ui/icons'
 import type { TutoringMessageOut } from '../../lib/api/types'
 
 interface ChatThreadProps {
   messages: TutoringMessageOut[]
   isLoading?: boolean
+  /** A question or hint is in flight: show the quiet "Thinking" tutor slot. */
+  isReplying?: boolean
+}
+
+/** The tutor's note, shown in the page header and in the empty chat. */
+export const TUTOR_NOTE =
+  'The tutor asks questions rather than giving answers, and only uses your course material.'
+
+/**
+ * Placeholder in the tutor's slot while a reply is generated. The dots pulse
+ * only when motion is allowed; under prefers-reduced-motion it is static text.
+ */
+function ThinkingSlot() {
+  return (
+    <div className="chat-bubble-row tutor">
+      <div className="chat-bubble tutor thinking">
+        <div className="tutor-label">
+          <BookIcon size={15} />
+          <span>Tutor</span>
+        </div>
+        <p className="thinking-text">
+          Thinking
+          <span className="thinking-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </p>
+      </div>
+    </div>
+  )
 }
 
 /**
@@ -18,14 +50,14 @@ interface ChatThreadProps {
  * one. The marker stands in for the action the student took, which is the
  * information that was actually missing.
  */
-export function ChatThread({ messages, isLoading }: ChatThreadProps) {
+export function ChatThread({ messages, isLoading, isReplying = false }: ChatThreadProps) {
   const threadRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight
     }
-  }, [messages])
+  }, [messages, isReplying])
 
   if (isLoading) {
     return <div className="chat-thread-loading">Loading conversation...</div>
@@ -33,8 +65,10 @@ export function ChatThread({ messages, isLoading }: ChatThreadProps) {
 
   if (messages.length === 0) {
     return (
-      <div className="chat-thread-empty">
-        <p>Start a conversation by asking a question!</p>
+      <div className="chat-thread chat-thread-empty" ref={threadRef}>
+        <h2 className="chat-empty-prompt">What would you like to work through today?</h2>
+        <p className="chat-empty-note">{TUTOR_NOTE}</p>
+        {isReplying && <ThinkingSlot />}
       </div>
     )
   }
@@ -80,6 +114,7 @@ export function ChatThread({ messages, isLoading }: ChatThreadProps) {
           </Fragment>
         )
       })}
+      {isReplying && <ThinkingSlot />}
     </div>
   )
 }

@@ -223,9 +223,14 @@ describe('ChatThread rendering', () => {
   })
 
   it('shows the empty state with no messages', () => {
+    // Restyle phase 3b: the approved empty-chat copy replaced
+    // "Start a conversation by asking a question!".
     render(<ChatThread messages={[]} />)
     expect(
-      screen.getByText('Start a conversation by asking a question!')
+      screen.getByRole('heading', { name: 'What would you like to work through today?' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('The tutor asks questions rather than giving answers, and only uses your course material.')
     ).toBeInTheDocument()
   })
 })

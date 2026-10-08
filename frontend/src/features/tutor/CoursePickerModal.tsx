@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getAvailableCourses } from '../../lib/api/courses'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
 import type { CourseSummary } from '../../lib/api/types'
@@ -47,7 +47,7 @@ export function CoursePickerModal({
 
         <div className="modal-body">
           {isLoadingCourses ? (
-            <Spinner label="Loading available courses..." />
+            <SkeletonRows label="Loading available courses..." rows={2} columns={2} />
           ) : courses.length === 0 ? (
             <p className="modal-empty">
               You're not enrolled in any ready courses yet. Ask your teacher to add you.

@@ -58,16 +58,11 @@
      new palette at once. Removed as components are rebuilt (tracked per phase);
      none may remain after Phase 6. */
   --clr-bg:           var(--bg);
-  --clr-surface:      var(--surface);
   --clr-surface-2:    var(--surface-2);
   --clr-border:       var(--line);
   --clr-border-light: var(--line-strong);
-  --clr-primary:      var(--accent);
-  --clr-primary-h:    var(--accent);
   --clr-accent:       var(--info);
   --clr-success:      var(--accent);
-  --clr-warning:      var(--amber);
-  --clr-danger:       var(--red);
   --clr-text:         var(--ink);
   --clr-text-muted:   var(--muted);
   --clr-text-dim:     var(--muted);
@@ -938,46 +933,6 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--ink);
 }
 
-/* ── Chat bubbles (Tutor) ───────────────────────────────────────────────────────── */
-.chat-thread {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.chat-bubble-row {
-  display: flex;
-}
-
-.chat-bubble-row.student { justify-content: flex-end; }
-.chat-bubble-row.tutor   { justify-content: flex-start; }
-
-.chat-bubble {
-  max-width: 70%;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.chat-bubble.student {
-  background: var(--surface-2);
-  color: var(--ink);
-  border-bottom-right-radius: var(--radius-sm);
-}
-
-.chat-bubble.tutor {
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
-  color: var(--clr-text);
-  border-bottom-left-radius: var(--radius-sm);
-}
-
-.chat-bubble.refusal {
-  background: var(--amber-soft);
-  border: 1px solid var(--line-strong);
-}
-
 /* ── Page header row (title + action button/badge on one line) ─────────────────── */
 .page-header-row {
   display: flex;
@@ -1436,86 +1391,132 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 .mastery-bar-fill[data-band="warning"] { background: var(--amber); }
 .mastery-bar-fill[data-band="danger"]  { background: var(--red); }
 
-/* ── Tutoring Interface ─────────────────────────────────────────────────────────── */
-.tutor-container {
+/* ── Tutor chat ─────────────────────────────────────────────────────────────── */
+/* The page fills the viewport below the top bar: header, a scrolling thread,
+   and the composer docked at the bottom. */
+.tutor-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 300px);
+  max-width: 860px;
+  margin: 0 auto;
+  height: calc(100vh - 64px - 2 * var(--space-12));
+  min-height: 520px;
+}
+
+.tutor-skeleton {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
+}
+
+.tutor-header {
+  flex-shrink: 0;
+  margin-bottom: var(--space-3);
+}
+
+.tutor-header .back-link { margin-bottom: var(--space-2); }
+
+.tutor-course {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.tutor-title {
+  font-size: 2rem;
+  margin-top: var(--space-1);
 }
 
 .chat-thread {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-4) 0;
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  background: var(--surface);
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-1) var(--space-6);
 }
 
-.chat-thread-empty,
-.chat-thread-loading {
-  display: flex;
-  align-items: center;
+/* Empty chat: a serif prompt and the tutor's note; no suggestion chips. */
+.chat-thread-empty {
   justify-content: center;
-  height: 200px;
-  color: var(--clr-text-muted);
-  font-size: 0.9rem;
+}
+
+.chat-empty-prompt {
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
+  max-width: 20ch;
+}
+
+.chat-empty-note {
+  margin-top: var(--space-3);
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: 1.0625rem;
+}
+
+.chat-thread-loading {
+  padding: var(--space-6) 0;
+  color: var(--muted);
 }
 
 .chat-bubble-row {
   display: flex;
-  margin-bottom: var(--space-2);
 }
 
-.chat-bubble-row.student {
-  justify-content: flex-end;
-}
-
-.chat-bubble-row.tutor {
-  justify-content: flex-start;
-}
+.chat-bubble-row.student { justify-content: flex-end; }
+.chat-bubble-row.tutor   { justify-content: flex-start; }
 
 .chat-bubble {
-  max-width: 70%;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-lg);
-  font-size: 0.9rem;
+  max-width: 75%;
+  color: var(--ink);
+  font-size: 1.0625rem;
   line-height: 1.6;
-  word-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
+/* Student: a --surface-2 bubble (muted secondary text, never --tertiary). */
 .chat-bubble.student {
+  padding: var(--space-3) var(--space-5);
   background: var(--surface-2);
-  color: var(--ink);
+  border-radius: var(--radius-lg);
   border-bottom-right-radius: var(--radius-sm);
 }
 
+/* Tutor: plain text on the page under the TUTOR label. */
 .chat-bubble.tutor {
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
-  color: var(--clr-text);
-  border-bottom-left-radius: var(--radius-sm);
+  max-width: 88%;
 }
 
 .chat-bubble.refusal {
+  padding: var(--space-3) var(--space-4);
   background: var(--amber-soft);
-  border: 1px solid var(--line-strong);
-  color: var(--clr-warning);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-md);
 }
 
 .chat-bubble p {
   margin: 0 0 var(--space-2) 0;
 }
 
+.tutor-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-1);
+  color: var(--accent);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .message-time {
-  font-size: 0.75rem;
-  color: var(--clr-text-dim);
   margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: 0.8125rem;
 }
 
 /* The student bubble is --surface-2; use the secondary-text token on it. */
@@ -1523,83 +1524,66 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--muted);
 }
 
+/* Generating: a quiet "Thinking" line in the tutor slot. */
+.thinking-text {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+}
+
+.thinking-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: thinking-pulse 1.2s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes thinking-pulse {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+/* Under reduced motion it is static text only. */
+@media (prefers-reduced-motion: reduce) {
+  .thinking-dots { display: none; }
+}
+
 .citations {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.citation-badge {
-  display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--info-soft);
-  border: 1px solid var(--line-strong);
-  font-size: 0.7rem;
-  color: var(--clr-accent);
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
+/* Teacher grading evidence chips (Phase 4 restyles the grading view). */
 .citation-file {
   font-weight: 600;
 }
 
 .citation-confidence {
   font-weight: 600;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
+  color: var(--muted);
 }
 
-.citation-confidence[data-confidence="100"] {
-  color: var(--clr-success);
-}
-
-.citation-confidence[data-confidence="75"],
-.citation-confidence[data-confidence="80"],
-.citation-confidence[data-confidence="85"],
-.citation-confidence[data-confidence="90"],
-.citation-confidence[data-confidence="95"] {
-  color: var(--clr-accent);
-}
-
-.citation-confidence[data-confidence="50"],
-.citation-confidence[data-confidence="60"],
-.citation-confidence[data-confidence="70"] {
-  color: var(--clr-warning);
-}
-
-.tutor-controls {
+/* Docked composer: field on top, Hint and Send on one row below. */
+.tutor-composer {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-}
-
-.hint-button-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-3);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-md);
-}
-
-.hint-status {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.hint-label {
-  font-size: 0.9rem;
-  color: var(--clr-text-muted);
-  font-weight: 500;
-}
-
-.hint-max {
-  font-size: 0.9rem;
-  color: var(--clr-text-dim);
+  padding-top: var(--space-3);
 }
 
 .chat-input-container {
@@ -1608,71 +1592,104 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   gap: var(--space-2);
 }
 
-.chat-input-form {
+.composer {
   display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-}
-
-.chat-input-field {
-  flex: 1;
+  padding: var(--space-3) var(--space-4);
   background: var(--input);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  color: var(--clr-text);
-  font-family: var(--font-sans);
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color var(--duration-fast);
+  border-radius: var(--radius-lg);
 }
 
-.chat-input-field:focus {
-  border-color: var(--clr-primary);
+.composer:focus-within {
+  border-color: var(--accent);
   box-shadow: var(--focus-ring);
 }
 
-.chat-input-field::placeholder {
-  color: var(--clr-text-dim);
+.chat-input-field {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-2) 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  outline: none;
 }
 
+.chat-input-field:focus-visible { outline: none; }
+.chat-input-field::placeholder { color: var(--tertiary); }
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.composer-send { margin-left: auto; }
+
+.hint-button-container {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.hint-button-wrap { display: inline-flex; }
+
+.hint-reason,
+.hint-status,
+.hint-max {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.hint-level {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ── Tutor sessions list ─────────────────────────────────────────────────── */
 .sessions-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: var(--space-5);
 }
 
 .session-card {
-  background: var(--clr-surface);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  cursor: pointer;
-  transition: border-color var(--duration-normal), box-shadow var(--duration-normal);
-  text-align: left;
-  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   width: 100%;
+  padding: var(--space-5) var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .session-card:hover {
-  border-color: var(--clr-border-light);
-  box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
 }
 
-.session-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: var(--space-2);
-  gap: var(--space-2);
-}
-
-/* The title is now the student's first question, so it wraps rather than
-   being a fixed-width UUID. Two lines then an ellipsis keeps cards even. */
-.session-title {
-  font-size: 1rem;
+.session-course {
+  color: var(--muted);
+  font-size: 0.9rem;
   font-weight: 600;
-  color: var(--clr-text);
+}
+
+/* The title is the student's first question: two lines, then an ellipsis. */
+.session-title {
   margin: 0;
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 600;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1680,33 +1697,15 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   overflow: hidden;
 }
 
-/* Replaced .session-hint-level. The course a session belongs to distinguishes
-   sessions; the hint-ladder depth of the last question did not. */
-.session-course {
-  display: inline-block;
-  flex-shrink: 0;
-  padding: var(--space-1) var(--space-2);
-  background: var(--accent-soft);
-  color: var(--clr-primary-h);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  white-space: nowrap;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .session-meta {
-  color: var(--clr-text-dim);
-  font-size: 0.85rem;
   margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
+/* ── Course picker (new tutoring session) ───────────────────────────────── */
 .course-picker-list {
   list-style: none;
-  padding: 0;
-  margin: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -1716,21 +1715,23 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-md);
-  color: var(--clr-text);
-  cursor: pointer;
-  transition: background var(--duration-fast);
-  font-family: var(--font-sans);
+  gap: var(--space-3);
   width: 100%;
+  min-height: 52px;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-family: var(--font-sans);
   text-align: left;
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
 }
 
 .course-picker-item:hover:not(:disabled) {
-  background: var(--clr-surface);
-  border-color: var(--clr-border-light);
+  background: var(--hover);
+  border-color: var(--muted);
 }
 
 .course-picker-item:disabled {
@@ -1739,19 +1740,19 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .course-name {
-  font-weight: 500;
-  color: var(--clr-text);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .course-date {
-  font-size: 0.8rem;
-  color: var(--clr-text-dim);
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .modal-empty {
-  text-align: center;
-  color: var(--clr-text-muted);
-  padding: var(--space-4);
+  padding: var(--space-4) 0;
+  color: var(--muted);
 }
 
 /* ── Responsive shell (interim; Phase 5 adds the bottom tab bar) ──────────── */
@@ -1807,6 +1808,14 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   .app-shell--topbar .main-content {
     padding: var(--space-6) var(--space-4);
   }
+
+  .tutor-page {
+    height: calc(100vh - 64px - 2 * var(--space-6));
+    min-height: 460px;
+  }
+
+  .chat-empty-prompt { font-size: 1.75rem; }
+  .chat-bubble { max-width: 90%; }
 }
 
 
@@ -1945,8 +1954,8 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   padding: 1px var(--space-2);
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--clr-primary-h);
-  font-size: 0.68rem;
+  color: var(--accent);
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
