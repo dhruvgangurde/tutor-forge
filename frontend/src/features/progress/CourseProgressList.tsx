@@ -20,6 +20,7 @@ export function CourseProgressList({
   onSelect,
 }: CourseProgressListProps) {
   return (
+    <div className="table-scroll">
     <table className="data-table">
       <thead>
         <tr>
@@ -49,7 +50,7 @@ export function CourseProgressList({
                   '—'
                 )}
               </td>
-              <td>
+              <td className="cell-score">
                 {/* An em dash, not 0%: nothing released yet is not a zero score. */}
                 {pct === null ? '—' : `${c.earned_points} / ${c.possible_points} (${pct}%)`}
               </td>
@@ -63,5 +64,6 @@ export function CourseProgressList({
         })}
       </tbody>
     </table>
+    </div>
   )
 }

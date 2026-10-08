@@ -54,19 +54,6 @@
   --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
   --font-mono:  ui-monospace, 'Cascadia Code', SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* Temporary aliases for the old dark-theme names, so every rule picks up the
-     new palette at once. Removed as components are rebuilt (tracked per phase);
-     none may remain after Phase 6. */
-  --clr-bg:           var(--bg);
-  --clr-surface-2:    var(--surface-2);
-  --clr-border:       var(--line);
-  --clr-border-light: var(--line-strong);
-  --clr-accent:       var(--info);
-  --clr-success:      var(--accent);
-  --clr-text:         var(--ink);
-  --clr-text-muted:   var(--muted);
-  --clr-text-dim:     var(--muted);
-
   /* Spacing scale */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -98,8 +85,8 @@ html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
   font-family: var(--font-sans);
-  background: var(--clr-bg);
-  color: var(--clr-text);
+  background: var(--bg);
+  color: var(--ink);
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -475,6 +462,28 @@ code {
 
 .field-input::placeholder { color: var(--tertiary); }
 
+/* Browser autofill paints its own tint; keep the input tokens instead. */
+.field-input:-webkit-autofill,
+.field-input:-webkit-autofill:hover,
+.field-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--input) inset;
+  box-shadow: 0 0 0 1000px var(--input) inset;
+  transition: background-color 600000s 0s;
+}
+
+.field-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--input) inset, var(--focus-ring);
+  box-shadow: 0 0 0 1000px var(--input) inset, var(--focus-ring);
+}
+
+.field-input:autofill {
+  background: var(--input);
+  color: var(--ink);
+  filter: none;
+}
+
 textarea.field-input { min-height: 0; line-height: 1.5; }
 
 /* Visually hidden, still read by screen readers. */
@@ -689,6 +698,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .data-table td {
+  font-variant-numeric: lining-nums tabular-nums;
   padding: var(--space-4);
   border-bottom: 1px solid var(--line);
   font-size: 1rem;
@@ -697,6 +707,15 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .data-table tbody tr:last-child td { border-bottom: none; }
+
+/* A score like "1 / 16 (6%)" is one value: keep it on one line. */
+.data-table .cell-score { white-space: nowrap; }
+
+/* Narrow screens: a wide table scrolls inside its own box instead of
+   pushing the page sideways (Phase 5 turns tables into stacked rows). */
+.table-scroll {
+  overflow-x: auto;
+}
 .data-table tbody tr:hover td { background: var(--hover); }
 
 /* ── Empty state, placeholder page, 404 ─────────────────────────────────── */
@@ -733,6 +752,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
 .not-found {
   max-width: 560px;
+  margin: 0 auto;
   padding: var(--space-12) 0;
 }
 
@@ -955,11 +975,11 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   font-family: var(--font-serif);
   font-size: 1.2rem;
   font-weight: 600;
-  color: var(--clr-text);
+  color: var(--ink);
 }
 
 .card-meta {
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -987,7 +1007,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   font-family: var(--font-serif);
   font-size: 1.625rem;
   font-weight: 600;
-  color: var(--clr-text);
+  color: var(--ink);
   margin-bottom: var(--space-4);
 }
 
@@ -1007,7 +1027,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 .concept-chapter-title {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--clr-text);
+  color: var(--ink);
   margin-bottom: var(--space-2);
 }
 
@@ -1017,7 +1037,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   flex-direction: column;
   gap: var(--space-2);
   padding-left: var(--space-4);
-  border-left: 2px solid var(--clr-border);
+  border-left: 2px solid var(--line);
 }
 
 .concept-item {
@@ -1028,13 +1048,13 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .concept-name {
-  color: var(--clr-text);
+  color: var(--ink);
   font-size: 0.9rem;
 }
 
 .concept-description {
   flex-basis: 100%;
-  color: var(--clr-text-muted);
+  color: var(--muted);
   font-size: 0.8rem;
   margin-top: var(--space-1);
 }
@@ -1050,7 +1070,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
 .question-item {
   padding-bottom: var(--space-5);
-  border-bottom: 1px solid var(--clr-border);
+  border-bottom: 1px solid var(--line);
 }
 
 .question-item:last-child {
@@ -1059,7 +1079,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .question-stem {
-  color: var(--clr-text);
+  color: var(--ink);
   font-size: 0.9rem;
   font-weight: 500;
   margin-bottom: var(--space-2);
@@ -1073,7 +1093,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .question-points {
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-size: 0.8rem;
 }
 
@@ -1083,19 +1103,19 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  color: var(--clr-text-muted);
+  color: var(--muted);
   font-size: 0.85rem;
   margin-top: var(--space-2);
 }
 
 .rubric-list {
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-style: italic;
 }
 
 /* ── Answer key (teacher draft preview + question edit) ───────────── */
 .question-option-correct {
-  color: var(--clr-success);
+  color: var(--accent);
   font-weight: 500;
 }
 
@@ -1105,7 +1125,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
-  color: var(--clr-success);
+  color: var(--accent);
   font-size: 0.72rem;
   font-weight: 600;
   font-style: normal;
@@ -1113,13 +1133,13 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .answer-key-line {
-  color: var(--clr-text-muted);
+  color: var(--muted);
   font-size: 0.85rem;
   margin-top: var(--space-2);
 }
 
 .answer-key-label {
-  color: var(--clr-success);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -1138,21 +1158,21 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   flex-wrap: wrap;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--clr-border);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  color: var(--clr-text-muted);
+  color: var(--muted);
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .answer-choice:hover {
-  border-color: var(--clr-border-light);
+  border-color: var(--line-strong);
 }
 
 .answer-choice-selected {
-  border-color: var(--clr-success);
+  border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--clr-text);
+  color: var(--ink);
 }
 
 /* ── Grading review (teacher) ───────────────────────────────────── */
@@ -1185,7 +1205,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   font-family: var(--font-serif);
   font-size: 2rem;
   font-weight: 600;
-  color: var(--clr-text);
+  color: var(--ink);
 }
 
 .score-summary-max {
@@ -1206,7 +1226,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   gap: var(--space-3);
   margin-top: var(--space-3);
   padding-left: var(--space-4);
-  border-left: 2px solid var(--clr-border);
+  border-left: 2px solid var(--line);
 }
 
 .criterion-item {
@@ -1223,19 +1243,19 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .criterion-description {
-  color: var(--clr-text);
+  color: var(--ink);
   font-size: 0.85rem;
   font-weight: 500;
 }
 
 .criterion-feedback {
-  color: var(--clr-text-muted);
+  color: var(--muted);
   font-size: 0.85rem;
   margin-top: var(--space-2);
 }
 
 .criterion-feedback-label {
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-weight: 600;
 }
 
@@ -1252,8 +1272,8 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   gap: var(--space-4);
   padding: var(--space-4);
   margin-top: var(--space-4);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
@@ -1298,14 +1318,14 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   gap: var(--space-2);
   padding: var(--space-3);
   margin-top: var(--space-3);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
 .delete-panel-summary {
   font-size: 0.8rem;
-  color: var(--clr-text-muted);
+  color: var(--muted);
 }
 
 /* ── Draft question editing ─────────────────────── */
@@ -1322,8 +1342,8 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   gap: var(--space-3);
   padding: var(--space-4);
   margin-top: var(--space-3);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
@@ -1682,6 +1702,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--muted);
   font-size: 0.9rem;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 /* The title is the student's first question: two lines, then an ellipsis. */
@@ -1834,7 +1855,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
 .markdown-heading {
   font-weight: 700;
-  color: var(--clr-text);
+  color: var(--ink);
   margin: var(--space-3) 0 var(--space-1) 0;
   line-height: 1.35;
 }
@@ -1848,7 +1869,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 .markdown li { margin-bottom: var(--space-1); line-height: 1.55; }
 .markdown li:last-child { margin-bottom: 0; }
 
-.markdown strong { font-weight: 700; color: var(--clr-text); }
+.markdown strong { font-weight: 700; color: var(--ink); }
 .markdown em { font-style: italic; }
 
 .markdown code {
@@ -1864,7 +1885,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--surface-2);
-  border: 1px solid var(--clr-border);
+  border: 1px solid var(--line);
   overflow-x: auto;
 }
 
@@ -1873,17 +1894,17 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 .markdown blockquote {
   margin: 0 0 var(--space-2) 0;
   padding-left: var(--space-3);
-  border-left: 3px solid var(--clr-border-light);
-  color: var(--clr-text-muted);
+  border-left: 3px solid var(--line-strong);
+  color: var(--muted);
 }
 
 .markdown hr {
   border: 0;
-  border-top: 1px solid var(--clr-border);
+  border-top: 1px solid var(--line);
   margin: var(--space-3) 0;
 }
 
-.markdown a { color: var(--clr-accent); text-decoration: underline; }
+.markdown a { color: var(--info); text-decoration: underline; }
 
 .markdown del { text-decoration: line-through; opacity: 0.7; }
 
@@ -1902,14 +1923,14 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
 .markdown-table-wrap th,
 .markdown-table-wrap td {
-  border: 1px solid var(--clr-border);
+  border: 1px solid var(--line);
   padding: var(--space-1) var(--space-2);
   text-align: left;
   white-space: nowrap;
 }
 
 .markdown-table-wrap th {
-  background: var(--clr-surface-2);
+  background: var(--surface-2);
   font-weight: 700;
 }
 
@@ -1922,7 +1943,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   align-items: center;
   gap: var(--space-2);
   margin: var(--space-3) 0 var(--space-1) 0;
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-size: 0.75rem;
 }
 
@@ -1931,7 +1952,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   content: "";
   flex: 1;
   height: 1px;
-  background: var(--clr-border);
+  background: var(--line);
 }
 
 .hint-marker-text {
@@ -1969,7 +1990,7 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--clr-text-dim);
+  color: var(--muted);
   font-weight: 600;
 }
 
