@@ -1,34 +1,72 @@
 /* ─────────────────────────────────────────────────────────────────────────────
    TutorForge AI — Global Design System
+   Light theme only (design/DESIGN-BRIEF.md). Fonts are self-hosted via
+   @fontsource (imported in main.tsx); there is no runtime font CDN.
    ───────────────────────────────────────────────────────────────────────────── */
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* ── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
-  /* Palette */
-  --clr-bg:           #0d0f14;
-  --clr-surface:      #15181f;
-  --clr-surface-2:    #1e2230;
-  --clr-border:       #2a2f3d;
-  --clr-border-light: #353c50;
+  color-scheme: light;
 
-  --clr-primary:      #6366f1;   /* indigo-500 */
-  --clr-primary-h:    #818cf8;   /* indigo-400 */
-  --clr-primary-dk:   #4f46e5;   /* indigo-600 */
+  /* Surfaces and lines (design brief, source of truth) */
+  --bg:          #f5f2ec;  /* page background */
+  --surface:     #fffdf9;  /* cards, top bar, sidebar */
+  --surface-2:   #ece7db;  /* secondary surface, student bubbles, neutral chips */
+  --input:       #ffffff;  /* text inputs, lifted from cards */
+  --line:        #e3ddd0;  /* hairlines, table rules */
+  --line-strong: #cdc5b3;  /* input and button borders */
 
-  --clr-accent:       #22d3ee;   /* cyan-400 */
-  --clr-success:      #34d399;   /* emerald-400 */
-  --clr-warning:      #fbbf24;   /* amber-400 */
-  --clr-danger:       #f87171;   /* red-400 */
+  /* Text */
+  --ink:      #1d1b16;  /* primary text, 15.4:1 on bg */
+  --muted:    #6b665a;  /* secondary text, 5.1:1 on bg */
+  --tertiary: #6f695c;  /* placeholders, table headers, breadcrumbs; the lightest text grey */
 
-  --clr-text:         #e2e8f0;
-  --clr-text-muted:   #94a3b8;
-  --clr-text-dim:     #64748b;
+  /* Accent: --accent for text, borders and marks; --accent-fill for solid
+     backgrounds that carry white text. Equal in the light theme; kept apart so
+     a dark theme can diverge later. */
+  --accent:       #1d5c4a;
+  --accent-fill:  #1d5c4a;
+  --accent-hover: #164a3b;  /* hover/pressed for --accent-fill */
+  --accent-soft:  #e4efe9;  /* selected option, success background */
+  --on-accent:    #ffffff;  /* text on --accent-fill (7.8:1) */
+
+  /* Status */
+  --amber:      #8a5a0a;  /* needs attention, awaiting review */
+  --amber-soft: #fbf0dc;
+  --red:        #9c2f2a;  /* errors, destructive */
+  --red-soft:   #f8e4e1;
+  --info:       #4f6578;  /* informational notes, source references */
+  --info-soft:  #e6ecf1;
+
+  /* Effects (kept quiet: no glow, no gradients) */
+  --focus-ring: 0 0 0 3px rgba(29, 92, 74, 0.28);
+  --overlay:    rgba(29, 27, 22, 0.45);
+  --shadow-sm:  0 1px 2px rgba(29, 27, 22, 0.06);
+  --shadow-md:  0 2px 8px rgba(29, 27, 22, 0.08);
+  --shadow-lg:  0 12px 32px rgba(29, 27, 22, 0.14);
 
   /* Typography */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans:  'Source Sans 3', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: 'Lora', Georgia, 'Times New Roman', serif;
+  --font-mono:  ui-monospace, 'Cascadia Code', SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Temporary aliases for the old dark-theme names, so every rule picks up the
+     new palette at once. Removed as components are rebuilt (tracked per phase);
+     none may remain after Phase 6. */
+  --clr-bg:           var(--bg);
+  --clr-surface:      var(--surface);
+  --clr-surface-2:    var(--surface-2);
+  --clr-border:       var(--line);
+  --clr-border-light: var(--line-strong);
+  --clr-primary:      var(--accent);
+  --clr-primary-h:    var(--accent);
+  --clr-accent:       var(--info);
+  --clr-success:      var(--accent);
+  --clr-warning:      var(--amber);
+  --clr-danger:       var(--red);
+  --clr-text:         var(--ink);
+  --clr-text-muted:   var(--muted);
+  --clr-text-dim:     var(--tertiary);
 
   /* Spacing scale */
   --space-1: 0.25rem;
@@ -45,14 +83,8 @@
   /* Border radius */
   --radius-sm: 6px;
   --radius-md: 10px;
-  --radius-lg: 16px;
-  --radius-xl: 24px;
-
-  /* Shadows */
-  --shadow-sm:  0 1px 3px rgba(0,0,0,.5);
-  --shadow-md:  0 4px 16px rgba(0,0,0,.5);
-  --shadow-lg:  0 12px 40px rgba(0,0,0,.6);
-  --shadow-glow: 0 0 24px rgba(99,102,241,.25);
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
   /* Transitions */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -106,13 +138,14 @@ code {
 }
 
 .sidebar-logo {
+  font-family: var(--font-serif);
   font-size: 1.125rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--clr-text);
   padding: 0 var(--space-6) var(--space-6);
   border-bottom: 1px solid var(--clr-border);
   margin-bottom: var(--space-4);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
 }
 
 .sidebar-logo span {
@@ -147,7 +180,7 @@ code {
 }
 
 .nav-link.active {
-  background: rgba(99,102,241,0.15);
+  background: var(--surface-2);
   color: var(--clr-primary-h);
 }
 
@@ -162,9 +195,10 @@ code {
 }
 
 .page-title {
+  font-family: var(--font-serif);
   font-size: 1.75rem;
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--clr-text);
 }
 
@@ -179,9 +213,7 @@ code {
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(99,102,241,0.12) 0%, transparent 70%),
-    var(--clr-bg);
+  background: var(--bg);
   padding: var(--space-4);
 }
 
@@ -192,7 +224,7 @@ code {
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-xl);
   padding: var(--space-10);
-  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  box-shadow: none;
   animation: fadeSlideUp 0.4s var(--ease-out) both;
 }
 
@@ -207,12 +239,11 @@ code {
 }
 
 .login-title {
+  font-family: var(--font-serif);
   font-size: 1.75rem;
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  background: linear-gradient(135deg, var(--clr-primary-h), var(--clr-accent));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
   background-clip: text;
 }
 
@@ -264,7 +295,7 @@ code {
 
 .field-input:focus {
   border-color: var(--clr-primary);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  box-shadow: var(--focus-ring);
 }
 
 .field-input::placeholder { color: var(--clr-text-dim); }
@@ -305,13 +336,13 @@ code {
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--clr-primary), var(--clr-primary-dk));
-  color: #fff;
-  box-shadow: 0 2px 12px rgba(99,102,241,0.35);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow: none;
 }
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--clr-primary-h), var(--clr-primary));
-  box-shadow: 0 4px 20px rgba(99,102,241,0.5);
+  background: var(--accent-hover);
+  box-shadow: none;
   transform: translateY(-1px);
 }
 
@@ -326,12 +357,12 @@ code {
 }
 
 .btn-danger {
-  background: rgba(248,113,113,0.15);
+  background: var(--red-soft);
   color: var(--clr-danger);
-  border: 1px solid rgba(248,113,113,0.3);
+  border: 1px solid var(--red);
 }
 .btn-danger:hover:not(:disabled) {
-  background: rgba(248,113,113,0.25);
+  background: var(--red-soft);
 }
 
 .btn-full { width: 100%; }
@@ -369,16 +400,16 @@ code {
   text-transform: uppercase;
 }
 
-.badge-success { background: rgba(52,211,153,0.15); color: var(--clr-success); }
-.badge-warning { background: rgba(251,191,36,0.15); color: var(--clr-warning); }
-.badge-danger  { background: rgba(248,113,113,0.15); color: var(--clr-danger);  }
-.badge-info    { background: rgba(34,211,238,0.15);  color: var(--clr-accent);  }
+.badge-success { background: var(--accent-soft); color: var(--accent); }
+.badge-warning { background: var(--amber-soft); color: var(--amber); }
+.badge-danger  { background: var(--red-soft); color: var(--red); }
+.badge-info    { background: var(--info-soft); color: var(--info); }
 .badge-muted   { background: var(--clr-surface-2);   color: var(--clr-text-muted); }
 
 /* ── Error banner ────────────────────────────────────────────────────────────── */
 .error-banner {
-  background: rgba(248,113,113,0.1);
-  border: 1px solid rgba(248,113,113,0.3);
+  background: var(--red-soft);
+  border: 1px solid var(--red);
   border-radius: var(--radius-md);
   color: var(--clr-danger);
   padding: var(--space-3) var(--space-4);
@@ -404,15 +435,15 @@ code {
   gap: var(--space-1);
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
-  background: rgba(34,211,238,0.1);
-  border: 1px solid rgba(34,211,238,0.2);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   color: var(--clr-accent);
   font-size: 0.75rem;
   cursor: pointer;
   transition: background var(--duration-fast);
 }
 
-.citation-badge:hover { background: rgba(34,211,238,0.18); }
+.citation-badge:hover { background: var(--surface-2); }
 
 /* ── Tables ──────────────────────────────────────────────────────────────────── */
 .data-table {
@@ -439,7 +470,7 @@ code {
 }
 
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+.data-table tbody tr:hover td { background: var(--bg); }
 
 /* ── Placeholder page ────────────────────────────────────────────────────────── */
 .placeholder-page {
@@ -495,7 +526,7 @@ code {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -573,9 +604,9 @@ code {
   animation: fadeSlideUp var(--duration-normal) var(--ease-out) both;
 }
 
-.toast-success { border-color: rgba(52,211,153,0.4); }
-.toast-error   { border-color: rgba(248,113,113,0.4); }
-.toast-info    { border-color: rgba(34,211,238,0.4); }
+.toast-success { border-color: var(--accent); }
+.toast-error   { border-color: var(--red); }
+.toast-info    { border-color: var(--info); }
 
 .toast-dismiss {
   background: none;
@@ -612,8 +643,8 @@ code {
 }
 
 .chat-bubble.student {
-  background: linear-gradient(135deg, var(--clr-primary), var(--clr-primary-dk));
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--ink);
   border-bottom-right-radius: var(--radius-sm);
 }
 
@@ -625,8 +656,8 @@ code {
 }
 
 .chat-bubble.refusal {
-  background: rgba(251,191,36,0.08);
-  border: 1px solid rgba(251,191,36,0.25);
+  background: var(--amber-soft);
+  border: 1px solid var(--line-strong);
 }
 
 /* ── Page header row (title + action button/badge on one line) ─────────────────── */
@@ -648,8 +679,9 @@ code {
 }
 
 .card-title {
+  font-family: var(--font-serif);
   font-size: 1.05rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--clr-text);
 }
 
@@ -689,15 +721,16 @@ code {
 }
 
 .section-title {
+  font-family: var(--font-serif);
   font-size: 1.25rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--clr-text);
   margin-bottom: var(--space-4);
 }
 
 /* ── Selected table row ─────────────────────────────────────────────────────────── */
 .row-selected td {
-  background: rgba(99,102,241,0.08);
+  background: var(--accent-soft);
 }
 
 /* ── Concept tree (Courses) ─────────────────────────────────────────────────────── */
@@ -807,7 +840,7 @@ code {
   margin-left: var(--space-2);
   padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(52, 211, 153, 0.15);
+  background: var(--accent-soft);
   color: var(--clr-success);
   font-size: 0.72rem;
   font-weight: 600;
@@ -854,7 +887,7 @@ code {
 
 .answer-choice-selected {
   border-color: var(--clr-success);
-  background: rgba(52, 211, 153, 0.08);
+  background: var(--accent-soft);
   color: var(--clr-text);
 }
 
@@ -883,8 +916,9 @@ code {
 }
 
 .score-summary-value {
+  font-family: var(--font-serif);
   font-size: 1.5rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--clr-text);
 }
 
@@ -1081,9 +1115,9 @@ code {
   transition: width var(--duration-fast) var(--ease-out);
 }
 
-.mastery-bar-fill[data-band="success"] { background: var(--clr-success); }
-.mastery-bar-fill[data-band="warning"] { background: var(--clr-warning); }
-.mastery-bar-fill[data-band="danger"]  { background: var(--clr-danger); }
+.mastery-bar-fill[data-band="success"] { background: var(--accent-fill); }
+.mastery-bar-fill[data-band="warning"] { background: var(--amber); }
+.mastery-bar-fill[data-band="danger"]  { background: var(--red); }
 
 /* ── Tutoring Interface ─────────────────────────────────────────────────────────── */
 .tutor-container {
@@ -1103,7 +1137,7 @@ code {
   border: 1px solid var(--clr-border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
-  background: rgba(255,255,255,0.02);
+  background: var(--surface);
 }
 
 .chat-thread-empty,
@@ -1139,8 +1173,8 @@ code {
 }
 
 .chat-bubble.student {
-  background: linear-gradient(135deg, var(--clr-primary), var(--clr-primary-dk));
-  color: #fff;
+  background: var(--surface-2);
+  color: var(--ink);
   border-bottom-right-radius: var(--radius-sm);
 }
 
@@ -1152,8 +1186,8 @@ code {
 }
 
 .chat-bubble.refusal {
-  background: rgba(251,191,36,0.08);
-  border: 1px solid rgba(251,191,36,0.25);
+  background: var(--amber-soft);
+  border: 1px solid var(--line-strong);
   color: var(--clr-warning);
 }
 
@@ -1167,9 +1201,9 @@ code {
   margin-top: var(--space-1);
 }
 
-/* The dim grey above is unreadable on the student's indigo bubble. */
+/* The student bubble is --surface-2; use the secondary-text token on it. */
 .chat-bubble.student .message-time {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--muted);
 }
 
 .citations {
@@ -1185,8 +1219,8 @@ code {
   gap: var(--space-1);
   padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
-  background: rgba(34,211,238,0.1);
-  border: 1px solid rgba(34,211,238,0.3);
+  background: var(--info-soft);
+  border: 1px solid var(--line-strong);
   font-size: 0.7rem;
   color: var(--clr-accent);
 }
@@ -1277,7 +1311,7 @@ code {
 
 .chat-input-field:focus {
   border-color: var(--clr-primary);
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  box-shadow: var(--focus-ring);
 }
 
 .chat-input-field::placeholder {
@@ -1335,7 +1369,7 @@ code {
   display: inline-block;
   flex-shrink: 0;
   padding: var(--space-1) var(--space-2);
-  background: rgba(99,102,241,0.15);
+  background: var(--accent-soft);
   color: var(--clr-primary-h);
   border-radius: 999px;
   font-size: 0.75rem;
@@ -1480,14 +1514,14 @@ code {
   font-size: 0.875em;
   padding: 1px 4px;
   border-radius: var(--radius-sm);
-  background: rgba(148,163,184,0.18);
+  background: var(--surface-2);
 }
 
 .markdown pre {
   margin: 0 0 var(--space-2) 0;
   padding: var(--space-3);
   border-radius: var(--radius-md);
-  background: rgba(15,23,42,0.5);
+  background: var(--surface-2);
   border: 1px solid var(--clr-border);
   overflow-x: auto;
 }
@@ -1577,7 +1611,7 @@ code {
   margin-bottom: var(--space-2);
   padding: 1px var(--space-2);
   border-radius: 999px;
-  background: rgba(99,102,241,0.15);
+  background: var(--accent-soft);
   color: var(--clr-primary-h);
   font-size: 0.68rem;
   font-weight: 700;
