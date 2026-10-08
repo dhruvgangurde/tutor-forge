@@ -11,6 +11,7 @@ interface GradingQueueProps {
 /** Teacher-facing table of submissions awaiting review; click a row to open it. */
 export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps) {
   return (
+    <div className="table-scroll">
     <table className="data-table">
       <thead>
         <tr>
@@ -26,8 +27,7 @@ export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps)
           <tr
             key={item.submission_id}
             onClick={() => onSelect(item.submission_id)}
-            className={item.submission_id === selectedId ? 'row-selected' : undefined}
-            style={{ cursor: 'pointer' }}
+            className={`clickable-row${item.submission_id === selectedId ? ' row-selected' : ''}`}
           >
             <td>{item.student_email ?? '—'}</td>
             <td>{item.assessment_title ?? '—'}</td>
@@ -44,5 +44,6 @@ export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps)
         ))}
       </tbody>
     </table>
+    </div>
   )
 }

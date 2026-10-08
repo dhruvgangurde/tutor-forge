@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 import { getAvailableCourses } from '../../lib/api/courses'
 import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -20,6 +21,10 @@ export function CoursePickerModal({
   const [courses, setCourses] = useState<CourseSummary[]>([])
   const [isLoadingCourses, setIsLoadingCourses] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Tab stays inside the dialog; focus returns to "New session" on close.
+  useFocusTrap(dialogRef, true)
 
   useEffect(() => {
     async function loadCourses() {
@@ -39,8 +44,16 @@ export function CoursePickerModal({
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
-        <h2 className="modal-title">Start a tutoring session</h2>
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="course-picker-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="course-picker-title" className="modal-title">Start a tutoring session</h2>
         <p className="modal-message">Select a course to get tutoring help:</p>
 
         {error && <ErrorBanner message={error} />}

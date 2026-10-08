@@ -1,4 +1,5 @@
 import { citationLabel } from '../../lib/sourceName'
+import { DocumentIcon } from '../../components/ui/icons'
 import type { EvidenceCitation } from '../../lib/api/types'
 
 interface CitationListProps {
@@ -34,6 +35,7 @@ export function CitationList({ citations }: CitationListProps) {
             className="citation-badge"
             title={`${c.source_file}\n\n${c.text}`}
           >
+            <DocumentIcon size={14} />
             <span className="citation-file">
               {citationLabel(c.source_file, c.page_or_slide)}
             </span>

@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCourseDeletionImpact, useDeleteCourse, useRestoreCourse } from './hooks'
 import { Badge } from '../../components/ui/Badge'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
+import { AlertIcon } from '../../components/ui/icons'
 import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { plural } from '../../lib/plural'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -79,13 +80,13 @@ export function CourseCard({ course }: CourseCardProps) {
   }
 
   return (
-    <div className={`card${course.is_archived ? ' card-archived' : ''}`}>
+    <div className={`card course-card${course.is_archived ? ' card-archived' : ''}`}>
       <div className="card-header-row">
         <Link to={`/courses/${course.id}`} className="card-title-link">
           <h3 className="card-title">{course.name}</h3>
         </Link>
         <div className="card-badges">
-          {course.is_archived && <Badge variant="muted">archived</Badge>}
+          {course.is_archived && <Badge variant="muted">Archived</Badge>}
           <Badge variant={statusToVariant(course.status)}>{statusLabel(course.status)}</Badge>
         </div>
       </div>
@@ -98,9 +99,12 @@ export function CourseCard({ course }: CourseCardProps) {
       </p>
 
       {isFailed && (
-        <p className="field-error">
-          {course.failure_reason ?? 'Processing the course materials failed. Try uploading the course again.'}
-        </p>
+        <div className="card-failure">
+          <AlertIcon size={18} className="card-failure-icon" />
+          <p>
+            {course.failure_reason ?? 'Processing the course materials failed. Try uploading the course again.'}
+          </p>
+        </div>
       )}
 
       <div className="card-actions">
@@ -125,9 +129,10 @@ export function CourseCard({ course }: CourseCardProps) {
         )}
         <button
           type="button"
-          className="btn btn-secondary btn-sm"
+          className={showDelete ? 'btn btn-secondary btn-sm' : 'btn btn-danger btn-sm'}
           onClick={() => setShowDelete((v) => !v)}
           disabled={busy}
+          aria-expanded={showDelete}
         >
           {showDelete ? 'Cancel' : 'Delete…'}
         </button>
@@ -135,7 +140,9 @@ export function CourseCard({ course }: CourseCardProps) {
 
       {showDelete && (
         <div className="delete-panel">
-          {impact.isLoading && <Spinner label="Checking what this would remove…" />}
+          {impact.isLoading && (
+            <SkeletonRows label="Checking what this would remove…" rows={1} columns={2} />
+          )}
           {impact.data && (
             <>
               {/* Shown BEFORE the confirm, because a teacher cannot otherwise
@@ -154,7 +161,7 @@ export function CourseCard({ course }: CourseCardProps) {
                   </p>
                   <button
                     type="button"
-                    className="btn btn-danger btn-sm"
+                    className="btn btn-danger btn-sm delete-panel-confirm"
                     onClick={handleHardDelete}
                     disabled={busy}
                   >

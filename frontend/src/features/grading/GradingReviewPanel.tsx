@@ -3,7 +3,7 @@ import { useApproveGrade, useGradingReview, useOverrideGrade } from './hooks'
 import { CitationList } from './CitationList'
 import { Badge } from '../../components/ui/Badge'
 import { Markdown } from '../../components/ui/Markdown'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -126,7 +126,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
     }
   }
 
-  if (isLoading) return <Spinner label="Loading recommendation…" />
+  if (isLoading) return <SkeletonRows label="Loading recommendation…" rows={4} columns={1} />
   if (isError) return <ErrorBanner message={getErrorMessage(error)} />
   if (!data) return null
 
@@ -171,12 +171,10 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
                 <div className="question-stem">
                   {qIdx + 1}. {q.stem ?? <em>Question no longer available</em>}
                 </div>
-                <div className="question-meta">
-                  <Badge variant="info">{statusLabel(q.question_type)}</Badge>
-                  <span className="question-points">
-                    {earned} / {possible} pts
-                  </span>
-                </div>
+                {/* Quiet metadata line, not a chip per attribute. */}
+                <p className="question-meta">
+                  {statusLabel(q.question_type)} · {earned} / {possible} pts
+                </p>
 
                 {q.criteria.length === 0 ? (
                   <p className="criterion-feedback">No criteria were scored for this question.</p>

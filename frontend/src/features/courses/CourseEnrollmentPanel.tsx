@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { useEnrollments, useEnrollStudent, useRemoveEnrollment } from './hooks'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -61,7 +61,7 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
   return (
     <>
       <div className="card upload-panel">
-        <form onSubmit={handleAdd} className="login-form">
+        <form onSubmit={handleAdd} className="enroll-form">
           {enroll.isError && <ErrorBanner message={getErrorMessage(enroll.error)} />}
 
           <div className="field-group">
@@ -85,23 +85,22 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
             <p className="field-hint">The student must already have an account.</p>
           </div>
 
-          <button type="submit" className="btn btn-primary" disabled={enroll.isPending}>
+          <button type="submit" className="btn btn-primary enroll-submit" disabled={enroll.isPending}>
             {enroll.isPending ? 'Adding…' : 'Add student'}
           </button>
         </form>
       </div>
 
-      {enrollments.isLoading && <Spinner label="Loading students…" />}
+      {enrollments.isLoading && <SkeletonRows label="Loading students…" rows={3} columns={3} />}
       {enrollments.isError && <ErrorBanner message={getErrorMessage(enrollments.error)} />}
 
       {enrollments.data && enrollments.data.length === 0 && (
-        <EmptyState
-          icon="👥"
-          label="No students enrolled yet. Only enrolled students can see this course."
-        />
+        <EmptyState label="No students enrolled yet. Only enrolled students can see this course." />
       )}
 
       {enrollments.data && enrollments.data.length > 0 && (
+        <div className="card table-card">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -113,12 +112,12 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
           <tbody>
             {enrollments.data.map((s) => (
               <tr key={s.student_id}>
-                <td>{s.email}</td>
+                <td className="cell-strong">{s.email}</td>
                 <td>{new Date(s.enrolled_at).toLocaleDateString()}</td>
-                <td>
+                <td className="cell-actions">
                   <button
                     type="button"
-                    className="btn btn-danger btn-sm"
+                    className="btn btn-tertiary btn-tertiary-danger btn-sm"
                     onClick={() => handleRemove(s)}
                     disabled={remove.isPending}
                   >
@@ -129,6 +128,8 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
             ))}
           </tbody>
         </table>
+        </div>
+        </div>
       )}
     </>
   )

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
 import { Badge } from './Badge'
+import { ConfirmDialog } from './ConfirmDialog'
 import { EmptyState } from './EmptyState'
 import { ErrorBanner } from './ErrorBanner'
 import { NotFoundState } from './NotFoundState'
@@ -125,5 +126,47 @@ describe('NotFoundState (404 layout)', () => {
     const back = screen.getByRole('link', { name: 'Back to courses' })
     expect(back).toHaveAttribute('href', '/courses')
     expect(back).toHaveClass('btn', 'btn-primary')
+  })
+})
+
+describe('ConfirmDialog focus', () => {
+  function Harness() {
+    const [open, setOpen] = useState(false)
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Publish assessment
+        </button>
+        <ConfirmDialog
+          open={open}
+          message="Publish this assessment?"
+          confirmLabel="Publish"
+          onConfirm={() => setOpen(false)}
+          onCancel={() => setOpen(false)}
+        />
+      </>
+    )
+  }
+
+  it('starts on Cancel, keeps Tab inside the dialog, and returns focus on close', async () => {
+    const user = userEvent.setup({ delay: null })
+    render(<Harness />)
+    const trigger = screen.getByRole('button', { name: 'Publish assessment' })
+    await user.click(trigger)
+
+    const cancel = screen.getByRole('button', { name: 'Cancel' })
+    const confirm = screen.getByRole('button', { name: 'Publish' })
+    expect(cancel).toHaveFocus()
+
+    await user.tab()
+    expect(confirm).toHaveFocus()
+    await user.tab()
+    expect(cancel).toHaveFocus()
+    await user.tab({ shift: true })
+    expect(confirm).toHaveFocus()
+
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
   })
 })
