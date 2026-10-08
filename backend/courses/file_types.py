@@ -11,7 +11,7 @@ or, worse, was handed to a parser it was never meant for.
 
 ``content_mismatch`` checks that all three agree: the extension, the declared
 MIME type, and the file's leading bytes ("magic bytes"). The allowed types are
-unchanged: PDF, PPTX, PPT and plain text.
+PDF, PPTX and plain text (legacy .ppt is not accepted: python-pptx cannot read it).
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import zipfile
 
 _PDF = "application/pdf"
 _PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-_PPT = "application/vnd.ms-powerpoint"
 _TXT = "text/plain"
 
 _ZIP_MAGIC = b"PK\x03\x04"
@@ -42,8 +41,8 @@ _BINARY_MAGICS = (
     b"7z\xbc\xaf",
 )
 
-_LABELS = {".pdf": "PDF", ".pptx": "PowerPoint (.pptx)", ".ppt": "PowerPoint (.ppt)", ".txt": "text"}
-_EXPECTED_MIME = {".pdf": _PDF, ".pptx": _PPTX, ".ppt": _PPT, ".txt": _TXT}
+_LABELS = {".pdf": "PDF", ".pptx": "PowerPoint (.pptx)", ".txt": "text"}
+_EXPECTED_MIME = {".pdf": _PDF, ".pptx": _PPTX, ".txt": _TXT}
 
 
 def _is_pdf(content: bytes) -> bool:
@@ -61,10 +60,6 @@ def _is_pptx(content: bytes) -> bool:
         return False
 
 
-def _is_ppt(content: bytes) -> bool:
-    return content.startswith(_OLE2_MAGIC)
-
-
 def _is_text(content: bytes) -> bool:
     head = content[:8192]
     if head.startswith(_BINARY_MAGICS):
@@ -72,7 +67,7 @@ def _is_text(content: bytes) -> bool:
     return b"\x00" not in head  # NUL bytes mean binary, whatever the name says
 
 
-_CONTENT_CHECKS = {".pdf": _is_pdf, ".pptx": _is_pptx, ".ppt": _is_ppt, ".txt": _is_text}
+_CONTENT_CHECKS = {".pdf": _is_pdf, ".pptx": _is_pptx, ".txt": _is_text}
 
 
 def content_mismatch(filename: str, ext: str, declared_mime: str | None, content: bytes) -> str | None:

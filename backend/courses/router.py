@@ -59,7 +59,9 @@ from db.models import Course, IngestionJob, User
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
-_ALLOWED_EXTENSIONS = {".pdf", ".pptx", ".ppt", ".txt"}
+# No legacy .ppt: the parser (python-pptx) reads only .pptx, so a .ppt was
+# accepted here and then failed during ingestion.
+_ALLOWED_EXTENSIONS = {".pdf", ".pptx", ".txt"}
 _UPLOAD_CHUNK = 1024 * 1024  # 1 MB read granularity
 
 

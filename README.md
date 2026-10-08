@@ -148,6 +148,7 @@ npm run dev                # → http://localhost:5173
 | `OLLAMA_BASE_URL`         | `http://localhost:11434` | Ollama daemon URL (only used when`LLM_PROVIDER=ollama`)                                                          |
 | `OLLAMA_GENERATION_MODEL` | `qwen2.5:7b-instruct`    | Local generation model                                                                                             |
 | `OLLAMA_EMBEDDING_MODEL`  | `nomic-embed-text`       | Local embedding model (768-dim, matches Gemini)                                                                    |
+| `TRUSTED_PROXY`           | `false`                  | `true` only behind a reverse proxy that sets `X-Forwarded-For` (see [Running behind a reverse proxy](#running-behind-a-reverse-proxy)) |
 
 ### Demo credentials
 
@@ -174,6 +175,32 @@ cd frontend && npm run build
 - **Backend** → [Render](https://render.com) via [`render.yaml`](render.yaml) (Blueprint), or the provided [`backend/Dockerfile`](backend/Dockerfile) on any container host.
 - **Frontend** → [Vercel](https://vercel.com) via [`frontend/vercel.json`](frontend/vercel.json).
 - **CI** → GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs lint and tests on every push.
+
+### Running behind a reverse proxy
+
+Login and AI rate limits are keyed on the client's IP address, so the backend
+must see the real client address, not the proxy's, and must not believe a
+forwarded address a client made up. Two settings control this:
+
+- **`TRUSTED_PROXY`** (app setting, default `false`). When `true`, the rate
+  limiter reads the client address from the **last** `X-Forwarded-For` entry,
+  the one your proxy appended. Leave it `false` when clients connect directly:
+  the header is then ignored, because anyone can send it.
+- **Uvicorn's `--forwarded-allow-ips`** (default `127.0.0.1`, or the
+  `FORWARDED_ALLOW_IPS` environment variable). Uvicorn replaces the
+  connection's client address with the `X-Forwarded-For` value only for
+  connections from these addresses. Set it to your proxy's address:
+
+  ```bash
+  uvicorn main:app --host 0.0.0.0 --port 8000 --forwarded-allow-ips="10.0.0.5"
+  ```
+
+  Without a proxy, start uvicorn with `--no-proxy-headers` so nothing on the
+  same host can set the client address. Use `--forwarded-allow-ips="*"` only
+  when the backend is reachable exclusively through the proxy.
+
+Behind a proxy, set both: `TRUSTED_PROXY=true` and `--forwarded-allow-ips` to
+the proxy's address.
 
 ## Roadmap
 

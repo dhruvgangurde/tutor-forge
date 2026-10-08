@@ -90,6 +90,21 @@ class QuestionGrade(BaseModel):
     criteria: list[CriterionGrade] = Field(default_factory=list)
 
 
+# ── Finalized grade (teacher history) ────────────────────────────────────────
+
+class FinalizedGradeItem(BaseModel):
+    """One released grade in the teacher's history (read-only)."""
+    submission_id: uuid.UUID
+    student_email: str | None = None   # users have no display name; email identifies them
+    assessment_title: str
+    course_name: str
+    final_score: float
+    max_score: float
+    action: str                        # "approved" | "overridden"
+    released: bool
+    finalized_at: datetime
+
+
 # ── Queue item (list view) ────────────────────────────────────────────────────
 
 class GradingQueueItem(BaseModel):

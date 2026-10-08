@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useGradingQueue } from './hooks'
 import { GradingQueue } from './GradingQueue'
+import { FinalizedGrades } from './FinalizedGrades'
 import { GradingReviewPanel } from './GradingReviewPanel'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
@@ -57,6 +58,8 @@ export function GradingPage() {
           />
         </div>
       )}
+
+      <FinalizedGrades />
     </>
   )
 }
