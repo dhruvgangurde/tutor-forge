@@ -18,11 +18,44 @@ describe('restyle colour rules', () => {
   it('never puts --tertiary text on --surface-2 (only 4.42:1)', () => {
     const offenders = [...blocks(css), ...blocks(moduleCss)]
       .filter((b) => /background:\s*var\(--(clr-)?surface-2\)/.test(b.body))
-      .filter((b) => /(^|[^-])color:\s*var\(--(tertiary|clr-text-dim)\)/.test(b.body))
+      .filter((b) => /(^|[^-])color:\s*var\(--tertiary\)/.test(b.body))
       .map((b) => b.selector)
     expect(offenders).toEqual([])
-    // The legacy "dim" alias points at --muted, so old rules cannot do it either.
-    expect(css).toMatch(/--clr-text-dim:\s*var\(--muted\)/)
+  })
+
+  it('never truncates the session course name', () => {
+    const course = blocks(css).find((b) => b.selector === '.session-course')!
+    expect(course.body).not.toMatch(/text-overflow|white-space:\s*nowrap|max-width/)
+    expect(course.body).toMatch(/overflow-wrap:\s*anywhere/)
+  })
+
+  it('keeps the input tokens under browser autofill (WebKit and Firefox)', () => {
+    const webkit = blocks(css).find((b) => b.selector.startsWith('.field-input:-webkit-autofill,'))!
+    expect(webkit.body).toMatch(/-webkit-text-fill-color:\s*var\(--ink\)/)
+    expect(webkit.body).toMatch(/inset/)
+    expect(webkit.body).toMatch(/var\(--input\)/)
+    const firefox = blocks(css).find((b) => b.selector === '.field-input:autofill')!
+    expect(firefox.body).toMatch(/background:\s*var\(--input\)/)
+  })
+
+  it('centres the narrow page columns inside the content area', () => {
+    expect(blocks(css).find((b) => b.selector === '.not-found')!.body).toMatch(/margin:\s*0 auto/)
+    expect(blocks(moduleCss).find((b) => b.selector === '.readingColumn')!.body).toMatch(/margin:\s*0 auto/)
+  })
+
+  it('keeps table scores on one line in lining figures', () => {
+    const td = blocks(css).find((b) => b.selector === '.data-table td')!
+    expect(td.body).toMatch(/font-variant-numeric:\s*lining-nums tabular-nums/)
+    expect(blocks(css).find((b) => b.selector === '.data-table .cell-score')!.body).toMatch(/white-space:\s*nowrap/)
+    const list = readFileSync(resolve(__dirname, '../features/progress/CourseProgressList.tsx'), 'utf8')
+    expect(list).toMatch(/className="table-scroll"/)
+    expect(list).toMatch(/className="cell-score"/)
+  })
+
+  it('has retired every temporary --clr-* alias', () => {
+    // Restyle phase 3 follow-up: all uses point at the real tokens now.
+    expect(css).not.toMatch(/--clr-/)
+    expect(moduleCss).not.toMatch(/--clr-/)
   })
 
   it('has no literal colours outside the token block', () => {
