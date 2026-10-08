@@ -97,7 +97,7 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
       {data.results.length === 0 ? (
         <p className="card-meta">Nothing released yet for this course.</p>
       ) : (
-        <table className="data-table">
+        <table className="data-table data-table-stack">
           <thead>
             <tr>
               <th>Assessment</th>
@@ -109,16 +109,16 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
           <tbody>
             {data.results.map((r) => (
               <tr key={r.submission_id}>
-                <td>{r.assessment_title}</td>
-                <td>
+                <td data-label="Assessment">{r.assessment_title}</td>
+                <td data-label="Score">
                   {r.final_score} / {r.max_score}
                 </td>
-                <td>
+                <td data-label="Decision">
                   <Badge variant={r.action === 'approved' ? 'success' : 'info'}>
                     {statusLabel(r.action)}
                   </Badge>
                 </td>
-                <td>{new Date(r.finalized_at).toLocaleDateString()}</td>
+                <td data-label="Released">{new Date(r.finalized_at).toLocaleDateString()}</td>
               </tr>
             ))}
           </tbody>

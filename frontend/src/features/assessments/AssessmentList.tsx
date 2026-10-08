@@ -17,7 +17,7 @@ interface AssessmentListProps {
 export function AssessmentList({ assessments, selectedId, onSelect }: AssessmentListProps) {
   return (
     <div className="table-scroll">
-      <table className="data-table">
+      <table className="data-table data-table-stack">
         <thead>
           <tr>
             <th>Title</th>
@@ -36,12 +36,12 @@ export function AssessmentList({ assessments, selectedId, onSelect }: Assessment
                 onClick={() => onSelect(a.id)}
                 className={`clickable-row${a.id === selectedId ? ' row-selected' : ''}`}
               >
-                <td className="cell-strong">{a.title}</td>
-                <td>
+                <td data-label="Title" className="cell-strong">{a.title}</td>
+                <td data-label="Status">
                   <Badge variant={statusToVariant(a.status)}>{statusLabel(a.status)}</Badge>
                 </td>
-                <td>{a.status === 'generating' ? '—' : a.question_count}</td>
-                <td>{new Date(a.created_at).toLocaleDateString()}</td>
+                <td data-label="Questions">{a.status === 'generating' ? '—' : a.question_count}</td>
+                <td data-label="Created">{new Date(a.created_at).toLocaleDateString()}</td>
                 <td className="cell-actions">
                   <button
                     type="button"

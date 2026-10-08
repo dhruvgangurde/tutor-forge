@@ -21,7 +21,7 @@ export function CourseProgressList({
 }: CourseProgressListProps) {
   return (
     <div className="table-scroll">
-    <table className="data-table">
+    <table className="data-table data-table-stack">
       <thead>
         <tr>
           <th>Course</th>
@@ -40,20 +40,20 @@ export function CourseProgressList({
               onClick={() => onSelect(c.course_id)}
               className={`clickable-row${c.course_id === selectedId ? ' row-selected' : ''}`}
             >
-              <td>{c.course_name}</td>
-              <td>{c.assessments_graded}</td>
-              <td>
+              <td data-label="Course">{c.course_name}</td>
+              <td data-label="Graded">{c.assessments_graded}</td>
+              <td data-label="Awaiting grade">
                 {c.assessments_awaiting_grade > 0 ? (
                   <Badge variant="muted">{c.assessments_awaiting_grade}</Badge>
                 ) : (
                   '—'
                 )}
               </td>
-              <td className="cell-score">
+              <td data-label="Released score" className="cell-score">
                 {/* An em dash, not 0%: nothing released yet is not a zero score. */}
                 {pct === null ? '—' : `${c.earned_points} / ${c.possible_points} (${pct}%)`}
               </td>
-              <td>
+              <td data-label="Last graded">
                 {c.last_graded_at
                   ? new Date(c.last_graded_at).toLocaleDateString()
                   : '—'}

@@ -981,11 +981,13 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   font-size: 1.2rem;
   font-weight: 600;
   color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .card-meta {
   color: var(--muted);
   font-size: 0.95rem;
+  overflow-wrap: anywhere;
 }
 
 /* ── Inline upload/generate panel ───────────────────────────────────────────────── */
@@ -2054,11 +2056,44 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--muted);
 }
 
-/* ── Responsive shell (interim; Phase 5 adds the bottom tab bar) ──────────── */
+/* ── Phones and small tablets (<=768px) ─────────────────────────────────────
+   The top bar / sidebar shrink to the wordmark and the links move to a bottom
+   tab bar. Every inset respects the device safe areas (index.html sets
+   viewport-fit=cover, so env(safe-area-inset-*) is live on iOS and Android). */
+:root {
+  --mobile-bar-h: 56px;
+  --tabbar-h: 64px;
+  --gutter-left: max(var(--space-4), env(safe-area-inset-left));
+  --gutter-right: max(var(--space-4), env(safe-area-inset-right));
+}
+
+.tabbar { display: none; }
+
+/* A dialog never runs off the screen: it scrolls inside itself instead. */
+.modal-dialog {
+  max-height: calc(100vh - 2 * var(--space-4));
+  max-height: calc(100dvh - 2 * var(--space-4));
+  overflow-y: auto;
+}
+
+/* Long source names wrap inside their chip rather than widening the page. */
+.citation-badge { max-width: 100%; }
+.citation-file { min-width: 0; overflow-wrap: anywhere; }
+
 @media (max-width: 768px) {
-  .app-shell--sidebar {
-    flex-direction: column;
+  /* ── Shell: wordmark on top, tab bar at the bottom ── */
+  .topbar { position: static; }
+
+  .topbar-inner {
+    height: var(--mobile-bar-h);
+    gap: 0;
+    padding: 0 var(--gutter-right) 0 var(--gutter-left);
   }
+
+  .topbar-nav,
+  .topbar-logout { display: none; }
+
+  .app-shell--sidebar { flex-direction: column; }
 
   .sidebar {
     width: 100%;
@@ -2068,53 +2103,277 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
   .sidebar-inner {
     position: static;
-    height: auto;
+    height: var(--mobile-bar-h);
     flex-direction: row;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-2) var(--space-4);
-    overflow-x: auto;
+    padding: 0 var(--gutter-right) 0 var(--gutter-left);
   }
 
-  .sidebar-wordmark { padding: 0 var(--space-2) 0 0; }
+  .sidebar-wordmark { padding: 0; }
 
-  .sidebar-nav {
-    flex: none;
-    flex-direction: row;
-  }
+  .sidebar-nav,
+  .sidebar-footer { display: none; }
 
-  .sidebar-footer {
-    flex-direction: row;
-    padding-top: 0;
-    border-top: none;
-  }
-
-  .sidebar-account { display: none; }
-
-  .nav-link { white-space: nowrap; }
-  .nav-link.active::before { display: none; }
-
-  .topbar-inner {
-    gap: var(--space-4);
-    padding: 0 var(--space-4);
-    overflow-x: auto;
-  }
-
-  .topbar-nav { gap: var(--space-4); }
-  .topbar-link { white-space: nowrap; }
-
+  /* Bottom padding clears the fixed tab bar, so nothing hides behind it. */
   .app-shell--sidebar .main-content,
   .app-shell--topbar .main-content {
-    padding: var(--space-6) var(--space-4);
+    padding: var(--space-6) var(--gutter-right)
+      calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-8)) var(--gutter-left);
+  }
+
+  .tabbar {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+  }
+
+  .tabbar-list {
+    list-style: none;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    height: var(--tabbar-h);
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .tabbar-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+    min-height: 44px;
+    padding: var(--space-1);
+    border: none;
+    background: none;
+    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.2;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .tabbar-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 30px;
+    border-radius: 999px;
+  }
+
+  .tabbar-item:hover { color: var(--ink); }
+
+  /* Selected: accent bar on top, filled pill behind the icon, heavier label. */
+  .tabbar-item.active {
+    color: var(--ink);
+    font-weight: 700;
+  }
+
+  .tabbar-item.active .tabbar-icon {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .tabbar-item.active::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 22%;
+    right: 22%;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--accent);
+  }
+
+  .tabbar-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -4px;
+    border-radius: var(--radius-md);
+  }
+
+  /* Toasts sit above the tab bar, across the width. */
+  .toast-container {
+    left: var(--gutter-left);
+    right: var(--gutter-right);
+    bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-3));
+    max-width: none;
+  }
+
+  /* ── Type and touch ── */
+  .page-title { font-size: 1.875rem; }
+  .section-title { font-size: 1.375rem; }
+  .page-header { margin-bottom: var(--space-6); }
+
+  .btn-sm { min-height: 44px; }
+
+  /* Text links that act as controls get a full-height tap area. */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .card-title-link {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .page-title,
+  .preview-title { overflow-wrap: anywhere; }
+
+  /* 16px or more, so iOS does not zoom the page when a field takes focus.
+     A floor for unstyled fields only (zero specificity); every styled field
+     class is already 16px or larger (checked per screen by the capture probe). */
+  :where(input:not([type='checkbox'], [type='radio'], [type='file']), textarea, select) {
+    font-size: 16px;
+  }
+
+  /* ── Forms and dialogs ── */
+  .field-row { flex-direction: column; }
+
+  .modal-overlay {
+    padding: max(var(--space-4), env(safe-area-inset-top)) var(--gutter-right)
+      max(var(--space-4), env(safe-area-inset-bottom)) var(--gutter-left);
+  }
+
+  .modal-dialog { padding: var(--space-5); }
+  .modal-actions { flex-wrap: wrap; }
+
+  /* ── Tables become labelled stacked rows ── */
+  .data-table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .data-table-stack,
+  .data-table-stack tbody,
+  .data-table-stack tr {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table-stack tbody tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .data-table-stack tbody tr:last-child { border-bottom: none; }
+
+  /* Label column, then the value; a long email or title wraps in its column. */
+  .data-table.data-table-stack td,
+  .table-card .data-table.data-table-stack td:first-child,
+  .table-card .data-table.data-table-stack td:last-child {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    justify-items: start;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+    padding: var(--space-1) 0;
+    border-bottom: none;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
+  .data-table-stack td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    overflow-wrap: normal;
+  }
+
+  /* The action cell has no label: its button sits at the end of the row. */
+  .data-table.data-table-stack td:not([data-label]),
+  .table-card .data-table.data-table-stack td:not([data-label]):last-child {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: var(--space-2);
+  }
+
+  .data-table-stack td:not([data-label])::before { content: none; }
+
+  .data-table.data-table-stack tbody tr td,
+  .data-table.data-table-stack tbody tr:hover td,
+  .data-table.data-table-stack tbody tr.row-selected td,
+  .data-table.data-table-stack tbody tr.row-selected:hover td {
+    background: transparent;
+  }
+
+  .data-table-stack tbody tr.clickable-row:hover { background: var(--hover); }
+
+  .data-table-stack tbody tr.row-selected,
+  .data-table-stack tbody tr.row-selected:hover { background: var(--accent-soft); }
+
+  .table-card .cell-strong { min-width: 0; }
+
+  /* ── Tutor chat: the page fills the space between the bars ── */
+  .app-shell--topbar .main-content:has(.tutor-page) {
+    padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-4));
   }
 
   .tutor-page {
-    height: calc(100vh - 64px - 2 * var(--space-6));
-    min-height: 460px;
+    height: calc(100vh - var(--mobile-bar-h) - var(--tabbar-h) - var(--space-6) - var(--space-4));
+    height: calc(100dvh - var(--mobile-bar-h) - var(--tabbar-h) - env(safe-area-inset-bottom)
+      - var(--space-6) - var(--space-4));
+    min-height: 380px;
   }
+
+  /* A compact header leaves the thread most of the screen. The session title
+     (the first question, as on the sessions list) stops at two lines; the
+     course name is never cut. */
+  .tutor-header { margin-bottom: var(--space-2); }
+  .tutor-header .back-link { margin-bottom: 0; }
+  .tutor-course { font-size: 0.9rem; }
+
+  .tutor-title {
+    font-size: 1.25rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .tutor-header .page-subtitle { font-size: 0.9rem; }
 
   .chat-empty-prompt { font-size: 1.75rem; }
   .chat-bubble { max-width: 90%; }
+  .chat-bubble.tutor { max-width: 100%; }
+
+  /* Hint (with its level text) and Send stay on one row. */
+  .composer-actions {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .hint-button-container {
+    flex: 1;
+    min-width: 0;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .composer-send { flex-shrink: 0; }
 }
 
 
