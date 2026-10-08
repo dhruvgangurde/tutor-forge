@@ -35,6 +35,12 @@ export function statusLabel(status: string): string {
   return STATUS_LABELS[status] ?? status.replace(/_/g, ' ')
 }
 
+/**
+ * Chip colour by meaning (design brief, semantic colour rules): accent for
+ * ready/published/released, amber for anything awaiting review, red only for
+ * errors, warm grey for neutral states. An override is a teacher's decision,
+ * not an error, so it is neutral rather than red.
+ */
 export function statusToVariant(status: string): BadgeVariant {
   switch (status) {
     case 'ready':
@@ -44,14 +50,14 @@ export function statusToVariant(status: string): BadgeVariant {
     case 'ingesting':
     case 'generating':
       return 'info'
-    case 'pending':
-    case 'draft':
     case 'pending_review':
     case 'pending_grading':
-      return 'muted'
+      return 'warning'
     case 'failed':
-    case 'overridden':
       return 'danger'
+    case 'pending':
+    case 'draft':
+    case 'overridden':
     default:
       return 'muted'
   }

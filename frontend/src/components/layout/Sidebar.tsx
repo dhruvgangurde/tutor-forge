@@ -1,59 +1,41 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext'
+import { LogOutIcon } from '../ui/icons'
+import { TEACHER_NAV, useLogout } from './navItems'
 
-interface NavItem {
-  to: string
-  label: string
-  icon: string
-}
-
-const TEACHER_NAV: NavItem[] = [
-  { to: '/courses', label: 'Courses', icon: '📚' },
-  { to: '/grading', label: 'Grading', icon: '🎓' },
-]
-
-const STUDENT_NAV: NavItem[] = [
-  { to: '/tutor', label: 'Tutor', icon: '🧑‍🏫' },
-  { to: '/assessments', label: 'Assessments', icon: '📝' },
-  { to: '/progress', label: 'Progress', icon: '📈' },
-]
-
-/** Role-aware navigation sidebar. Uses the existing `.sidebar` CSS system (index.css). */
+/**
+ * Teacher navigation: a full-height sidebar with the wordmark, the two teacher
+ * sections and the signed-in account with Log out at the bottom.
+ */
 export function Sidebar() {
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
-
-  const navItems = user?.role === 'teacher' ? TEACHER_NAV : STUDENT_NAV
-
-  function handleLogout() {
-    logout()
-    navigate('/login', { replace: true })
-  }
+  const { user } = useAuth()
+  const handleLogout = useLogout()
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-logo">
-        Tutor<span>Forge</span>
-      </div>
+      <div className="sidebar-inner">
+        <div className="wordmark sidebar-wordmark">TutorForge</div>
 
-      <nav className="sidebar-nav">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
-          >
-            <span aria-hidden="true">{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-      </nav>
+        <nav className="sidebar-nav" aria-label="Main">
+          {TEACHER_NAV.map(({ to, label, Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
 
-      <div className="sidebar-footer">
-        <button type="button" className="nav-link nav-link-logout" onClick={handleLogout}>
-          <span aria-hidden="true">🚪</span>
-          <span>Log out</span>
-        </button>
+        <div className="sidebar-footer">
+          {user?.email && <p className="sidebar-account">{user.email}</p>}
+          <button type="button" className="nav-link nav-link-logout" onClick={handleLogout}>
+            <LogOutIcon size={18} />
+            <span>Log out</span>
+          </button>
+        </div>
       </div>
     </aside>
   )

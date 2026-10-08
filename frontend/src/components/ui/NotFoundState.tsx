@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { ArrowLeftIcon } from './icons'
 
 interface NotFoundStateProps {
   title: string
@@ -8,21 +9,19 @@ interface NotFoundStateProps {
 }
 
 /**
- * A "this doesn't exist" page body with a way back (frontend audit #7).
- *
- * "Course not found" used to be a bare error banner with no heading and no
- * link: a dead end. Reuses the existing placeholder-page styles, so it looks
- * like the app's other empty states.
+ * 404 layout (design/STATES-AND-CHAT.md): rendered inside the app shell so the
+ * navigation stays visible; a serif heading, one plain explanation and one
+ * primary "back" action. Never shows the raw URL or id.
  */
 export function NotFoundState({ title, message, linkTo, linkLabel }: NotFoundStateProps) {
   return (
-    <div className="placeholder-page">
-      <div className="placeholder-icon" aria-hidden="true">🧭</div>
-      <h1 className="page-title">{title}</h1>
-      <p className="placeholder-label">{message}</p>
-      <Link to={linkTo} className="btn btn-secondary">
+    <section className="not-found">
+      <h1 className="not-found-title">{title}</h1>
+      <p className="not-found-message">{message}</p>
+      <Link to={linkTo} className="btn btn-primary">
+        <ArrowLeftIcon size={16} />
         {linkLabel}
       </Link>
-    </div>
+    </section>
   )
 }

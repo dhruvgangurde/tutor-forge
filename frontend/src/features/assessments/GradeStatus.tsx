@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { gradeState } from './gradeState'
+import { Badge } from '../../components/ui/Badge'
 import styles from './assessments.module.css'
 
 interface GradeStatusProps {
@@ -13,17 +14,15 @@ interface GradeStatusProps {
 /**
  * A submission's grade as a student may see it: "Awaiting teacher review" with
  * no number until the teacher finalizes, then "Grade released" and the score.
+ * Status is a chip with an icon and the word (amber clock while awaiting,
+ * accent check once released); the released score is set in the serif.
  */
 export function GradeStatus({ submission, showPercent = false, leading }: GradeStatusProps) {
   const grade = gradeState(submission)
   return (
     <div className={styles.statusRow}>
       {leading}
-      <span
-        className={`${styles.statusPill} ${grade.released ? styles.statusReleased : styles.statusAwaiting}`}
-      >
-        {grade.label}
-      </span>
+      <Badge variant={grade.released ? 'success' : 'warning'}>{grade.label}</Badge>
       {grade.released && grade.score && (
         <span className={styles.scoreValue}>
           {grade.score}

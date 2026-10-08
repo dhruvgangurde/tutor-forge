@@ -1,22 +1,30 @@
 import { ReactNode } from 'react'
 
 interface EmptyStateProps {
-  icon: string
+  /** One line saying what is empty, why, and what to do. */
   label: string
+  /** Optional short heading above the line. */
+  title?: string
+  /** Optional single action (a button or link). */
   action?: ReactNode
+  /**
+   * @deprecated Kept so existing callers compile; no longer rendered. Empty
+   * states are quiet text in the page layout, without an illustration
+   * (design/STATES-AND-CHAT.md).
+   */
+  icon?: string
 }
 
 /**
- * Generalizes the `.placeholder-page` markup previously duplicated inline in
- * every feature page (index.css). Used both for legitimate empty states
- * ("no courses yet") and, until a feature phase lands, as a stand-in.
+ * Quiet empty state: optional title, one line, optional action. Sits in the
+ * normal page flow. The `.placeholder-label` class is kept for the line.
  */
-export function EmptyState({ icon, label, action }: EmptyStateProps) {
+export function EmptyState({ label, title, action }: EmptyStateProps) {
   return (
-    <div className="placeholder-page">
-      <div className="placeholder-icon">{icon}</div>
-      <p className="placeholder-label">{label}</p>
-      {action}
+    <div className="empty-state">
+      {title && <h2 className="empty-state-title">{title}</h2>}
+      <p className="placeholder-label empty-state-label">{label}</p>
+      {action && <div className="empty-state-action">{action}</div>}
     </div>
   )
 }
