@@ -9,7 +9,7 @@ import { ConfirmProvider } from './hooks/useConfirm'
 import { queryClient } from './lib/queryClient'
 // Self-hosted fonts (no runtime CDN). Lora 600 is the display serif; Source
 // Sans 3 carries everything else. Only the weights the UI uses are bundled.
-import '@fontsource/lora/600.css'
+import './fonts/lora-600.css'
 import '@fontsource/source-sans-3/400.css'
 import '@fontsource/source-sans-3/400-italic.css'
 import '@fontsource/source-sans-3/500.css'

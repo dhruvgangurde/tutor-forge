@@ -1,4 +1,5 @@
 import { FormEvent, useState } from 'react'
+import { formatNumber } from '../../lib/formatNumber'
 import { useApproveGrade, useGradingReview, useOverrideGrade } from './hooks'
 import { CitationList } from './CitationList'
 import { Badge } from '../../components/ui/Badge'
@@ -21,10 +22,8 @@ const MIN_REASON_LENGTH = 5
 const MAX_REASON_LENGTH = 2000
 const MAX_NOTE_LENGTH = 2000
 
-/** "4.5", "0.67" -- the same rounding the score summary uses, without a trailing .0. */
-function fmtScore(n: number): string {
-  return String(Math.round(n * 100) / 100)
-}
+/** Display rounding shared with every score on screen (lib/formatNumber). */
+const fmtScore = formatNumber
 
 /**
  * The override score as it would be sent, or null while the field is empty or
@@ -71,7 +70,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
   async function handleApprove() {
     if (!data) return
     const ok = await confirm(
-      `Approve the recommended score of ${data.recommended_score} / ${data.max_score}? ` +
+      `Approve the recommended score of ${fmtScore(data.recommended_score)} / ${fmtScore(data.max_score)}? ` +
         'This finalizes the grade and cannot be undone.',
       { confirmLabel: 'Approve' }
     )
@@ -101,7 +100,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
       return
     }
     if (parsed < 0 || parsed > data.max_score) {
-      setOverrideError(`Score must be between 0 and ${data.max_score}.`)
+      setOverrideError(`Score must be between 0 and ${fmtScore(data.max_score)}.`)
       return
     }
     if (reason.trim().length < MIN_REASON_LENGTH) {
@@ -111,7 +110,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
     setOverrideError(null)
 
     const ok = await confirm(
-      `Override the AI recommendation with a score of ${parsed} / ${data.max_score}? ` +
+      `Override the AI recommendation with a score of ${fmtScore(parsed)} / ${fmtScore(data.max_score)}? ` +
         'This finalizes the grade and cannot be undone.',
       { confirmLabel: 'Override', danger: true }
     )
@@ -146,7 +145,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
         <div className="score-summary-block">
           <span className="score-summary-label">AI recommended score</span>
           <span className="score-summary-value">
-            {data.recommended_score} <span className="score-summary-max">/ {data.max_score}</span>
+            {fmtScore(data.recommended_score)} <span className="score-summary-max">/ {fmtScore(data.max_score)}</span>
           </span>
         </div>
         <p className="score-summary-note">
@@ -195,7 +194,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
                             <Badge variant="warning">Needs review — not scored</Badge>
                           ) : (
                             <Badge variant={c.score >= c.max_points ? 'success' : 'muted'}>
-                              {c.score} / {c.max_points} pts
+                              {fmtScore(c.score)} / {fmtScore(c.max_points)} pts
                             </Badge>
                           )}
                         </div>
@@ -274,7 +273,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
 
           <div className="field-group">
             <label htmlFor="grading-score-input" className="field-label">
-              Final score (0–{data.max_score})
+              Final score (0–{fmtScore(data.max_score)})
             </label>
             <input
               id="grading-score-input"

@@ -26,6 +26,16 @@ export function CoursePickerModal({
   // Tab stays inside the dialog; focus returns to "New session" on close.
   useFocusTrap(dialogRef, true)
 
+  // Escape cancels, exactly like the Cancel button (and only when it could).
+  const canCancel = !(isLoading || isLoadingCourses)
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && canCancel) onCancel()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [canCancel, onCancel])
+
   useEffect(() => {
     async function loadCourses() {
       try {

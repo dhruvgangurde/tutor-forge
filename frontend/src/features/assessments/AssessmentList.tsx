@@ -17,32 +17,33 @@ interface AssessmentListProps {
 export function AssessmentList({ assessments, selectedId, onSelect }: AssessmentListProps) {
   return (
     <div className="table-scroll">
-      <table className="data-table data-table-stack">
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            <th>Questions</th>
-            <th>Created</th>
-            <th aria-label="Actions" />
+      <table className="data-table data-table-stack" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th role="columnheader">Title</th>
+            <th role="columnheader">Status</th>
+            <th role="columnheader">Questions</th>
+            <th role="columnheader">Created</th>
+            <th role="columnheader" aria-label="Actions" />
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {assessments.map((a) => {
             const isDraft = a.status === 'draft'
             return (
               <tr
+                role="row"
                 key={a.id}
                 onClick={() => onSelect(a.id)}
                 className={`clickable-row${a.id === selectedId ? ' row-selected' : ''}`}
               >
-                <td data-label="Title" className="cell-strong">{a.title}</td>
-                <td data-label="Status">
+                <td role="cell" data-label="Title" className="cell-strong">{a.title}</td>
+                <td role="cell" data-label="Status">
                   <Badge variant={statusToVariant(a.status)}>{statusLabel(a.status)}</Badge>
                 </td>
-                <td data-label="Questions">{a.status === 'generating' ? '—' : a.question_count}</td>
-                <td data-label="Created">{new Date(a.created_at).toLocaleDateString()}</td>
-                <td className="cell-actions">
+                <td role="cell" data-label="Questions">{a.status === 'generating' ? '—' : a.question_count}</td>
+                <td role="cell" data-label="Created">{new Date(a.created_at).toLocaleDateString()}</td>
+                <td role="cell" className="cell-actions">
                   <button
                     type="button"
                     className={isDraft ? 'btn btn-secondary btn-sm' : 'btn btn-tertiary btn-sm'}
