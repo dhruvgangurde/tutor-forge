@@ -60,8 +60,13 @@ export function HintButton({
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={onRequestHint}
-            disabled={isLoading || !hasQuestion}
+            onClick={() => {
+              if (!isLoading) void onRequestHint()
+            }}
+            // While a hint is pending the button stays focusable (aria-disabled
+            // rather than disabled) so keyboard focus does not fall to the page.
+            disabled={!hasQuestion}
+            aria-disabled={isLoading || undefined}
             aria-describedby={blockedReason ? 'hint-needs-question' : undefined}
           >
             <LightbulbIcon size={16} />

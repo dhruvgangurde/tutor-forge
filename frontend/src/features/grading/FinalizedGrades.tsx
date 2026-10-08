@@ -1,13 +1,12 @@
 import { useFinalizedGrades } from './hooks'
+import { formatNumber } from '../../lib/formatNumber'
 import { Badge } from '../../components/ui/Badge'
 import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
 
-function fmt(n: number): string {
-  return String(Math.round(n * 100) / 100)
-}
+const fmt = formatNumber
 
 /**
  * Read-only history of released grades, shown under the pending queue.
@@ -28,28 +27,28 @@ export function FinalizedGrades() {
       {data && data.length > 0 && (
         <div className="card table-card">
         <div className="table-scroll">
-        <table className="data-table data-table-stack">
-          <thead>
-            <tr>
-              <th>Student</th>
-              <th>Assessment</th>
-              <th>Final score</th>
-              <th>Decision</th>
-              <th>Released</th>
+        <table className="data-table data-table-stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader">Student</th>
+              <th role="columnheader">Assessment</th>
+              <th role="columnheader">Final score</th>
+              <th role="columnheader">Decision</th>
+              <th role="columnheader">Released</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {data.map((g) => (
-              <tr key={g.submission_id}>
-                <td data-label="Student">{g.student_email ?? '—'}</td>
-                <td data-label="Assessment">{g.assessment_title}</td>
-                <td data-label="Final score">
+              <tr role="row" key={g.submission_id}>
+                <td role="cell" data-label="Student">{g.student_email ?? '—'}</td>
+                <td role="cell" data-label="Assessment">{g.assessment_title}</td>
+                <td role="cell" data-label="Final score">
                   {fmt(g.final_score)} / {fmt(g.max_score)}
                 </td>
-                <td data-label="Decision">
+                <td role="cell" data-label="Decision">
                   <Badge variant={statusToVariant(g.action)}>{statusLabel(g.action)}</Badge>
                 </td>
-                <td data-label="Released">{g.released ? new Date(g.finalized_at).toLocaleDateString() : 'Not released'}</td>
+                <td role="cell" data-label="Released">{g.released ? new Date(g.finalized_at).toLocaleDateString() : 'Not released'}</td>
               </tr>
             ))}
           </tbody>

@@ -66,10 +66,10 @@ describe('restyle colour rules', () => {
     expect(strip(moduleCss)).not.toMatch(literal)
   })
 
-  it('draws inputs on --input with a --line-strong border', () => {
+  it('draws inputs on --input with a --field-border edge (>=3:1, phase 6)', () => {
     const field = blocks(css).find((b) => b.selector === '.field-input')!
     expect(field.body).toMatch(/background:\s*var\(--input\)/)
-    expect(field.body).toMatch(/border:\s*1px solid var\(--line-strong\)/)
+    expect(field.body).toMatch(/border:\s*1px solid var\(--field-border\)/)
   })
 
   it('lets the sidebar background run the full height (only its contents stick)', () => {
@@ -105,5 +105,41 @@ describe('restyle colour rules', () => {
     expect(wordmark.body).toMatch(/font-family:\s*var\(--font-serif\)/)
     expect(wordmark.body).toMatch(/color:\s*var\(--ink\)/)
     expect(css).not.toMatch(/\.sidebar-logo span/)
+  })
+})
+
+describe('motion, text size and fonts (phase 6)', () => {
+  const reduceBlocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
+    .map((m) => m[1])
+    .join('\n')
+
+  it('stills every looping animation under prefers-reduced-motion', () => {
+    expect(reduceBlocks).toMatch(/\.skeleton\s*\{\s*animation:\s*none/)
+    expect(reduceBlocks).toMatch(/\.thinking-dots\s*\{\s*display:\s*none/)
+    expect(reduceBlocks).toMatch(/\.spinner\s*\{\s*animation:\s*none/)
+    // And the global net: transitions and any other animation become instant.
+    expect(reduceBlocks).toMatch(/transition-duration:\s*0\.01ms\s*!important/)
+    expect(reduceBlocks).toMatch(/scroll-behavior:\s*auto\s*!important/)
+  })
+
+  it("respects the reader's browser text size (root size is a percentage, not px)", () => {
+    const html = blocks(css).find((b) => b.selector === 'html')!
+    expect(html.body).toMatch(/font-size:\s*100%/)
+  })
+
+  it('serves Lora (display text) locally with font-display: block, never from a CDN', () => {
+    const lora = readFileSync(resolve(__dirname, '../fonts/lora-600.css'), 'utf8')
+    expect(lora).not.toMatch(/font-display:\s*swap/)
+    expect(lora.match(/font-display:\s*block/g)?.length).toBeGreaterThan(0)
+    expect(lora).not.toMatch(/https?:\/\//)
+    const main = readFileSync(resolve(__dirname, '../main.tsx'), 'utf8')
+    expect(main).toMatch(/import '\.\/fonts\/lora-600\.css'/)
+    expect(main).not.toMatch(/@fontsource\/lora\/600\.css/)
+    const html = readFileSync(resolve(__dirname, '../../index.html'), 'utf8')
+    expect(html).not.toMatch(/fonts\.googleapis|fonts\.gstatic|cdn\./)
+  })
+
+  it('defines no unused design tokens', () => {
+    for (const t of ['--shadow-sm', '--space-16', '--radius-xl']) expect(css).not.toContain(t + ':')
   })
 })

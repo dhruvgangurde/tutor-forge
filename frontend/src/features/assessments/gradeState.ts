@@ -1,3 +1,5 @@
+import { formatNumber } from '../../lib/formatNumber'
+
 export interface GradeState {
   /** True only once the teacher has finalized (approved or overridden) the grade. */
   released: boolean
@@ -9,9 +11,7 @@ export interface GradeState {
   percent: number | null
 }
 
-function fmt(n: number): string {
-  return String(Math.round(n * 100) / 100)
-}
+const fmt = formatNumber
 
 /**
  * What a student may see about a submission's grade.

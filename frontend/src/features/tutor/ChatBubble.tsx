@@ -83,6 +83,10 @@ export function ChatBubble({
           <div className="hint-rung-label">{hintRungLabel(hintLevel)}</div>
         )}
 
+        {/* Sender for screen readers. Tutor turns already carry the visible
+            "Tutor" label above, so only the student's side needs one. */}
+        {!isTutor && <span className="sr-only">You:</span>}
+
         {isTutor ? <Markdown>{content}</Markdown> : <p>{content}</p>}
 
         {sources.length > 0 && (

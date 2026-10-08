@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { Link, useParams } from 'react-router-dom'
 import { useMessages, useSendChat, useRequestHint, useSessions } from './hooks'
@@ -25,6 +26,18 @@ export function TutorPage() {
     messages && messages.length > 0 ? Math.max(...messages.map((m) => m.hint_level), 0) : 0
   // A hint needs a question to build on; the backend 400s without one.
   const hasQuestion = (messages ?? []).some((m) => m.role === 'student')
+
+  // Screen-reader announcements for the reply lifecycle only. The reply text
+  // itself reaches the conversation log, which announces new messages.
+  const replying = sendChat.isPending || requestHint.isPending
+  const failed = sendChat.isError || requestHint.isError
+  const [announcement, setAnnouncement] = useState('')
+  const wasReplying = useRef(false)
+  useEffect(() => {
+    if (replying) setAnnouncement('Tutor is replying')
+    else if (wasReplying.current) setAnnouncement(failed ? 'Something went wrong' : 'Reply ready')
+    wasReplying.current = replying
+  }, [replying, failed])
 
   if (isError) {
     // 403 is a session that belongs to someone else: from this student's
@@ -71,6 +84,10 @@ export function TutorPage() {
 
   return (
     <div className="tutor-page">
+      {/* Always present, so the first announcement is not missed. */}
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
       <div className="tutor-header">
         <Link to="/tutor" className="back-link">
           ← Back to sessions

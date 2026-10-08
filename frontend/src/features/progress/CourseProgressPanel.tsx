@@ -1,4 +1,5 @@
 import { useMyCourseProgress } from './hooks'
+import { formatNumber } from '../../lib/formatNumber'
 import { scorePercent } from './CourseProgressList'
 import { Badge } from '../../components/ui/Badge'
 import { SkeletonRows } from '../../components/ui/Skeleton'
@@ -47,8 +48,8 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
         <div className="score-summary-block">
           <span className="score-summary-label">Released score</span>
           <span className="score-summary-value">
-            {data.earned_points}{' '}
-            <span className="score-summary-max">/ {data.possible_points}</span>
+            {formatNumber(data.earned_points)}{' '}
+            <span className="score-summary-max">/ {formatNumber(data.possible_points)}</span>
           </span>
         </div>
         <p className="score-summary-note">
@@ -73,7 +74,7 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
               <div className="mastery-meta">
                 <span className="mastery-chapter">{c.chapter_title}</span>
                 <span className="mastery-points">
-                  {c.earned_points} / {c.possible_points} pts across {c.attempts}{' '}
+                  {formatNumber(c.earned_points)} / {formatNumber(c.possible_points)} pts across {c.attempts}{' '}
                   {c.attempts === 1 ? 'question' : 'questions'}
                 </span>
               </div>
@@ -97,28 +98,28 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
       {data.results.length === 0 ? (
         <p className="card-meta">Nothing released yet for this course.</p>
       ) : (
-        <table className="data-table data-table-stack">
-          <thead>
-            <tr>
-              <th>Assessment</th>
-              <th>Score</th>
-              <th>Decision</th>
-              <th>Released</th>
+        <table className="data-table data-table-stack" role="table">
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader">Assessment</th>
+              <th role="columnheader">Score</th>
+              <th role="columnheader">Decision</th>
+              <th role="columnheader">Released</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody role="rowgroup">
             {data.results.map((r) => (
-              <tr key={r.submission_id}>
-                <td data-label="Assessment">{r.assessment_title}</td>
-                <td data-label="Score">
-                  {r.final_score} / {r.max_score}
+              <tr role="row" key={r.submission_id}>
+                <td role="cell" data-label="Assessment">{r.assessment_title}</td>
+                <td role="cell" data-label="Score">
+                  {formatNumber(r.final_score)} / {formatNumber(r.max_score)}
                 </td>
-                <td data-label="Decision">
+                <td role="cell" data-label="Decision">
                   <Badge variant={r.action === 'approved' ? 'success' : 'info'}>
                     {statusLabel(r.action)}
                   </Badge>
                 </td>
-                <td data-label="Released">{new Date(r.finalized_at).toLocaleDateString()}</td>
+                <td role="cell" data-label="Released">{new Date(r.finalized_at).toLocaleDateString()}</td>
               </tr>
             ))}
           </tbody>

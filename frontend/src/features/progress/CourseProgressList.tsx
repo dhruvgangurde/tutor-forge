@@ -1,4 +1,5 @@
 import { Badge } from '../../components/ui/Badge'
+import { formatNumber } from '../../lib/formatNumber'
 import type { CourseProgressSummary } from '../../lib/api/types'
 
 interface CourseProgressListProps {
@@ -21,39 +22,55 @@ export function CourseProgressList({
 }: CourseProgressListProps) {
   return (
     <div className="table-scroll">
-    <table className="data-table data-table-stack">
-      <thead>
-        <tr>
-          <th>Course</th>
-          <th>Graded</th>
-          <th>Awaiting grade</th>
-          <th>Released score</th>
-          <th>Last graded</th>
+    <table className="data-table data-table-stack" role="table">
+      <thead role="rowgroup">
+        <tr role="row">
+          <th role="columnheader">Course</th>
+          <th role="columnheader">Graded</th>
+          <th role="columnheader">Awaiting grade</th>
+          <th role="columnheader">Released score</th>
+          <th role="columnheader">Last graded</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody role="rowgroup">
         {courses.map((c) => {
           const pct = scorePercent(c.earned_points, c.possible_points)
           return (
             <tr
+              role="row"
               key={c.course_id}
               onClick={() => onSelect(c.course_id)}
               className={`clickable-row${c.course_id === selectedId ? ' row-selected' : ''}`}
             >
-              <td data-label="Course">{c.course_name}</td>
-              <td data-label="Graded">{c.assessments_graded}</td>
-              <td data-label="Awaiting grade">
+              <td role="cell" data-label="Course">
+                {/* The keyboard way in: the row's click stays for the mouse. */}
+                <button
+                  type="button"
+                  className="row-action"
+                  aria-current={c.course_id === selectedId ? 'true' : undefined}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect(c.course_id)
+                  }}
+                >
+                  {c.course_name}
+                </button>
+              </td>
+              <td role="cell" data-label="Graded">{c.assessments_graded}</td>
+              <td role="cell" data-label="Awaiting grade">
                 {c.assessments_awaiting_grade > 0 ? (
                   <Badge variant="muted">{c.assessments_awaiting_grade}</Badge>
                 ) : (
                   '—'
                 )}
               </td>
-              <td data-label="Released score" className="cell-score">
+              <td role="cell" data-label="Released score" className="cell-score">
                 {/* An em dash, not 0%: nothing released yet is not a zero score. */}
-                {pct === null ? '—' : `${c.earned_points} / ${c.possible_points} (${pct}%)`}
+                {pct === null
+                  ? '—'
+                  : `${formatNumber(c.earned_points)} / ${formatNumber(c.possible_points)} (${pct}%)`}
               </td>
-              <td data-label="Last graded">
+              <td role="cell" data-label="Last graded">
                 {c.last_graded_at
                   ? new Date(c.last_graded_at).toLocaleDateString()
                   : '—'}

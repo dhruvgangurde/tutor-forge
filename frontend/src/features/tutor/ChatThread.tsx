@@ -17,10 +17,12 @@ export const TUTOR_NOTE =
 /**
  * Placeholder in the tutor's slot while a reply is generated. The dots pulse
  * only when motion is allowed; under prefers-reduced-motion it is static text.
+ * Hidden from assistive tech: the page's status region says "Tutor is
+ * replying" instead, so the log only ever announces real messages.
  */
 function ThinkingSlot() {
   return (
-    <div className="chat-bubble-row tutor">
+    <div className="chat-bubble-row tutor" aria-hidden="true">
       <div className="chat-bubble tutor thinking">
         <div className="tutor-label">
           <BookIcon size={15} />
@@ -63,9 +65,13 @@ export function ChatThread({ messages, isLoading, isReplying = false }: ChatThre
     return <div className="chat-thread-loading">Loading conversation...</div>
   }
 
+  // The history is a log: new messages are announced politely as they are
+  // added, and tabIndex lets keyboard users focus it and scroll with the keys.
+  const logProps = { role: 'log', 'aria-label': 'Conversation', tabIndex: 0 } as const
+
   if (messages.length === 0) {
     return (
-      <div className="chat-thread chat-thread-empty" ref={threadRef}>
+      <div className="chat-thread chat-thread-empty" ref={threadRef} {...logProps}>
         <h2 className="chat-empty-prompt">What would you like to work through today?</h2>
         <p className="chat-empty-note">{TUTOR_NOTE}</p>
         {isReplying && <ThinkingSlot />}
@@ -74,7 +80,7 @@ export function ChatThread({ messages, isLoading, isReplying = false }: ChatThre
   }
 
   return (
-    <div className="chat-thread" ref={threadRef}>
+    <div className="chat-thread" ref={threadRef} {...logProps}>
       {messages.map((msg, idx) => {
         // A tutor message above level 0 exists because the student pressed the
         // hint button. Every one of them gets a marker, including the first,

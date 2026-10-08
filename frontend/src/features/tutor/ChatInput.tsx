@@ -29,7 +29,7 @@ export function ChatInput({
   const inputRef = useRef<HTMLInputElement>(null)
 
   async function submitMessage() {
-    if (!input.trim()) return
+    if (isLoading || !input.trim()) return
     try {
       await onSendMessage(input)
       setInput('')
@@ -57,8 +57,13 @@ export function ChatInput({
         <ErrorBanner message={getErrorMessage(error)} />
       )}
       <form onSubmit={handleSubmit} className="chat-input-form composer">
+        {/* The placeholder is a hint, not a label. */}
+        <label htmlFor="chat-question-input" className="sr-only">
+          Ask a question about the course material
+        </label>
         <input
           ref={inputRef}
+          id="chat-question-input"
           type="text"
           className="chat-input-field"
           value={input}
@@ -66,7 +71,10 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           maxLength={MAX_TUTOR_QUESTION_CHARS}
           placeholder="Ask a question about the course material..."
-          disabled={isLoading}
+          // Read-only, not disabled, while a reply is pending: a disabled field
+          // drops keyboard focus, and the student would have to find it again.
+          readOnly={isLoading}
+          aria-busy={isLoading || undefined}
           autoFocus
         />
         <div className="composer-actions">
