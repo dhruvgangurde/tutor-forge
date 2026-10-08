@@ -26,7 +26,7 @@ from main import app
 
 PDF = "application/pdf"
 PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-PPT = "application/vnd.ms-powerpoint"
+PPT = "application/vnd.ms-powerpoint"  # legacy type, no longer accepted
 TXT = "text/plain"
 
 PDF_BYTES = b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n"
@@ -56,12 +56,11 @@ def _plain_zip() -> bytes:
     [
         ("notes.pdf", ".pdf", PDF, PDF_BYTES),
         ("slides.pptx", ".pptx", PPTX, _pptx_bytes()),
-        ("old.ppt", ".ppt", PPT, PPT_BYTES),
         ("notes.txt", ".txt", TXT, "Plain notes, with UTF-8: café.\n".encode()),
         ("notes.txt", ".txt", "text/plain; charset=utf-8", b"notes"),
         ("empty.txt", ".txt", TXT, b""),
     ],
-    ids=["pdf", "pptx", "ppt", "txt", "txt-charset", "txt-empty"],
+    ids=["pdf", "pptx", "txt", "txt-charset", "txt-empty"],
 )
 def test_genuine_files_pass(name, ext, mime, content):
     assert content_mismatch(name, ext, mime, content) is None
@@ -74,7 +73,7 @@ def test_genuine_files_pass(name, ext, mime, content):
         ("notes.pdf", ".pdf", PDF, b"just some text", "does not contain PDF data"),
         ("slides.pptx", ".pptx", PPTX, _plain_zip(), "does not contain PowerPoint (.pptx) data"),
         ("slides.pptx", ".pptx", PPTX, b"PK\x03\x04 truncated", "does not contain PowerPoint (.pptx) data"),
-        ("old.ppt", ".ppt", PPT, PDF_BYTES, "does not contain PowerPoint (.ppt) data"),
+        ("old.pptx", ".pptx", PPTX, PPT_BYTES, "does not contain PowerPoint (.pptx) data"),
         ("notes.txt", ".txt", TXT, EXE_BYTES, "does not contain text data"),
         ("notes.txt", ".txt", TXT, PDF_BYTES, "does not contain text data"),
         ("notes.txt", ".txt", TXT, b"abc\x00def", "does not contain text data"),
@@ -84,7 +83,7 @@ def test_genuine_files_pass(name, ext, mime, content):
         ("notes.pdf", ".pdf", None, PDF_BYTES, "was sent as an unknown type"),
     ],
     ids=[
-        "exe-as-pdf", "text-as-pdf", "zip-as-pptx", "truncated-pptx", "pdf-as-ppt",
+        "exe-as-pdf", "text-as-pdf", "zip-as-pptx", "truncated-pptx", "legacy-ppt-renamed-pptx",
         "exe-as-txt", "pdf-as-txt", "nul-in-txt", "pdf-declared-text", "txt-declared-exe",
         "pdf-no-type",
     ],
@@ -171,6 +170,21 @@ async def test_declared_type_that_disagrees_with_the_extension_is_rejected(clien
     )
     assert resp.status_code == 400
     assert "does not match its .txt extension" in resp.json()["detail"]
+    assert await _course_count() == 0
+
+
+@pytest.mark.parametrize(
+    "mime", [PPT, PPTX], ids=["declared-ppt", "declared-pptx"]
+)
+async def test_legacy_ppt_is_no_longer_accepted(client, mime):
+    # python-pptx cannot read .ppt, so it used to pass upload and fail in ingestion.
+    resp = await client.post(
+        "/courses/upload",
+        data={"name": "Old deck"},
+        files={"files": ("old.ppt", PPT_BYTES, mime)},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Unsupported file type: old.ppt"
     assert await _course_count() == 0
 
 

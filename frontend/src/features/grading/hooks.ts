@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   approveGrade,
+  getFinalizedGrades,
   getGradingDetail,
   getGradingQueue,
   overrideGrade,
@@ -12,6 +13,14 @@ export function useGradingQueue() {
   return useQuery({
     queryKey: queryKeys.grading.queue(),
     queryFn: getGradingQueue,
+  })
+}
+
+/** Released grades in this teacher's courses (read-only history). */
+export function useFinalizedGrades() {
+  return useQuery({
+    queryKey: queryKeys.grading.finalized(),
+    queryFn: getFinalizedGrades,
   })
 }
 
@@ -42,6 +51,7 @@ function useInvalidateAfterFinalize() {
   const queryClient = useQueryClient()
   return (submissionId: string) => {
     queryClient.invalidateQueries({ queryKey: queryKeys.grading.queue() })
+    queryClient.invalidateQueries({ queryKey: queryKeys.grading.finalized() })
     queryClient.invalidateQueries({ queryKey: queryKeys.grading.review(submissionId) })
   }
 }

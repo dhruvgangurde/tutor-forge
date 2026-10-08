@@ -372,13 +372,27 @@ async def test_chat_wrong_session_owner(client, student_token, ready_course_id):
     })
     other_token = resp.json()["access_token"]
 
-    # Try to chat on student A's session
+    # Try to chat on student A's session: 404, the same as a session that
+    # does not exist (audit #4c), so the id's existence is not revealed.
     resp = await client.post(
         f"/tutor/sessions/{session_id}/chat",
         json={"question": "What is philosophy?"},
         headers={"Authorization": f"Bearer {other_token}"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Tutoring session not found."
+
+    # ...on every session route, identical to a random id.
+    other = {"Authorization": f"Bearer {other_token}"}
+    for method, suffix, body in (
+        ("GET", "messages", None),
+        ("POST", "chat", {"question": "What is philosophy?"}),
+        ("POST", "hint", None),
+    ):
+        theirs = await client.request(method, f"/tutor/sessions/{session_id}/{suffix}", json=body, headers=other)
+        missing = await client.request(method, f"/tutor/sessions/{uuid.uuid4()}/{suffix}", json=body, headers=other)
+        assert theirs.status_code == missing.status_code == 404, suffix
+        assert theirs.json() == missing.json(), suffix
 
 
 # ── Hint tests ────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ Endpoints
 import uuid
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -33,6 +33,7 @@ from grading.schemas import (
     FinalGradeResponse,
     GradingAck,
     GradingDetail,
+    FinalizedGradeItem,
     GradingQueueItem,
     OverrideRequest,
     EvidenceCitation,
@@ -42,6 +43,7 @@ from grading.schemas import (
 from grading.service import (
     finalize_grade,
     get_grading_detail,
+    list_finalized_grades,
     list_grading_queue,
     trigger_grading,
 )
@@ -88,8 +90,10 @@ async def _require_teacher_owns_submission(
     Load the submission and verify that the requesting teacher owns the
     corresponding course.
 
-    Raises 403 if the teacher does not own the course.
-    Raises 404 if the submission does not exist.
+    Raises 404 both when the submission does not exist and when it belongs
+    to another teacher's course. A 403 for the second case told a caller that
+    the id was real (audit 2026-10-06 #4c); every course- and
+    assessment-scoped route already answers 404 for both.
     """
     result = await db.execute(
         select(Submission)
@@ -99,15 +103,9 @@ async def _require_teacher_owns_submission(
         .where(Submission.id == submission_id)
     )
     submission = result.scalar_one_or_none()
-    if not submission:
+    course: Course | None = submission.assessment.course if submission else None
+    if course is None or course.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found.")
-
-    course: Course = submission.assessment.course
-    if course.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own the course for this submission.",
-        )
     return submission
 
 
@@ -199,6 +197,28 @@ async def get_grading_queue(
         )
         for item in items
     ]
+
+
+# ── GET /finalized ────────────────────────────────────────────────────────────
+# Declared before GET /{submission_id}, which would otherwise try to parse
+# "finalized" as a UUID.
+
+@router.get(
+    "/finalized",
+    response_model=list[FinalizedGradeItem],
+    summary="Teacher grade history",
+    description=(
+        "Released (approved or overridden) grades for assessments in courses "
+        "owned by the requesting teacher, newest first."
+    ),
+)
+async def get_finalized_grades(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db_session),
+    current_user: User = Depends(require_teacher),
+) -> list[FinalizedGradeItem]:
+    items = await list_finalized_grades(teacher_id=current_user.id, db=db, limit=limit)
+    return [FinalizedGradeItem(**item) for item in items]
 
 
 # ── GET /{submission_id} ──────────────────────────────────────────────────────

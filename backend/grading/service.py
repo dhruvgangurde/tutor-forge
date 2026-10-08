@@ -386,6 +386,49 @@ async def list_grading_queue(
     ]
 
 
+async def list_finalized_grades(
+    teacher_id: uuid.UUID,
+    db: AsyncSession,
+    limit: int,
+) -> list[dict]:
+    """
+    The teacher's released grades, newest first, at most ``limit`` rows.
+
+    Scoped by course ownership exactly like list_grading_queue -- not by who
+    finalized the grade -- so it lists every final grade in this teacher's
+    courses and nothing from anyone else's.
+    """
+    from db.models import Assessment, Course, FinalGrade
+
+    result = await db.execute(
+        select(FinalGrade, GradeRecommendation, Submission, Assessment, Course)
+        .join(GradeRecommendation, FinalGrade.recommendation_id == GradeRecommendation.id)
+        .join(Submission, GradeRecommendation.submission_id == Submission.id)
+        .join(Assessment, Submission.assessment_id == Assessment.id)
+        .join(Course, Assessment.course_id == Course.id)
+        .options(selectinload(Submission.student))
+        .where(Course.owner_id == teacher_id)
+        .order_by(FinalGrade.finalized_at.desc())
+        .limit(limit)
+    )
+    return [
+        {
+            "submission_id": sub.id,
+            "student_email": sub.student.email if sub.student else None,
+            "assessment_title": assessment.title,
+            "course_name": course.name,
+            "final_score": final.final_score,
+            "max_score": rec.max_score,
+            "action": final.action,
+            # A FinalGrade is only ever written on release (finalize_grade),
+            # so every row here is visible to its student.
+            "released": True,
+            "finalized_at": final.finalized_at,
+        }
+        for final, rec, sub, assessment, course in result.all()
+    ]
+
+
 # ── 5. finalize_grade ─────────────────────────────────────────────────────────
 
 async def finalize_grade(

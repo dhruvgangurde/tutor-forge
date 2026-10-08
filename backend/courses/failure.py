@@ -27,6 +27,16 @@ _REASONS: tuple[tuple[str, str], ...] = (
         "Try uploading the course again.",
     ),
     (
+        "No readable text",
+        "No readable text was found in these files. Scanned or image-only PDFs "
+        "cannot be read; upload a text-based PDF, PowerPoint or text file.",
+    ),
+    (
+        "No chapters",
+        "No chapters could be found in these materials. Check that the files "
+        "contain course text and upload them again.",
+    ),
+    (
         "Ingestion did not complete",
         "Processing was interrupted before it finished. Upload the course again.",
     ),

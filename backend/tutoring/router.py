@@ -70,22 +70,19 @@ async def _require_student_owns_session(
     """
     Load the tutoring session and verify the requesting student owns it.
 
-    Raises 404 if session doesn't exist or 403 if student doesn't own it.
+    Raises 404 both when the session does not exist and when it belongs to
+    another student, so the response does not reveal which ids are real
+    (audit 2026-10-06 #4c). The "no longer enrolled" 403 is separate
+    (_require_still_enrolled): that session IS the student's own.
     """
     result = await db.execute(
         select(TutoringSession).where(TutoringSession.id == session_id)
     )
     session = result.scalar_one_or_none()
-    if not session:
+    if session is None or session.student_id != student.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tutoring session not found.",
-        )
-
-    if session.student_id != student.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own this tutoring session.",
         )
     return session
 

@@ -293,6 +293,19 @@ export interface CriterionGrade {
   requires_review: boolean
 }
 
+/** One released grade in the teacher's history: GET /grading/finalized. */
+export interface FinalizedGradeItem {
+  submission_id: string
+  student_email: string | null
+  assessment_title: string
+  course_name: string
+  final_score: number
+  max_score: number
+  action: string
+  released: boolean
+  finalized_at: string
+}
+
 export interface GradingQueueItem {
   recommendation_id: string
   submission_id: string

@@ -33,7 +33,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Allowed MIME types for uploaded course files
-_ALLOWED_MIME = {"application/pdf", "application/vnd.ms-powerpoint",
+# (No legacy .ppt: python-pptx reads only the OOXML .pptx format.)
+_ALLOWED_MIME = {"application/pdf",
                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                  "text/plain"}
 _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per file
@@ -97,7 +98,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                             "text": text,
                         })
 
-        elif "presentationml" in mime or mime == "application/vnd.ms-powerpoint":
+        elif "presentationml" in mime:
             from pptx import Presentation
             prs = Presentation(io.BytesIO(raw))
             for slide_num, slide in enumerate(prs.slides, start=1):
@@ -136,6 +137,13 @@ def parse_content_node(state: IngestionState) -> IngestionState:
         "[INGESTION] parse_content_node complete: course_id=%s pages=%d total_chars=%d",
         course_id, len(parsed), len(total_text)
     )
+
+    # A scanned or image-only PDF parses without error but yields no text.
+    # It used to carry on and finish "ready" with 0 chapters -- a course that
+    # looks usable and has nothing in it.
+    if not total_text.strip():
+        return {**state, "status": "failed",
+                "error": NO_READABLE_TEXT_ERROR}
 
     return {**state, "parsed_content": parsed}
 
@@ -471,6 +479,25 @@ def _build_hierarchy_ollama(
     }
 
 
+# Stored in ingestion_jobs.error_message; courses/failure.py maps these
+# prefixes to the sentence the teacher sees.
+NO_READABLE_TEXT_ERROR = (
+    "No readable text: none of the uploaded files contain extractable text "
+    "(scanned or image-only documents cannot be read)."
+)
+NO_CHAPTERS_ERROR = "No chapters: the course outline came back with zero chapters."
+
+
+def _require_chapters(result: IngestionState) -> IngestionState:
+    """Fail a hierarchy with zero chapters instead of finishing an empty course."""
+    if result.get("status") == "failed":
+        return result
+    if not (result.get("hierarchy") or {}).get("chapters"):
+        logger.warning("[INGESTION] zero chapters: course_id=%s", result.get("course_id"))
+        return {**result, "status": "failed", "error": NO_CHAPTERS_ERROR}
+    return result
+
+
 def build_hierarchy_node(
     state: IngestionState,
     gemini_pro: "GeminiProClient",
@@ -484,7 +511,7 @@ def build_hierarchy_node(
     retry). The Gemini/mock path below is unchanged.
     """
     if settings.llm_provider == "ollama":
-        return _build_hierarchy_ollama(state, gemini_pro)
+        return _require_chapters(_build_hierarchy_ollama(state, gemini_pro))
 
     course_id = state["course_id"]
 
@@ -558,7 +585,7 @@ def build_hierarchy_node(
             ch_idx, ch_name, concepts
         )
 
-    return {**state, "hierarchy": hierarchy}
+    return _require_chapters({**state, "hierarchy": hierarchy})
 
 
 # ── Node 4: create_course_collection_node ─────────────────────────────────────

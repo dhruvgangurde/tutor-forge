@@ -12,8 +12,9 @@ pin that down from both sides:
   - a student gets 403 "Teacher role required." from all five, even on their
     own submission -- the role check, not the ownership check, rejects them;
   - the owning teacher still gets normal success from all five;
-  - a teacher who does not own the course still hits the ownership 403, so
-    the role dependency was added in front of that guard, not instead of it.
+  - a teacher who does not own the course still hits the ownership guard
+    (now a 404 identical to a missing submission, audit #4c), so the role
+    dependency was added in front of that guard, not instead of it.
 
 Same pattern as test_course_lifecycle.py: SQLite in-memory DB, rows seeded
 directly. The grading graph itself is stubbed by conftest (stub_background_jobs).
@@ -240,8 +241,41 @@ async def test_other_teacher_queue_is_empty(client, other_teacher_token, submiss
 
 @pytest.mark.parametrize("endpoint", ["detail", "grade", "approve", "override"])
 async def test_other_teacher_gets_ownership_403(client, other_teacher_token, submissions, endpoint):
+    # Name kept from before audit #4c; the ownership refusal is now a 404.
     method, path, body = _ENDPOINTS[endpoint]
     sub = submissions["ungraded" if endpoint == "grade" else "approve"]
     resp = await client.request(method, path.format(sub=sub), json=body, headers=_auth(other_teacher_token))
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Submission not found."
+
+
+@pytest.mark.parametrize("endpoint", ["detail", "grade", "approve", "override"])
+async def test_other_teachers_submission_is_indistinguishable_from_a_missing_one(
+    client, other_teacher_token, submissions, endpoint
+):
+    method, path, body = _ENDPOINTS[endpoint]
+    real = submissions["ungraded" if endpoint == "grade" else "approve"]
+    theirs = await client.request(method, path.format(sub=real), json=body, headers=_auth(other_teacher_token))
+    missing = await client.request(
+        method, path.format(sub=uuid.uuid4()), json=body, headers=_auth(other_teacher_token)
+    )
+    assert (theirs.status_code, theirs.json()["detail"]) == (missing.status_code, missing.json()["detail"])
+
+
+@pytest.mark.parametrize("endpoint", ["detail", "grade", "approve", "override"])
+async def test_student_still_gets_the_role_403_not_a_404(client, student_token, endpoint):
+    # Role first: a student is told the route is for teachers, whatever the id.
+    method, path, body = _ENDPOINTS[endpoint]
+    resp = await client.request(method, path.format(sub=uuid.uuid4()), json=body, headers=_auth(student_token))
     assert resp.status_code == 403
-    assert resp.json()["detail"] == "You do not own the course for this submission."
+    assert resp.json()["detail"] == "Teacher role required."
+
+
+async def test_other_teacher_cannot_change_anything(client, other_teacher_token, submissions):
+    for endpoint in ("approve", "override"):
+        method, path, body = _ENDPOINTS[endpoint]
+        await client.request(
+            method, path.format(sub=submissions[endpoint]), json=body, headers=_auth(other_teacher_token)
+        )
+    async with _Session() as db:
+        assert (await db.execute(select(FinalGrade))).scalars().all() == []
