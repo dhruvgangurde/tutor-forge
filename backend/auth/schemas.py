@@ -9,6 +9,10 @@ from typing import Annotated
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from core.limits import MAX_EMAIL_CHARS
+
+Email = Annotated[EmailStr, Field(max_length=MAX_EMAIL_CHARS)]
+
 # bcrypt hashes at most the first 72 bytes of a password; anything longer is
 # silently truncated, so two different long passwords sharing a 72-byte prefix
 # would authenticate identically. Reject those at registration (F17).
@@ -16,12 +20,12 @@ _BCRYPT_MAX_BYTES = 72
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Email
     password: str
 
 
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: Email
     password: Annotated[str, Field(min_length=8)]
 
     @field_validator("password")
@@ -43,6 +47,11 @@ class TokenResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    """Optional body for /auth/logout; the bearer access token is always revoked."""
+    refresh_token: str | None = None
 
 
 class UserResponse(BaseModel):

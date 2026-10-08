@@ -2,7 +2,11 @@
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from typing import Annotated
+
+from pydantic import BaseModel, EmailStr, Field
+
+from core.limits import MAX_EMAIL_CHARS
 
 
 class CourseUploadResponse(BaseModel):
@@ -19,6 +23,8 @@ class CourseSummary(BaseModel):
     created_at: datetime
     archived_at: datetime | None = None
     is_archived: bool = False
+    # Plain-language reason, set only when status is "failed".
+    failure_reason: str | None = None
 
 
 class DeletionBlockedDetail(BaseModel):
@@ -53,13 +59,17 @@ class CourseDetail(BaseModel):
     name: str
     status: str
     created_at: datetime
-    chapter_count: int
-    concept_count: int
+    # From the stored outline; None unless the course is ready (no outline yet,
+    # or ingestion failed).
+    chapter_count: int | None = None
+    concept_count: int | None = None
+    # Plain-language reason, set only when status is "failed".
+    failure_reason: str | None = None
 
 
 class EnrollRequest(BaseModel):
     """Teacher adds a student to their course by the student's account email."""
-    email: EmailStr
+    email: Annotated[EmailStr, Field(max_length=MAX_EMAIL_CHARS)]
 
 
 class EnrollmentOut(BaseModel):

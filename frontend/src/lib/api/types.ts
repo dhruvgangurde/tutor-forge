@@ -18,6 +18,8 @@ export interface CourseSummary {
   created_at: string
   archived_at: string | null
   is_archived: boolean
+  /** Plain-language reason; set only when status is "failed". */
+  failure_reason?: string | null
 }
 
 export interface CourseDetail {
@@ -25,8 +27,11 @@ export interface CourseDetail {
   name: string
   status: string
   created_at: string
-  chapter_count: number
-  concept_count: number
+  /** From the stored outline; null unless the course is ready. */
+  chapter_count: number | null
+  concept_count: number | null
+  /** Plain-language reason; set only when status is "failed". */
+  failure_reason?: string | null
 }
 
 export interface ConceptSummary {
@@ -132,6 +137,13 @@ export interface QuestionDetail {
   difficulty: string | null
   max_points: number
   rubric_criteria: RubricCriterionDetail[]
+  /**
+   * Teacher draft only (never in the student take view). MCQ: the letter the
+   * grader matches exactly against the student's choice. Numeric / short
+   * answer: the expected answer text. Null when no key is stored.
+   */
+  correct_answer?: string | null
+  worked_solution?: string | null
 }
 
 export interface AssessmentSummary {
@@ -216,8 +228,9 @@ export interface StudentSubmissionSummary {
   course_name: string
   submitted_at: string
   status: string // "pending_grading" | "graded"
-  final_score?: number
-  max_score?: number
+  /** null until the teacher finalizes the grade (the API sends null, not undefined). */
+  final_score?: number | null
+  max_score?: number | null
 }
 
 export interface StudentSubmissionResponse {
@@ -238,8 +251,9 @@ export interface StudentSubmissionDetail {
   submitted_at: string
   status: string // "pending_grading" | "graded"
   responses: StudentSubmissionResponse[]
-  final_score?: number
-  max_score?: number
+  /** null until the teacher finalizes the grade (the API sends null, not undefined). */
+  final_score?: number | null
+  max_score?: number | null
   graded_at?: string
   feedback?: string
 }
@@ -261,7 +275,8 @@ export interface EvidenceCitation {
   text: string
   source_file: string
   page_or_slide: number | null
-  confidence: number
+  /** Retrieval confidence 0-1 of the quoted chunk; null when it is not known. */
+  confidence: number | null
 }
 
 export interface CriterionGrade {
@@ -277,6 +292,19 @@ export interface CriterionGrade {
    * was wrong — the teacher decides.
    */
   requires_review: boolean
+}
+
+/** One released grade in the teacher's history: GET /grading/finalized. */
+export interface FinalizedGradeItem {
+  submission_id: string
+  student_email: string | null
+  assessment_title: string
+  course_name: string
+  final_score: number
+  max_score: number
+  action: string
+  released: boolean
+  finalized_at: string
 }
 
 export interface GradingQueueItem {

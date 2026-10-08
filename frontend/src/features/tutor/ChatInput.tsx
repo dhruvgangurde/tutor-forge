@@ -1,6 +1,7 @@
 import { FormEvent, useRef, useState } from 'react'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
+import { MAX_TUTOR_QUESTION_CHARS } from '../../lib/limits'
 
 interface ChatInputProps {
   onSendMessage: (question: string) => Promise<void>
@@ -55,6 +56,7 @@ export function ChatInput({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          maxLength={MAX_TUTOR_QUESTION_CHARS}
           placeholder="Ask a question about the course material..."
           disabled={isLoading}
           autoFocus
@@ -67,6 +69,11 @@ export function ChatInput({
           {isLoading ? 'Sending...' : 'Send'}
         </button>
       </form>
+      {input.length >= MAX_TUTOR_QUESTION_CHARS && (
+        <p className="field-hint" role="status">
+          You have reached the {MAX_TUTOR_QUESTION_CHARS.toLocaleString('en-US')}-character limit for a question.
+        </p>
+      )}
     </div>
   )
 }

@@ -50,10 +50,19 @@ from agents.grading.prompts import (
     GRADING_SYSTEM_INSTRUCTION,
     MCQ_GRADING_METHOD,
     NUMERIC_GRADING_METHOD,
-    NUMERIC_TOLERANCE,
 )
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from agents.grading.state import GradingState
+from grading.numeric import parse_numeric_answer, within_tolerance
+
+
+def _fmt_values(values: list[float]) -> str:
+    """'3, 27, 38, 43' -- whole numbers without a trailing .0."""
+    return ", ".join(f"{v:g}" for v in values)
+
+
+def _count(n: int) -> str:
+    return "1 value" if n == 1 else f"{n} values"
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
@@ -410,6 +419,40 @@ def check_evidence_groundedness_node(
 
 # ── Node 3: grade_responses_node ──────────────────────────────────────────────
 
+def _collapse(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def citation_confidence(cite: dict, evidence: list[dict]) -> float | None:
+    """
+    Retrieval confidence of the evidence chunk a model citation quotes.
+
+    The lookup used to be an exact substring test of the quote against each
+    chunk, which almost never held: PDF chunks keep the page's line breaks
+    ("a dealer
+combining two sorted hands") while the model quotes them with
+    spaces. Every citation therefore fell through to a default of 0.0 and
+    every evidence chip read "0%" (frontend audit #9).
+
+    The quote is now matched with whitespace collapsed and case ignored;
+    failing that, a retrieved chunk from the cited file and page is used. If
+    nothing matches the score is unknown -- None, not 0.0 -- and the UI shows
+    no percentage. Display-only: scores never read this value.
+    """
+    quote = _collapse(str(cite.get("quoted_text") or ""))
+    if quote:
+        for e in evidence:
+            if quote in _collapse(str(e.get("text", ""))):
+                return float(e["confidence"])
+    source, page = cite.get("source_file"), cite.get("page_or_slide")
+    same_page = [
+        float(e["confidence"])
+        for e in evidence
+        if source and e.get("source_file") == source and str(e.get("page_or_slide")) == str(page)
+    ]
+    return max(same_page) if same_page else None
+
+
 def grade_responses_node(
     state: GradingState,
     gemini_pro,
@@ -502,23 +545,46 @@ def grade_responses_node(
             continue
 
         # ── Numeric: tolerance comparison ─────────────────────────────────────
+        # The key may be one number or an ordered list ("3,27,38,43" for a
+        # sorted array). A list is compared element by element, in order, each
+        # within NUMERIC_TOLERANCE. See grading/numeric.py for why.
         if q_type == "numeric":
             grading_method_used.add(NUMERIC_GRADING_METHOD)
-            expected_raw = resp["answer_key"].get("correct_answer", "")
-            student_raw = resp.get("answer_text") or ""
-            try:
-                expected_val = float(expected_raw)
-                student_val = float(student_raw.strip())
-                tolerance = abs(expected_val) * NUMERIC_TOLERANCE if expected_val != 0 else NUMERIC_TOLERANCE
-                if abs(student_val - expected_val) <= tolerance:
+            expected = parse_numeric_answer(resp["answer_key"].get("correct_answer", ""))
+            student = parse_numeric_answer(resp.get("answer_text") or "")
+            if expected is None:
+                # A bad key is not the student's fault -- say so, for the reviewer.
+                score = 0.0
+                feedback = (
+                    "Could not grade automatically: this question's answer key is not "
+                    "a number or a list of numbers. Pending manual review."
+                )
+            elif student is None:
+                score = 0.0
+                feedback = "Could not evaluate numeric answer — non-numeric response received."
+            elif len(expected) == 1 and len(student) == 1:
+                expected_val, student_val = expected[0], student[0]
+                if within_tolerance(student_val, expected_val):
                     score = q_max
                     feedback = f"Correct. Your answer {student_val} is within the accepted range."
                 else:
                     score = 0.0
                     feedback = f"Incorrect. Expected approximately {expected_val}; you answered {student_val}."
-            except (ValueError, TypeError):
+            elif len(student) != len(expected):
                 score = 0.0
-                feedback = "Could not evaluate numeric answer — non-numeric response received."
+                feedback = (
+                    f"Incorrect. Expected {_count(len(expected))} ({_fmt_values(expected)}); "
+                    f"you gave {_count(len(student))} ({_fmt_values(student)})."
+                )
+            elif all(within_tolerance(s, e) for s, e in zip(student, expected)):
+                score = q_max
+                feedback = f"Correct. Your answer {_fmt_values(student)} matches the expected values in order."
+            else:
+                score = 0.0
+                feedback = (
+                    f"Incorrect. Expected {_fmt_values(expected)} in that order; "
+                    f"you answered {_fmt_values(student)}."
+                )
 
             criterion_results.append([{
                 "criterion_id": None,
@@ -700,11 +766,7 @@ def grade_responses_node(
                         "text": cite.get("quoted_text", ""),
                         "source_file": cite.get("source_file", ""),
                         "page_or_slide": cite.get("page_or_slide"),
-                        "confidence": next(
-                            (e["confidence"] for e in evidence
-                             if cite.get("quoted_text", "") in e.get("text", "")),
-                            0.0,
-                        ),
+                        "confidence": citation_confidence(cite, evidence),
                     }
                     for cite in llm_entry.get("citations", [])
                 ]

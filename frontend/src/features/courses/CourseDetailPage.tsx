@@ -11,8 +11,9 @@ import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { Badge } from '../../components/ui/Badge'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { statusToVariant } from '../../lib/statusVariant'
-import { getErrorMessage } from '../../lib/api/errors'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
+import { NotFoundState } from '../../components/ui/NotFoundState'
+import { getErrorMessage, isNotFoundError } from '../../lib/api/errors'
 
 export function CourseDetailPage() {
   const { courseId } = useParams<{ courseId: string }>()
@@ -26,7 +27,30 @@ export function CourseDetailPage() {
   const assessmentsQuery = useCourseAssessments(isReady ? (courseId ?? '') : '')
 
   if (isLoading) return <Spinner label="Loading course…" />
-  if (isError) return <ErrorBanner message={getErrorMessage(error)} />
+  if (isError) {
+    // A missing course and a malformed id in the URL are the same thing to a
+    // teacher: there is no such course here. Either way, offer the way back.
+    if (isNotFoundError(error)) {
+      return (
+        <NotFoundState
+          title="Course not found"
+          message="This course doesn't exist, or it isn't one of yours."
+          linkTo="/courses"
+          linkLabel="Back to courses"
+        />
+      )
+    }
+    return (
+      <>
+        <div className="page-header">
+          <Link to="/courses" className="back-link">
+            ← Back to courses
+          </Link>
+        </div>
+        <ErrorBanner message={getErrorMessage(error)} />
+      </>
+    )
+  }
   if (!course) return null
 
   return (
@@ -37,12 +61,14 @@ export function CourseDetailPage() {
         </Link>
         <div className="page-header-row">
           <h1 className="page-title">{course.name}</h1>
-          <Badge variant={statusToVariant(course.status)}>{course.status}</Badge>
+          <Badge variant={statusToVariant(course.status)}>{statusLabel(course.status)}</Badge>
         </div>
       </div>
 
       {course.status === 'failed' && (
-        <ErrorBanner message="Ingestion failed for this course. Please upload it again." />
+        <ErrorBanner
+          message={course.failure_reason ?? 'Processing the course materials failed. Try uploading the course again.'}
+        />
       )}
 
       {(course.status === 'pending' || course.status === 'ingesting') && (

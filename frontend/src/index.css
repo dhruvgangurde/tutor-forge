@@ -269,6 +269,21 @@ code {
 
 .field-input::placeholder { color: var(--clr-text-dim); }
 
+/* Visually hidden, still read by screen readers. Components already used this
+   class (e.g. question legends on the take page) but it was never defined, so
+   that text rendered visibly. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ── Buttons ─────────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -781,6 +796,68 @@ code {
   font-style: italic;
 }
 
+/* ── Answer key (teacher draft preview + question edit) ───────────── */
+.question-option-correct {
+  color: var(--clr-success);
+  font-weight: 500;
+}
+
+.answer-key-tag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--clr-success);
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.answer-key-line {
+  color: var(--clr-text-muted);
+  font-size: 0.85rem;
+  margin-top: var(--space-2);
+}
+
+.answer-key-label {
+  color: var(--clr-success);
+  font-weight: 600;
+}
+
+.answer-choices {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.answer-choice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--clr-border);
+  border-radius: var(--radius-sm);
+  color: var(--clr-text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.answer-choice:hover {
+  border-color: var(--clr-border-light);
+}
+
+.answer-choice-selected {
+  border-color: var(--clr-success);
+  background: rgba(52, 211, 153, 0.08);
+  color: var(--clr-text);
+}
+
 /* ── Grading review (teacher) ───────────────────────────────────── */
 .score-summary {
   display: flex;
@@ -1088,6 +1165,11 @@ code {
   font-size: 0.75rem;
   color: var(--clr-text-dim);
   margin-top: var(--space-1);
+}
+
+/* The dim grey above is unreadable on the student's indigo bubble. */
+.chat-bubble.student .message-time {
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .citations {

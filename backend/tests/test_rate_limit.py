@@ -10,9 +10,10 @@ re-enabled locally here (the session fixture disables it globally).
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from core.config import settings
-from core.ratelimit import FixedWindowRateLimiter, RateLimitMiddleware, classify
+from core.ratelimit import FixedWindowRateLimiter, RateLimitMiddleware, classify, client_key
 from core.security import create_access_token
 
 
@@ -129,3 +130,61 @@ def test_disabled_flag_bypasses_limiter(monkeypatch):
     client = TestClient(_app(FixedWindowRateLimiter()))
     for _ in range(5):
         assert client.post("/auth/login").status_code == 200  # never limited
+
+
+# ── X-Forwarded-For is trusted only behind a configured proxy (audit #7b) ─────
+
+def _rotating_xff_attempts(client, count: int) -> list[int]:
+    """POST /auth/login ``count`` times, each claiming a new forwarded address."""
+    return [
+        client.post("/auth/login", headers={"X-Forwarded-For": f"203.0.113.{i}"}).status_code
+        for i in range(count)
+    ]
+
+
+def test_forwarded_for_is_ignored_by_default(limiting_on, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy", False)
+    client = TestClient(_app(FixedWindowRateLimiter()))
+    # Rotating the header used to give every request a fresh bucket; now all
+    # five attempts count against the one real client address (limit 3).
+    assert _rotating_xff_attempts(client, 5) == [200, 200, 200, 429, 429]
+
+
+def test_client_key_uses_the_peer_address_by_default(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy", False)
+    request = _request({"x-forwarded-for": "198.51.100.7"}, peer="10.0.0.5")
+    assert client_key(request) == "ip:10.0.0.5"
+
+
+def test_forwarded_for_is_honoured_behind_a_trusted_proxy(limiting_on, monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy", True)
+    client = TestClient(_app(FixedWindowRateLimiter()))
+    # Distinct real clients behind the proxy get their own buckets...
+    assert _rotating_xff_attempts(client, 5) == [200] * 5
+    # ...and one client is still limited.
+    same = [client.post("/auth/login", headers={"X-Forwarded-For": "203.0.113.9"}).status_code for _ in range(4)]
+    assert same == [200, 200, 200, 429]
+
+
+def test_trusted_proxy_uses_the_entry_the_proxy_appended(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy", True)
+    # The client sent a fake first hop; the proxy appended the real address.
+    request = _request({"x-forwarded-for": "1.2.3.4, 198.51.100.7"}, peer="10.0.0.5")
+    assert client_key(request) == "ip:198.51.100.7"
+
+
+def test_trusted_proxy_without_the_header_falls_back_to_the_peer(monkeypatch):
+    monkeypatch.setattr(settings, "trusted_proxy", True)
+    assert client_key(_request({}, peer="10.0.0.5")) == "ip:10.0.0.5"
+
+
+def _request(headers: dict[str, str], peer: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/auth/login",
+            "headers": [(k.encode(), v.encode()) for k, v in headers.items()],
+            "client": (peer, 50000),
+        }
+    )

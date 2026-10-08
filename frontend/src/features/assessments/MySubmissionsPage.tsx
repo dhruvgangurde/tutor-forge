@@ -2,6 +2,8 @@ import { useNavigate } from 'react-router-dom'
 import { useMySubmissions } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { GradeStatus } from './GradeStatus'
+import { plural } from '../../lib/plural'
 import styles from './assessments.module.css'
 
 export function MySubmissionsPage() {
@@ -66,7 +68,7 @@ export function MySubmissionsPage() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-600">
-            {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
+            {plural(submissions.length, 'submission')}
           </p>
           <button
             onClick={() => navigate('/assessments')}
@@ -93,17 +95,8 @@ export function MySubmissionsPage() {
                   Submitted: {new Date(submission.submitted_at).toLocaleDateString()}
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm px-2 py-1 rounded ${getStatusColor(submission.status)}`}>
-                    {submission.status === 'pending_grading' ? 'Pending Review' : 'Graded'}
-                  </span>
-
-                  {submission.final_score !== undefined && submission.max_score !== undefined && (
-                    <span className="text-lg font-bold text-blue-600">
-                      {submission.final_score} / {submission.max_score}
-                    </span>
-                  )}
-                </div>
+                {/* No score until the teacher finalizes it -- see gradeState. */}
+                <GradeStatus submission={submission} />
               </div>
 
               <div className={styles.cardFooter}>
@@ -117,14 +110,4 @@ export function MySubmissionsPage() {
       </div>
     </>
   )
-}
-
-function getStatusColor(status: string): string {
-  if (status === 'pending_grading') {
-    return 'bg-yellow-100 text-yellow-800'
-  }
-  if (status === 'graded') {
-    return 'bg-green-100 text-green-800'
-  }
-  return 'bg-gray-100 text-gray-800'
 }

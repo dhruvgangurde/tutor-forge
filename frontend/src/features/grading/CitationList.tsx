@@ -23,24 +23,32 @@ export function CitationList({ citations }: CitationListProps) {
 
   return (
     <div className="citations">
-      {citations.map((c, idx) => (
-        <div
-          key={idx}
-          className="citation-badge"
-          title={`${c.source_file}\n\n${c.text}`}
-        >
-          <span className="citation-file">
-            {citationLabel(c.source_file, c.page_or_slide)}
-          </span>
-          <span
-            className="citation-confidence"
-            data-confidence={Math.round(c.confidence * 100)}
-            title="Retrieval confidence — how closely this passage matched the answer being graded."
+      {citations.map((c, idx) => {
+        // The backend sends null when it could not tie the quote to a
+        // retrieved chunk. That is "unknown", not 0%: hide the figure.
+        const percent =
+          typeof c.confidence === 'number' && c.confidence > 0 ? Math.round(c.confidence * 100) : null
+        return (
+          <div
+            key={idx}
+            className="citation-badge"
+            title={`${c.source_file}\n\n${c.text}`}
           >
-            {Math.round(c.confidence * 100)}%
-          </span>
-        </div>
-      ))}
+            <span className="citation-file">
+              {citationLabel(c.source_file, c.page_or_slide)}
+            </span>
+            {percent !== null && (
+              <span
+                className="citation-confidence"
+                data-confidence={percent}
+                title="Retrieval confidence — how closely this passage matched the answer being graded."
+              >
+                {percent}%
+              </span>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

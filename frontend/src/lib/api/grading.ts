@@ -1,5 +1,5 @@
 import api from './client'
-import type { FinalGradeResponse, GradingDetail, GradingQueueItem } from './types'
+import type { FinalGradeResponse, FinalizedGradeItem, GradingDetail, GradingQueueItem } from './types'
 
 /**
  * List submissions with AI recommendations awaiting teacher review.
@@ -7,6 +7,15 @@ import type { FinalGradeResponse, GradingDetail, GradingQueueItem } from './type
  */
 export async function getGradingQueue(): Promise<GradingQueueItem[]> {
   const resp = await api.get<GradingQueueItem[]>('/grading/queue')
+  return resp.data
+}
+
+/**
+ * Released grades in the teacher's courses, newest first.
+ * Backend: GET /grading/finalized (teacher only, owner-scoped)
+ */
+export async function getFinalizedGrades(): Promise<FinalizedGradeItem[]> {
+  const resp = await api.get<FinalizedGradeItem[]>('/grading/finalized')
   return resp.data
 }
 

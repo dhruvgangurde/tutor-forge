@@ -1,5 +1,5 @@
 import { Badge } from '../../components/ui/Badge'
-import { statusToVariant } from '../../lib/statusVariant'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import type { AssessmentSummary } from '../../lib/api/types'
 
 interface AssessmentListProps {
@@ -30,7 +30,7 @@ export function AssessmentList({ assessments, selectedId, onSelect }: Assessment
           >
             <td>{a.title}</td>
             <td>
-              <Badge variant={statusToVariant(a.status)}>{a.status}</Badge>
+              <Badge variant={statusToVariant(a.status)}>{statusLabel(a.status)}</Badge>
             </td>
             <td>{a.status === 'generating' ? '—' : a.question_count}</td>
             <td>{new Date(a.created_at).toLocaleDateString()}</td>

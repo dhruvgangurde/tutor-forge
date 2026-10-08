@@ -41,7 +41,8 @@ class EvidenceCitation(BaseModel):
     text: str
     source_file: str
     page_or_slide: int | None = None
-    confidence: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    # Retrieval confidence of the quoted chunk; None when it is not known.
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
 
 
 # ── Per-criterion grading result ──────────────────────────────────────────────
@@ -87,6 +88,21 @@ class QuestionGrade(BaseModel):
     question_type: str = ""
     stem: str | None = None
     criteria: list[CriterionGrade] = Field(default_factory=list)
+
+
+# ── Finalized grade (teacher history) ────────────────────────────────────────
+
+class FinalizedGradeItem(BaseModel):
+    """One released grade in the teacher's history (read-only)."""
+    submission_id: uuid.UUID
+    student_email: str | None = None   # users have no display name; email identifies them
+    assessment_title: str
+    course_name: str
+    final_score: float
+    max_score: float
+    action: str                        # "approved" | "overridden"
+    released: bool
+    finalized_at: datetime
 
 
 # ── Queue item (list view) ────────────────────────────────────────────────────

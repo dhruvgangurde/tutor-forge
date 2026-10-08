@@ -4,14 +4,13 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
 import { useToast } from '../../hooks/useToast'
 import type { QuestionDetail, QuestionUpdateRequest } from '../../lib/api/types'
+import { MCQ_LETTERS, mcqKeyIndex } from './answerKey'
 
 interface QuestionEditFormProps {
   assessmentId: string
   question: QuestionDetail
   onDone: () => void
 }
-
-const MCQ_LETTERS = ['A', 'B', 'C', 'D']
 
 /**
  * Edit one question of a draft assessment.
@@ -23,15 +22,29 @@ const MCQ_LETTERS = ['A', 'B', 'C', 'D']
  * Options are edited as plain text. The letter is display-only, from position —
  * typing "A." into the box is what produced "A. A. Two billion years ago" in
  * the first place, and the backend strips it defensively either way.
+ *
+ * The answer key is shown, not hidden: the option currently marked correct is
+ * pre-selected among the real option texts, so a teacher can see a wrong
+ * generated key and fix it with one click. It is only sent when it changes.
  */
 export function QuestionEditForm({
   assessmentId,
   question,
   onDone,
 }: QuestionEditFormProps) {
+  const isMcq = question.question_type === 'mcq'
+  const isShortAnswer = question.question_type === 'short_answer'
+
+  // The key as stored: an option letter for an MCQ (null when it points at no
+  // option), the expected answer text otherwise.
+  const storedKeyIdx = isMcq ? mcqKeyIndex(question.correct_answer, question.options?.length ?? 0) : null
+  const storedKey = isMcq
+    ? storedKeyIdx === null ? '' : MCQ_LETTERS[storedKeyIdx]
+    : (question.correct_answer ?? '').trim()
+
   const [stem, setStem] = useState(question.stem)
   const [options, setOptions] = useState<string[]>(question.options ?? [])
-  const [correctAnswer, setCorrectAnswer] = useState('')
+  const [correctAnswer, setCorrectAnswer] = useState(storedKey)
   const [maxPoints, setMaxPoints] = useState(String(question.max_points))
   const [rubric, setRubric] = useState(
     question.rubric_criteria.map((c) => ({
@@ -44,9 +57,6 @@ export function QuestionEditForm({
   const update = useUpdateDraftQuestion(assessmentId)
   const { showToast } = useToast()
 
-  const isMcq = question.question_type === 'mcq'
-  const isShortAnswer = question.question_type === 'short_answer'
-
   function buildPayload(): QuestionUpdateRequest | null {
     const body: QuestionUpdateRequest = {}
     if (stem.trim() && stem !== question.stem) body.stem = stem.trim()
@@ -56,8 +66,10 @@ export function QuestionEditForm({
         options.length === (question.options ?? []).length &&
         options.some((o, i) => o !== (question.options ?? [])[i])
       if (changed) body.options = options.map((o) => o.trim())
-      if (correctAnswer) body.correct_answer = correctAnswer
     }
+
+    const newKey = correctAnswer.trim()
+    if (newKey && newKey !== storedKey) body.correct_answer = newKey
 
     const points = Number(maxPoints)
     if (maxPoints.trim() && !Number.isNaN(points) && points !== question.max_points) {
@@ -156,30 +168,66 @@ export function QuestionEditForm({
               />
             </div>
           ))}
-          <div className="field-group">
-            <label htmlFor={`correct-${question.id}`} className="field-label">
-              Correct answer
-            </label>
-            <select
-              id={`correct-${question.id}`}
-              className="field-input"
-              value={correctAnswer}
-              onChange={(e) => setCorrectAnswer(e.target.value)}
-              disabled={update.isPending}
-            >
-              <option value="">Leave unchanged</option>
-              {MCQ_LETTERS.slice(0, options.length).map((letter) => (
-                <option key={letter} value={letter}>
-                  {letter}
-                </option>
-              ))}
-            </select>
-            <span className="field-hint">
-              The answer key is not shown here — pick a letter only if you are
-              changing it.
-            </span>
-          </div>
+          <fieldset className="field-group answer-choices">
+            <legend className="field-label">Correct answer</legend>
+            {storedKeyIdx === null && (
+              <p className="field-error">
+                {question.correct_answer
+                  ? `The stored key “${question.correct_answer}” does not match any option`
+                  : 'No answer key is stored'}{' '}
+                — pick the correct option.
+              </p>
+            )}
+            {options.map((opt, idx) => {
+              const letter = MCQ_LETTERS[idx]
+              const selected = correctAnswer === letter
+              return (
+                <label
+                  key={letter}
+                  className={`answer-choice${selected ? ' answer-choice-selected' : ''}`}
+                >
+                  <input
+                    type="radio"
+                    name={`correct-${question.id}`}
+                    value={letter}
+                    checked={selected}
+                    onChange={() => setCorrectAnswer(letter)}
+                    disabled={update.isPending}
+                  />
+                  <span>
+                    {letter}. {opt || <em>(empty option)</em>}
+                  </span>
+                  {idx === storedKeyIdx && (
+                    <span className="answer-key-tag">Currently marked correct</span>
+                  )}
+                </label>
+              )
+            })}
+            {correctAnswer && correctAnswer !== storedKey && (
+              <span className="field-hint">
+                {storedKey
+                  ? `Saving changes the correct answer from ${storedKey} to ${correctAnswer}.`
+                  : `Saving marks ${correctAnswer} as the correct answer.`}
+              </span>
+            )}
+          </fieldset>
         </>
+      )}
+
+      {!isMcq && (
+        <div className="field-group">
+          <label htmlFor={`key-${question.id}`} className="field-label">
+            {isShortAnswer ? 'Answer key (what a full answer should cover)' : 'Answer key'}
+          </label>
+          <input
+            id={`key-${question.id}`}
+            type="text"
+            className="field-input"
+            value={correctAnswer}
+            onChange={(e) => setCorrectAnswer(e.target.value)}
+            disabled={update.isPending}
+          />
+        </div>
       )}
 
       {isShortAnswer && (

@@ -277,6 +277,66 @@ class TestNumericGrading:
         result = self._grade([_numeric_response(-10.0, -10.0)])
         assert result["total_score"] == pytest.approx(2.0)
 
+    # ── List keys ("what is the final sorted array?") ─────────────────────────
+    # The generator produces numeric questions whose key is an ordered list.
+    # float() on such a key raised, so every student scored 0 -- including one
+    # who typed the key exactly -- with feedback blaming the student's answer.
+
+    @pytest.mark.parametrize("answer", ["3,27,38,43", "3, 27, 38, 43", "[3,27,38,43]", "3;27;38;43"])
+    def test_list_key_accepts_the_same_list_in_any_notation(self, answer):
+        result = self._grade([_numeric_response("3,27,38,43", answer, max_points=1.0)])
+        assert result["total_score"] == pytest.approx(1.0)
+
+    def test_list_key_is_order_sensitive(self):
+        result = self._grade([_numeric_response("3,27,38,43", "3,27,43,38", max_points=1.0)])
+        assert result["total_score"] == 0.0
+        assert "in that order" in result["criterion_results"][0][0]["feedback"]
+
+    def test_list_key_rejects_a_different_length(self):
+        result = self._grade([_numeric_response("3,27,38,43", "3,27,38", max_points=1.0)])
+        assert result["total_score"] == 0.0
+        assert "Expected 4 values" in result["criterion_results"][0][0]["feedback"]
+
+    def test_list_elements_use_the_same_tolerance(self):
+        # each element within ±1% of its expected value
+        result = self._grade([_numeric_response("100,200", "100.5,199", max_points=1.0)])
+        assert result["total_score"] == pytest.approx(1.0)
+        result = self._grade([_numeric_response("100,200", "100,210", max_points=1.0)])
+        assert result["total_score"] == 0.0
+
+    def test_unparseable_key_is_reported_as_a_key_problem_not_the_students(self):
+        result = self._grade([_numeric_response("about forty", "40")])
+        assert result["total_score"] == 0.0
+        feedback = result["criterion_results"][0][0]["feedback"]
+        assert "answer key is not a number" in feedback
+        assert "non-numeric response" not in feedback
+
+    def test_scalar_feedback_is_unchanged(self):
+        result = self._grade([_numeric_response(42.0, 42.0)])
+        assert result["criterion_results"][0][0]["feedback"] == (
+            "Correct. Your answer 42.0 is within the accepted range."
+        )
+
+
+class TestParseNumericAnswer:
+    def _fn(self):
+        from grading.numeric import parse_numeric_answer
+        return parse_numeric_answer
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("20", [20.0]),
+        (" -3.5 ", [-3.5]),
+        ("3,27,38,43", [3.0, 27.0, 38.0, 43.0]),
+        ("(1; 2)", [1.0, 2.0]),
+        ("6.022e23", [6.022e23]),
+    ])
+    def test_parses_numbers_and_lists(self, raw, expected):
+        assert self._fn()(raw) == expected
+
+    @pytest.mark.parametrize("raw", ["", "  ", None, "abc", "3,,4", "3,", "nan", "inf", "[]", "3 4"])
+    def test_rejects_anything_else(self, raw):
+        assert self._fn()(raw) is None
+
 
 # ── Unanswered (skipped) questions ────────────────────────────────────────────
 

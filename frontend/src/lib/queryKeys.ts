@@ -34,6 +34,7 @@ export const queryKeys = {
   grading: {
     all: () => ['grading'] as const,
     queue: () => ['grading', 'queue'] as const,
+    finalized: () => ['grading', 'finalized'] as const,
     // Student view of their own submission: GET /assessments/submissions/{id}.
     detail: (submissionId: string) => ['grading', submissionId] as const,
     // Teacher review of the AI recommendation: GET /grading/{id}.

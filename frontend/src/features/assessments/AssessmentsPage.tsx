@@ -1,14 +1,24 @@
 import { useNavigate } from 'react-router-dom'
-import { usePublishedAssessments } from './hooks'
+import { useMySubmissions, usePublishedAssessments } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { GradeStatus } from './GradeStatus'
+import { plural } from '../../lib/plural'
 import styles from './assessments.module.css'
 
 export function AssessmentsPage() {
   const navigate = useNavigate()
   const { data: assessments, isLoading, error } = usePublishedAssessments()
+  // A student submits each assessment once. Knowing which ones are already
+  // submitted is what lets a card link to the result instead of a fresh
+  // attempt that the backend would reject at the very end (409).
+  const mySubmissions = useMySubmissions()
+  const submissionByAssessment = new Map(
+    (mySubmissions.data ?? []).map((s) => [s.assessment_id, s])
+  )
 
-  if (isLoading) {
+  // Wait for both, so a submitted card never flashes "Start assessment".
+  if (isLoading || mySubmissions.isLoading) {
     return (
       <>
         <div className="page-header">
@@ -58,7 +68,7 @@ export function AssessmentsPage() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-600">
-            {assessments.length} assessment{assessments.length !== 1 ? 's' : ''} available
+            {plural(assessments.length, 'assessment')} available
           </p>
           <button
             onClick={() => navigate('/assessments/submissions')}
@@ -69,7 +79,9 @@ export function AssessmentsPage() {
         </div>
 
         <div className={styles.assessmentGrid}>
-          {assessments.map((assessment) => (
+          {assessments.map((assessment) => {
+            const submission = submissionByAssessment.get(assessment.id)
+            return (
             <div key={assessment.id} className={styles.assessmentCard}>
               <div className={styles.cardHeader}>
                 <h3 className={styles.cardTitle}>{assessment.title}</h3>
@@ -78,9 +90,9 @@ export function AssessmentsPage() {
 
               <div className={styles.cardContent}>
                 <p className="text-sm text-gray-600">
-                  {assessment.question_count} question{assessment.question_count !== 1 ? 's' : ''}
+                  {plural(assessment.question_count, 'question')}
                   {' · '}
-                  {assessment.total_points} point{assessment.total_points !== 1 ? 's' : ''}
+                  {plural(assessment.total_points, 'point')}
                 </p>
                 {/* Two assessments on one course can carry the same title.
                     Without a date the cards are indistinguishable, and a
@@ -90,18 +102,40 @@ export function AssessmentsPage() {
                     ? `Published ${new Date(assessment.published_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}`
                     : `Created ${new Date(assessment.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}`}
                 </p>
+                {submission && (
+                  <GradeStatus
+                    submission={submission}
+                    leading={
+                      <span className={`${styles.statusPill} ${styles.statusSubmitted}`}>
+                        Submitted
+                      </span>
+                    }
+                  />
+                )}
               </div>
 
               <div className={styles.cardFooter}>
-                <button
-                  onClick={() => navigate(`/assessments/${assessment.id}/take`)}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                >
-                  Start Assessment
-                </button>
+                {submission ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/assessments/submissions/${submission.submission_id}`)}
+                    className={styles.cardButtonSecondary}
+                  >
+                    View submission
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/assessments/${assessment.id}/take`)}
+                    className={styles.cardButton}
+                  >
+                    Start assessment
+                  </button>
+                )}
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       </div>
     </>

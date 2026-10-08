@@ -1,51 +1,47 @@
 """
 core/token_store.py
 -------------------
-In-memory refresh-token revocation store (F19).
+Persistent JWT revocation (F19, audit 2026-10-06 #4).
 
-Tracks the ``jti`` of revoked refresh tokens until their natural expiry, so a
-rotated or logged-out refresh token can no longer be used. Auto-prunes expired
-entries so the set stays bounded.
+A revoked token's ``jti`` is stored in the ``revoked_tokens`` table until the
+moment the token would have expired anyway; expired rows are purged whenever a
+new revocation is written, so the table stays bounded.
 
-Single-process, like the rate limiter and job reaper: revocations are lost on
-restart and not shared across instances. A durable/shared store is a follow-up
-(pairs with F16). Refresh tokens still expire, and access tokens remain the
-short-lived credential.
+Previously this was an in-memory set: lost on every restart, not shared between
+workers, and holding only refresh tokens -- so logging out never ended a
+session, because the access token kept working until it expired. Both token
+types now carry a jti and are checked here.
 """
 
 from __future__ import annotations
 
-import time
-from threading import Lock
+from datetime import datetime, timezone
+
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from db.models import RevokedToken
 
 
-class RevokedTokenStore:
-    """Thread-safe set of revoked jti -> expiry (unix seconds)."""
-
-    def __init__(self) -> None:
-        self._revoked: dict[str, float] = {}
-        self._lock = Lock()
-
-    def revoke(self, jti: str, expires_at: float) -> None:
-        with self._lock:
-            self._revoked[jti] = expires_at
-            self._prune_locked()
-
-    def is_revoked(self, jti: str) -> bool:
-        with self._lock:
-            self._prune_locked()
-            return jti in self._revoked
-
-    def clear(self) -> None:
-        with self._lock:
-            self._revoked.clear()
-
-    def _prune_locked(self) -> None:
-        now = time.time()
-        expired = [jti for jti, exp in self._revoked.items() if exp < now]
-        for jti in expired:
-            del self._revoked[jti]
+def _utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
 
 
-# Module-global store used by the auth service in the running app.
-revoked_tokens = RevokedTokenStore()
+async def revoke(db: AsyncSession, jti: str, expires_at: datetime) -> None:
+    """Revoke ``jti`` until ``expires_at`` (idempotent), purging expired rows."""
+    await purge_expired(db)
+    await db.merge(RevokedToken(jti=jti, expires_at=_utc(expires_at)))
+    await db.commit()
+
+
+async def is_revoked(db: AsyncSession, jti: str) -> bool:
+    row = await db.execute(select(RevokedToken.jti).where(RevokedToken.jti == jti))
+    return row.first() is not None
+
+
+async def purge_expired(db: AsyncSession) -> int:
+    """Delete revocations whose token has expired anyway. Returns rows removed."""
+    result = await db.execute(
+        delete(RevokedToken).where(RevokedToken.expires_at < datetime.now(timezone.utc))
+    )
+    return result.rowcount or 0

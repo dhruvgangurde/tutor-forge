@@ -1,4 +1,5 @@
 import { Badge } from '../../components/ui/Badge'
+import { statusLabel } from '../../lib/statusVariant'
 import type { CourseStructure } from '../../lib/api/types'
 
 interface ConceptTreeProps {
@@ -27,7 +28,7 @@ export function ConceptTree({ structure }: ConceptTreeProps) {
                   <li key={concept.id} className="concept-item">
                     <span className="concept-name">{concept.name}</span>
                     {concept.difficulty && (
-                      <Badge variant="info">{concept.difficulty}</Badge>
+                      <Badge variant="info">{statusLabel(concept.difficulty)}</Badge>
                     )}
                     {concept.description && (
                       <p className="concept-description">{concept.description}</p>

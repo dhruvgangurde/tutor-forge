@@ -6,6 +6,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
+import { plural } from '../../lib/plural'
 import { useToast } from '../../hooks/useToast'
 
 /**
@@ -92,7 +93,7 @@ export function SessionsPage() {
               </div>
               <p className="session-meta">
                 {session.message_count > 0
-                  ? `${session.message_count} message${session.message_count === 1 ? '' : 's'} · last active ${new Date(session.last_activity_at).toLocaleDateString()}`
+                  ? `${plural(session.message_count, 'message')} · last active ${new Date(session.last_activity_at).toLocaleDateString()}`
                   : `Started ${new Date(session.created_at).toLocaleDateString()}`}
               </p>
             </button>

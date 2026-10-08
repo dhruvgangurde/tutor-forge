@@ -21,10 +21,13 @@ from core.security import (
     hash_password,
     verify_password,
 )
-from core.token_store import revoked_tokens
+from core import token_store
 from db.models import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+# Logout accepts a request without a bearer token (it is idempotent), so its
+# token dependency must not 401 on its own.
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
 # Precomputed once at import: a valid bcrypt hash used only to spend the same
 # hashing time on the "no such user" path as on a real verify, so response
@@ -87,7 +90,7 @@ async def get_current_user(
     Raises HTTP 401 on invalid/expired token or missing user.
 
     Only access tokens are accepted here — a refresh token presented as a bearer
-    is rejected (F19).
+    is rejected (F19) — and a token revoked by logout is rejected too.
     """
     credentials_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -100,6 +103,10 @@ async def get_current_user(
         raise credentials_exc
 
     if payload.type != "access":
+        raise credentials_exc
+    # Tokens issued before access tokens carried a jti cannot be revoked; they
+    # simply expire (jwt_expire_minutes).
+    if payload.jti and await token_store.is_revoked(db, payload.jti):
         raise credentials_exc
 
     result = await db.execute(select(User).where(User.email == payload.email))
@@ -114,7 +121,8 @@ async def get_current_user(
 def issue_token_pair(user: User) -> tuple[str, str]:
     """Return a fresh (access_token, refresh_token) pair for a user."""
     data = {"sub": str(user.id), "email": user.email, "role": user.role}
-    access = create_access_token(data)
+    # Both tokens carry a jti so either can be revoked (logout, rotation).
+    access = create_access_token({**data, "jti": uuid.uuid4().hex})
     refresh = create_refresh_token(data, jti=uuid.uuid4().hex)
     return access, refresh
 
@@ -135,7 +143,7 @@ async def refresh_token_pair(
 
     if payload.type != "refresh" or not payload.jti:
         raise ValueError("Not a refresh token.")
-    if revoked_tokens.is_revoked(payload.jti):
+    if await token_store.is_revoked(db, payload.jti):
         raise ValueError("Refresh token has been revoked.")
 
     result = await db.execute(select(User).where(User.email == payload.email))
@@ -144,19 +152,34 @@ async def refresh_token_pair(
         raise ValueError("User no longer exists.")
 
     # Rotate: the presented refresh token is single-use.
-    revoked_tokens.revoke(payload.jti, payload.exp.timestamp())
+    await token_store.revoke(db, payload.jti, payload.exp)
     access, refresh = issue_token_pair(user)
     return access, refresh, user.role
 
 
-def revoke_refresh_token(refresh_token: str) -> None:
-    """Best-effort revoke a refresh token (used on logout). Silent on bad input."""
-    try:
-        payload = decode_token(refresh_token)
-    except JWTError:
-        return
-    if payload.type == "refresh" and payload.jti:
-        revoked_tokens.revoke(payload.jti, payload.exp.timestamp())
+async def revoke_session(
+    db: AsyncSession,
+    access_token: str | None,
+    refresh_token: str | None = None,
+) -> int:
+    """
+    Logout: revoke the caller's access token and, if given, their refresh token.
+
+    Best-effort and silent on bad input -- logout is idempotent and must not
+    reveal anything about a token. Returns how many tokens were revoked.
+    """
+    revoked = 0
+    for token, expected_type in ((access_token, "access"), (refresh_token, "refresh")):
+        if not token:
+            continue
+        try:
+            payload = decode_token(token)
+        except JWTError:
+            continue
+        if payload.type == expected_type and payload.jti:
+            await token_store.revoke(db, payload.jti, payload.exp)
+            revoked += 1
+    return revoked
 
 
 async def require_teacher(
