@@ -22,9 +22,12 @@ function renderLogin() {
 }
 
 async function signIn(password: string) {
-  await userEvent.type(screen.getByLabelText('Email'), 'teacher@demo.com')
-  await userEvent.type(screen.getByLabelText('Password'), password)
-  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+  // No per-keystroke delay: the default waits a tick per character, which
+  // timed out under full-suite load (same events, just no waiting).
+  const user = userEvent.setup({ delay: null })
+  await user.type(screen.getByLabelText('Email'), 'teacher@demo.com')
+  await user.type(screen.getByLabelText('Password'), password)
+  await user.click(screen.getByRole('button', { name: 'Sign in' }))
 }
 
 const wrongPassword = Object.assign(new Error('Request failed with status code 401'), {

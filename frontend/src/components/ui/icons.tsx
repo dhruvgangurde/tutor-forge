@@ -112,6 +112,20 @@ export const LogOutIcon = (p: IconProps) => (
   </Svg>
 )
 
+export const LightbulbIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M9 18h6M10 21h4" />
+    <path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1.1 1.2 1.1 2v.2h5v-.2c0-.8.5-1.5 1.1-2A6 6 0 0 0 12 3z" />
+  </Svg>
+)
+
+export const SendIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 3L10 14" />
+    <path d="M21 3l-7 18-4-7-7-4z" />
+  </Svg>
+)
+
 export const ArrowLeftIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M19 12H5" />

@@ -1,6 +1,7 @@
-import { FormEvent, useRef, useState } from 'react'
+import { FormEvent, ReactNode, useRef, useState } from 'react'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
+import { SendIcon } from '../../components/ui/icons'
 import { MAX_TUTOR_QUESTION_CHARS } from '../../lib/limits'
 
 interface ChatInputProps {
@@ -8,14 +9,21 @@ interface ChatInputProps {
   isLoading?: boolean
   isError?: boolean
   error?: unknown
+  /** Rendered on the action row beside Send (the tutor page puts Hint here). */
+  leading?: ReactNode
 }
 
-/** Chat input field with send button. */
+/**
+ * Docked composer: the question field on top, then one row with the hint
+ * control and Send. A failed send keeps the question in the field, so Send
+ * itself is the way to try again.
+ */
 export function ChatInput({
   onSendMessage,
   isLoading,
   isError,
   error,
+  leading,
 }: ChatInputProps) {
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -48,7 +56,7 @@ export function ChatInput({
       {isError && (
         <ErrorBanner message={getErrorMessage(error)} />
       )}
-      <form onSubmit={handleSubmit} className="chat-input-form">
+      <form onSubmit={handleSubmit} className="chat-input-form composer">
         <input
           ref={inputRef}
           type="text"
@@ -61,13 +69,17 @@ export function ChatInput({
           disabled={isLoading}
           autoFocus
         />
-        <button
-          type="submit"
-          className="btn btn-primary btn-sm"
-          disabled={isLoading || !input.trim()}
-        >
-          {isLoading ? 'Sending...' : 'Send'}
-        </button>
+        <div className="composer-actions">
+          {leading}
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm composer-send"
+            disabled={isLoading || !input.trim()}
+          >
+            <SendIcon size={16} />
+            {isLoading ? 'Sending...' : 'Send'}
+          </button>
+        </div>
       </form>
       {input.length >= MAX_TUTOR_QUESTION_CHARS && (
         <p className="field-hint" role="status">

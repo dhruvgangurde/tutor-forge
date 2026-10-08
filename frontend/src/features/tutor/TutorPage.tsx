@@ -1,10 +1,10 @@
 import { isAxiosError } from 'axios'
 import { Link, useParams } from 'react-router-dom'
-import { useMessages, useSendChat, useRequestHint } from './hooks'
-import { ChatThread } from './ChatThread'
+import { useMessages, useSendChat, useRequestHint, useSessions } from './hooks'
+import { ChatThread, TUTOR_NOTE } from './ChatThread'
 import { ChatInput } from './ChatInput'
 import { HintButton } from './HintButton'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonBlock } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { NotFoundState } from '../../components/ui/NotFoundState'
 import { getErrorMessage, isNotFoundError } from '../../lib/api/errors'
@@ -14,6 +14,11 @@ export function TutorPage() {
   const { data: messages, isLoading, isError, error } = useMessages(sessionId ?? '')
   const sendChat = useSendChat(sessionId ?? '')
   const requestHint = useRequestHint(sessionId ?? '')
+  // Course name and session title come from the student's existing session
+  // list (the same query the sessions page uses, usually already cached).
+  // Until it arrives the header falls back to the generic title.
+  const sessions = useSessions()
+  const session = sessions.data?.find((s) => s.id === sessionId)
 
   // Derive hint level from messages
   const hintLevel =
@@ -48,55 +53,74 @@ export function TutorPage() {
   // Nothing session-shaped is drawn until the session has actually loaded: a
   // fake session URL used to show a working-looking empty chat while the
   // request was failing.
-  if (isLoading || !messages) return <Spinner label="Loading session…" />
+  if (isLoading || !messages) {
+    return (
+      <div className="tutor-page">
+        <span className="sr-only" role="status">Loading session…</span>
+        <div className="tutor-skeleton" aria-hidden="true">
+          <SkeletonBlock width="12rem" />
+          <SkeletonBlock width="55%" height="2rem" />
+          <SkeletonBlock width="40%" height="3rem" />
+          <SkeletonBlock width="70%" height="4rem" />
+        </div>
+      </div>
+    )
+  }
+
+  const isEmpty = messages.length === 0
 
   return (
-    <>
-      <div className="page-header">
+    <div className="tutor-page">
+      <div className="tutor-header">
         <Link to="/tutor" className="back-link">
           ← Back to sessions
         </Link>
-        <h1 className="page-title">Tutoring Session</h1>
-        <p className="page-subtitle">Ask questions about the course material.</p>
+        {session?.course_name && <p className="tutor-course">{session.course_name}</p>}
+        <h1 className="page-title tutor-title">{session?.title ?? 'Tutoring Session'}</h1>
+        {/* The empty chat shows this note under its prompt instead. */}
+        {!isEmpty && <p className="page-subtitle">{TUTOR_NOTE}</p>}
       </div>
 
-      <div className="tutor-container">
-        <ChatThread messages={messages ?? []} isLoading={isLoading} />
+      <ChatThread
+        messages={messages}
+        isLoading={isLoading}
+        isReplying={sendChat.isPending || requestHint.isPending}
+      />
 
-        <div className="tutor-controls">
-          {/* A failed hint used to be an unhandled promise rejection with
-              nothing on screen. The mutation's error is shown here instead. */}
-          {requestHint.isError && (
-            <ErrorBanner
-              message={getErrorMessage(requestHint.error, 'Could not get a hint. Please try again.')}
+      <div className="tutor-composer">
+        {/* A failed hint used to be an unhandled promise rejection with
+            nothing on screen. The mutation's error is shown here instead. */}
+        {requestHint.isError && (
+          <ErrorBanner
+            message={getErrorMessage(requestHint.error, 'Could not get a hint. Please try again.')}
+          />
+        )}
+
+        <ChatInput
+          onSendMessage={async (question) => {
+            // A new question makes any earlier hint error stale.
+            requestHint.reset()
+            await sendChat.mutateAsync(question)
+          }}
+          isLoading={sendChat.isPending}
+          isError={sendChat.isError}
+          error={sendChat.error}
+          leading={
+            <HintButton
+              currentHintLevel={hintLevel}
+              hasQuestion={hasQuestion}
+              onRequestHint={async () => {
+                try {
+                  await requestHint.mutateAsync()
+                } catch {
+                  // Surfaced via requestHint.isError above.
+                }
+              }}
+              isLoading={requestHint.isPending}
             />
-          )}
-
-          <HintButton
-            currentHintLevel={hintLevel}
-            hasQuestion={hasQuestion}
-            onRequestHint={async () => {
-              try {
-                await requestHint.mutateAsync()
-              } catch {
-                // Surfaced via requestHint.isError above.
-              }
-            }}
-            isLoading={requestHint.isPending}
-          />
-
-          <ChatInput
-            onSendMessage={async (question) => {
-              // A new question makes any earlier hint error stale.
-              requestHint.reset()
-              await sendChat.mutateAsync(question)
-            }}
-            isLoading={sendChat.isPending}
-            isError={sendChat.isError}
-            error={sendChat.error}
-          />
-        </div>
+          }
+        />
       </div>
-    </>
+    </div>
   )
 }

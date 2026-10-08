@@ -13,6 +13,7 @@ vi.mock('./hooks', () => ({
   useMessages: () => messagesState,
   useSendChat: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null }),
   useRequestHint: () => ({ mutateAsync: vi.fn(), isPending: false, isError: false, error: null, reset: vi.fn() }),
+  useSessions: () => ({ data: [] }),
 }))
 
 function apiError(status: number, data: unknown) {

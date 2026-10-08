@@ -1,5 +1,6 @@
 import { Markdown } from '../../components/ui/Markdown'
 import { citationLabel } from '../../lib/sourceName'
+import { BookIcon, DocumentIcon } from '../../components/ui/icons'
 import type { Citation } from '../../lib/api/types'
 
 interface ChatBubbleProps {
@@ -69,6 +70,15 @@ export function ChatBubble({
   return (
     <div className={`chat-bubble-row ${role}`}>
       <div className={`chat-bubble ${role} ${isRefusal ? 'refusal' : ''}`}>
+        {/* Tutor turns are plain text under a small TUTOR label with a book
+            mark (no avatar); student turns sit in a --surface-2 bubble. */}
+        {isTutor && (
+          <div className="tutor-label">
+            <BookIcon size={15} />
+            <span>Tutor</span>
+          </div>
+        )}
+
         {isHint && (
           <div className="hint-rung-label">{hintRungLabel(hintLevel)}</div>
         )}
@@ -84,6 +94,7 @@ export function ChatBubble({
                 className="citation-badge"
                 title={`${c.source_file}\n\n${c.chunk_text}`}
               >
+                <DocumentIcon size={14} />
                 {citationLabel(c.source_file, c.page_or_slide)}
               </div>
             ))}
