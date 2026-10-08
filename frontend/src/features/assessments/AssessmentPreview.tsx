@@ -5,7 +5,8 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { QuestionEditForm } from './QuestionEditForm'
 import { mcqKeyIndex } from './answerKey'
 import { Badge } from '../../components/ui/Badge'
-import { statusToVariant } from '../../lib/statusVariant'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
+import { plural } from '../../lib/plural'
 import { getErrorMessage } from '../../lib/api/errors'
 import { useToast } from '../../hooks/useToast'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -62,7 +63,7 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
     <div className="assessment-preview">
       <div className="card-header-row">
         <h3 className="card-title">{draft.title}</h3>
-        <Badge variant={statusToVariant(draft.status)}>{draft.status}</Badge>
+        <Badge variant={statusToVariant(draft.status)}>{statusLabel(draft.status)}</Badge>
       </div>
 
       <ol className="question-list">
@@ -85,10 +86,10 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
               )}
             </div>
             <div className="question-meta">
-              <Badge variant="info">{q.question_type}</Badge>
-              {q.bloom_level && <Badge variant="muted">{q.bloom_level}</Badge>}
-              {q.difficulty && <Badge variant="muted">{q.difficulty}</Badge>}
-              <span className="question-points">{q.max_points} pts</span>
+              <Badge variant="info">{statusLabel(q.question_type)}</Badge>
+              {q.bloom_level && <Badge variant="muted">{statusLabel(q.bloom_level)}</Badge>}
+              {q.difficulty && <Badge variant="muted">{statusLabel(q.difficulty)}</Badge>}
+              <span className="question-points">{plural(q.max_points, 'pt', 'pts')}</span>
             </div>
 
             {q.options && (
@@ -133,7 +134,7 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
               <ul className="rubric-list">
                 {q.rubric_criteria.map((rc) => (
                   <li key={rc.id}>
-                    {rc.description} — {rc.max_points} pts
+                    {rc.description} — {plural(rc.max_points, 'pt', 'pts')}
                   </li>
                 ))}
               </ul>

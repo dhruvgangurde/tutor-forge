@@ -3,6 +3,7 @@ import { useMySubmissions } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { GradeStatus } from './GradeStatus'
+import { plural } from '../../lib/plural'
 import styles from './assessments.module.css'
 
 export function MySubmissionsPage() {
@@ -67,7 +68,7 @@ export function MySubmissionsPage() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-600">
-            {submissions.length} submission{submissions.length !== 1 ? 's' : ''}
+            {plural(submissions.length, 'submission')}
           </p>
           <button
             onClick={() => navigate('/assessments')}

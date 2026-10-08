@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
 import { useCourseDeletionImpact, useDeleteCourse, useRestoreCourse } from './hooks'
 import { Badge } from '../../components/ui/Badge'
 import { Spinner } from '../../components/ui/Spinner'
-import { statusToVariant } from '../../lib/statusVariant'
+import { statusLabel, statusToVariant } from '../../lib/statusVariant'
+import { plural } from '../../lib/plural'
 import { getErrorMessage } from '../../lib/api/errors'
 import { useToast } from '../../hooks/useToast'
 import { useConfirm } from '../../hooks/useConfirm'
@@ -29,6 +30,9 @@ export function CourseCard({ course }: CourseCardProps) {
   const confirm = useConfirm()
 
   const busy = remove.isPending || restore.isPending
+  // A failed course has nothing worth keeping or restoring: there is no retry
+  // endpoint, so the only useful action is to delete it and upload again.
+  const isFailed = course.status === 'failed'
 
   async function handleArchive() {
     const ok = await confirm(
@@ -82,7 +86,7 @@ export function CourseCard({ course }: CourseCardProps) {
         </Link>
         <div className="card-badges">
           {course.is_archived && <Badge variant="muted">archived</Badge>}
-          <Badge variant={statusToVariant(course.status)}>{course.status}</Badge>
+          <Badge variant={statusToVariant(course.status)}>{statusLabel(course.status)}</Badge>
         </div>
       </div>
 
@@ -93,8 +97,14 @@ export function CourseCard({ course }: CourseCardProps) {
         )}
       </p>
 
+      {isFailed && (
+        <p className="field-error">
+          {course.failure_reason ?? 'Processing the course materials failed. Try uploading the course again.'}
+        </p>
+      )}
+
       <div className="card-actions">
-        {course.is_archived ? (
+        {isFailed ? null : course.is_archived ? (
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -132,10 +142,10 @@ export function CourseCard({ course }: CourseCardProps) {
                   tell a disposable mis-upload from a course with students'
                   released grades behind it. */}
               <p className="delete-panel-summary">
-                {impact.data.impact.assessments} assessment(s) ·{' '}
-                {impact.data.impact.submissions} submission(s) ·{' '}
-                {impact.data.impact.final_grades} released grade(s) ·{' '}
-                {impact.data.impact.tutoring_sessions} tutoring session(s)
+                {plural(impact.data.impact.assessments, 'assessment')} ·{' '}
+                {plural(impact.data.impact.submissions, 'submission')} ·{' '}
+                {plural(impact.data.impact.final_grades, 'released grade')} ·{' '}
+                {plural(impact.data.impact.tutoring_sessions, 'tutoring session')}
               </p>
               {impact.data.can_hard_delete ? (
                 <>

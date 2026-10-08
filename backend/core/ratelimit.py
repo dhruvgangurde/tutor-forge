@@ -94,6 +94,12 @@ def client_key(request: Request) -> str:
     """
     Identity for rate-limiting: the authenticated user id when a valid bearer
     token is present (so limits are per-user), otherwise the client IP.
+
+    The client IP is the connection's peer address. ``X-Forwarded-For`` is
+    read only when ``settings.trusted_proxy`` is on, and then only its last
+    entry -- the one our own proxy appended. Earlier entries are whatever the
+    client chose to send, so trusting them (or trusting the header at all
+    without a proxy) let one client rotate through unlimited buckets.
     """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -104,9 +110,11 @@ def client_key(request: Request) -> str:
             return f"user:{payload.sub}"
         except Exception:  # noqa: BLE001 - fall back to IP on any decode failure
             pass
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return f"ip:{forwarded.split(',')[0].strip()}"
+    if settings.trusted_proxy:
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+        if hops:
+            return f"ip:{hops[-1]}"
     client = request.client
     return f"ip:{client.host if client else 'unknown'}"
 

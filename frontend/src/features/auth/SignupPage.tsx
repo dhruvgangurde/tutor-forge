@@ -3,6 +3,8 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../store/AuthContext'
 import api from '../../lib/api/client'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { MAX_EMAIL_CHARS } from '../../lib/limits'
+import { getErrorMessage } from '../../lib/api/errors'
 
 export function SignupPage() {
   const [email, setEmail] = useState('')
@@ -41,8 +43,7 @@ export function SignupPage() {
       login(access_token, { id, email, role })
       navigate('/assessments', { replace: true })
     } catch (err) {
-      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Registration failed. Please try again.'
-      setError(detail)
+      setError(getErrorMessage(err, 'Registration failed. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -68,6 +69,7 @@ export function SignupPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              maxLength={MAX_EMAIL_CHARS}
               autoComplete="email"
               placeholder="you@example.com"
             />

@@ -20,6 +20,21 @@ describe('CitationList (teacher grading view)', () => {
     expect(screen.getByText('61%')).toBeInTheDocument()
   })
 
+  it('hides the percentage when the score is unknown instead of showing 0%', () => {
+    // Audit #9: every chip read "0%" because unmatched quotes defaulted to 0.0.
+    const { container } = render(
+      <CitationList
+        citations={[
+          { ...EVIDENCE[0], confidence: null },
+          { ...EVIDENCE[0], source_file: 'legacy.pdf', confidence: 0 },
+        ]}
+      />
+    )
+    expect(container.querySelectorAll('.citation-badge')).toHaveLength(2)
+    expect(container.querySelector('.citation-confidence')).toBeNull()
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+  })
+
   it('humanises the source name like the student view does', () => {
     render(<CitationList citations={EVIDENCE} />)
     expect(screen.getByText('Dbms Notes, page 12')).toBeInTheDocument()

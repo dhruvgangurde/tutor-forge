@@ -3,6 +3,7 @@ import { useMySubmissions, usePublishedAssessments } from './hooks'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { GradeStatus } from './GradeStatus'
+import { plural } from '../../lib/plural'
 import styles from './assessments.module.css'
 
 export function AssessmentsPage() {
@@ -67,7 +68,7 @@ export function AssessmentsPage() {
       <div className="space-y-4">
         <div className="flex justify-between items-center">
           <p className="text-sm text-gray-600">
-            {assessments.length} assessment{assessments.length !== 1 ? 's' : ''} available
+            {plural(assessments.length, 'assessment')} available
           </p>
           <button
             onClick={() => navigate('/assessments/submissions')}
@@ -89,9 +90,9 @@ export function AssessmentsPage() {
 
               <div className={styles.cardContent}>
                 <p className="text-sm text-gray-600">
-                  {assessment.question_count} question{assessment.question_count !== 1 ? 's' : ''}
+                  {plural(assessment.question_count, 'question')}
                   {' · '}
-                  {assessment.total_points} point{assessment.total_points !== 1 ? 's' : ''}
+                  {plural(assessment.total_points, 'point')}
                 </p>
                 {/* Two assessments on one course can carry the same title.
                     Without a date the cards are indistinguishable, and a

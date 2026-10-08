@@ -58,8 +58,23 @@ def _to_citation(raw: dict) -> EvidenceCitation:
         text=raw.get("text", ""),
         source_file=raw.get("source_file", ""),
         page_or_slide=raw.get("page_or_slide"),
-        confidence=float(raw.get("confidence", 0.0)),
+        confidence=_known_confidence(raw.get("confidence")),
     )
+
+
+def _known_confidence(value) -> float | None:
+    """
+    The stored retrieval confidence, or None when it is unknown.
+
+    Recommendations graded before the matching fix stored 0.0 for every
+    citation whose quote was not found verbatim (see
+    agents.grading.nodes.citation_confidence). A real retrieval score is never
+    exactly 0, so 0.0 means "unknown" and is not shown as 0%.
+    """
+    if value is None:
+        return None
+    score = float(value)
+    return score if score > 0 else None
 
 
 # ── Authorization helper ──────────────────────────────────────────────────────

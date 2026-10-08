@@ -7,6 +7,7 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { GradeStatus } from './GradeStatus'
 import type { StudentQuestion, SubmissionResponseItem } from '../../lib/api/types'
 import { getErrorMessage } from '../../lib/api/errors'
+import { MAX_ANSWER_TEXT_CHARS } from '../../lib/limits'
 import styles from './assessments.module.css'
 
 export function AssessmentTakePage() {
@@ -378,6 +379,7 @@ function ShortAnswerQuestion({ value, onChange }: { value: string; onChange: (te
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Type your answer here..."
+        maxLength={MAX_ANSWER_TEXT_CHARS}
         className={styles.textarea}
         rows={6}
       />
@@ -398,6 +400,7 @@ function NumericQuestion({ value, onChange }: { value: string; onChange: (text: 
         onChange={(e) => onChange(e.target.value)}
         placeholder="Enter a number (separate several values with commas)"
         aria-label="Numeric answer"
+        maxLength={MAX_ANSWER_TEXT_CHARS}
         className={styles.numberInput}
       />
     </fieldset>

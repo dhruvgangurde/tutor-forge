@@ -662,3 +662,19 @@ async def test_edit_then_publish_reflects_the_edit(client, teacher_token, studen
     take = await client.get(f"/assessments/{aid}/take", headers=_auth(student_token))
     stems = [q["stem"] for q in take.json()["questions"]]
     assert "Edited before publishing?" in stems
+
+
+def test_blocking_reason_is_pluralised_properly():
+    # Copy fix (frontend audit #10): "1 student submission", never "submission(s)".
+    from courses.lifecycle import DeletionImpact
+
+    zero = dict.fromkeys(
+        ["assessments", "submissions", "recommendations", "final_grades", "audit_records",
+         "tutoring_sessions", "tutoring_messages", "concept_mastery_rows"],
+        0,
+    )
+    one = DeletionImpact(**{**zero, "submissions": 1, "final_grades": 1})
+    many = DeletionImpact(**{**zero, "submissions": 3, "final_grades": 2, "audit_records": 2})
+    assert one.describe() == "1 student submission, 1 released grade"
+    assert many.describe() == "3 student submissions, 2 released grades, 2 grade audit records"
+    assert "(s)" not in one.describe() + many.describe()

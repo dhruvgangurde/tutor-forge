@@ -4,6 +4,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
+import { MAX_EMAIL_CHARS } from '../../lib/limits'
 import { useToast } from '../../hooks/useToast'
 import { useConfirm } from '../../hooks/useConfirm'
 import type { Enrollment } from '../../lib/api/types'
@@ -48,6 +49,9 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
     if (!ok) return
     try {
       const ack = await remove.mutateAsync(student.student_id)
+      // An earlier "already enrolled" (or any add error) no longer describes
+      // the roster once something else has succeeded.
+      enroll.reset()
       showToast(ack.message, 'success')
     } catch (err) {
       showToast(getErrorMessage(err), 'error')
@@ -69,8 +73,13 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
               type="email"
               className="field-input"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value)
+                // Editing the address makes the last add error stale.
+                if (enroll.isError) enroll.reset()
+              }}
               required
+              maxLength={MAX_EMAIL_CHARS}
               placeholder="e.g. student@school.edu"
             />
             <p className="field-hint">The student must already have an account.</p>

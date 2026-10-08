@@ -12,6 +12,7 @@ import { MySubmissionsPage } from './MySubmissionsPage'
 import { SubmissionDetailPage } from './SubmissionDetailPage'
 import { AssessmentsPage } from './AssessmentsPage'
 import { AssessmentTakePage } from './AssessmentTakePage'
+import { MAX_ANSWER_TEXT_CHARS } from '../../lib/limits'
 
 // Student pages read through react-query hooks; each test sets what they return.
 const state: {
@@ -220,6 +221,12 @@ describe('Take page', () => {
     expect(input).toHaveAttribute('type', 'text')
     await userEvent.type(input, '3, 27, 38, 43')
     expect(input).toHaveValue('3, 27, 38, 43')
+  })
+
+  it('caps a typed answer at the server limit', () => {
+    state.take = TAKE
+    renderAt('/assessments/a-sorting/take', '/assessments/:assessmentId/take', <AssessmentTakePage />)
+    expect(screen.getByLabelText('Numeric answer')).toHaveAttribute('maxLength', String(MAX_ANSWER_TEXT_CHARS))
   })
 
   it('shows a submit failure as a styled alert above the buttons', async () => {

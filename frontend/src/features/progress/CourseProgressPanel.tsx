@@ -4,6 +4,7 @@ import { Badge } from '../../components/ui/Badge'
 import { Spinner } from '../../components/ui/Spinner'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
+import { statusLabel } from '../../lib/statusVariant'
 import type { BadgeVariant } from '../../components/ui/Badge'
 
 interface CourseProgressPanelProps {
@@ -114,7 +115,7 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
                 </td>
                 <td>
                   <Badge variant={r.action === 'approved' ? 'success' : 'info'}>
-                    {r.action}
+                    {statusLabel(r.action)}
                   </Badge>
                 </td>
                 <td>{new Date(r.finalized_at).toLocaleDateString()}</td>
