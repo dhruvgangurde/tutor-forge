@@ -28,7 +28,7 @@ export function FinalizedGrades() {
       {data && data.length > 0 && (
         <div className="card table-card">
         <div className="table-scroll">
-        <table className="data-table">
+        <table className="data-table data-table-stack">
           <thead>
             <tr>
               <th>Student</th>
@@ -41,15 +41,15 @@ export function FinalizedGrades() {
           <tbody>
             {data.map((g) => (
               <tr key={g.submission_id}>
-                <td>{g.student_email ?? '—'}</td>
-                <td>{g.assessment_title}</td>
-                <td>
+                <td data-label="Student">{g.student_email ?? '—'}</td>
+                <td data-label="Assessment">{g.assessment_title}</td>
+                <td data-label="Final score">
                   {fmt(g.final_score)} / {fmt(g.max_score)}
                 </td>
-                <td>
+                <td data-label="Decision">
                   <Badge variant={statusToVariant(g.action)}>{statusLabel(g.action)}</Badge>
                 </td>
-                <td>{g.released ? new Date(g.finalized_at).toLocaleDateString() : 'Not released'}</td>
+                <td data-label="Released">{g.released ? new Date(g.finalized_at).toLocaleDateString() : 'Not released'}</td>
               </tr>
             ))}
           </tbody>

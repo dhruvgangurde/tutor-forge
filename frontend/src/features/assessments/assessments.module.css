@@ -499,3 +499,49 @@
   flex-wrap: wrap;
   gap: var(--space-3);
 }
+
+/* ── Phones and small tablets ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* The title and progress bar stay in view while a long question scrolls. */
+  .quizHeader {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin-bottom: var(--space-5);
+    padding: var(--space-3) 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .quizTitle { margin-bottom: var(--space-2); }
+
+  .questionStem {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-5);
+  }
+
+  .option {
+    gap: var(--space-3);
+    min-height: 56px;
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .optionSelected { padding: calc(var(--space-3) - 1px) calc(var(--space-4) - 1px); }
+
+  .optionText { min-width: 0; overflow-wrap: anywhere; }
+
+  .numberInput { max-width: none; }
+
+  /* Previous and Next share the row as two large targets. */
+  .quizNavButtons > :global(.btn) { flex: 1; }
+
+  .jumpButton {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .toolbar { flex-wrap: wrap; }
+  .assessmentGrid { grid-template-columns: minmax(0, 1fr); }
+  .reviewQuestion { min-width: 0; }
+  .reviewStem { overflow-wrap: anywhere; }
+}

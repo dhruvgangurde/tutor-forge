@@ -12,7 +12,7 @@ interface GradingQueueProps {
 export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps) {
   return (
     <div className="table-scroll">
-    <table className="data-table">
+    <table className="data-table data-table-stack">
       <thead>
         <tr>
           <th>Student</th>
@@ -29,15 +29,15 @@ export function GradingQueue({ items, selectedId, onSelect }: GradingQueueProps)
             onClick={() => onSelect(item.submission_id)}
             className={`clickable-row${item.submission_id === selectedId ? ' row-selected' : ''}`}
           >
-            <td>{item.student_email ?? '—'}</td>
-            <td>{item.assessment_title ?? '—'}</td>
-            <td>
+            <td data-label="Student">{item.student_email ?? '—'}</td>
+            <td data-label="Assessment">{item.assessment_title ?? '—'}</td>
+            <td data-label="Recommended score">
               {item.recommended_score} / {item.max_score}
             </td>
-            <td>
+            <td data-label="Status">
               <Badge variant={statusToVariant(item.status)}>{statusLabel(item.status)}</Badge>
             </td>
-            <td>
+            <td data-label="Submitted">
               {item.submitted_at ? new Date(item.submitted_at).toLocaleDateString() : '—'}
             </td>
           </tr>

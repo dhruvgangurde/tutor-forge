@@ -41,6 +41,12 @@ describe('AppShell variants', () => {
     expect(within(nav).getByRole('link', { name: 'Grading' })).toHaveClass('active')
     expect(within(sidebar).getByText('teacher@demo.com')).toBeInTheDocument()
 
+    // The phone tab bar carries the same two sections plus Log out; no extra destinations.
+    const tabbar = document.querySelector<HTMLElement>('nav.tabbar')!
+    expect(within(tabbar).getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual(['/courses', '/grading'])
+    expect(within(tabbar).getByRole('link', { name: 'Grading' })).toHaveAttribute('aria-current', 'page')
+    expect(within(tabbar).getByRole('button', { name: 'Log out' })).toBeInTheDocument()
+
     await userEvent.click(within(sidebar).getByRole('button', { name: 'Log out' }))
     expect(logout).toHaveBeenCalledTimes(1)
     expect(screen.getByText('login page')).toBeInTheDocument()
@@ -65,4 +71,24 @@ describe('AppShell variants', () => {
     expect(logout).toHaveBeenCalledTimes(1)
     expect(screen.getByText('login page')).toBeInTheDocument()
   })
+
+  it('gives students a phone tab bar: their three sections plus Log out', async () => {
+    role = 'student'
+    logout.mockReset()
+    renderShell('/tutor/abc')
+    const tabbar = document.querySelector<HTMLElement>('nav.tabbar')!
+    expect(within(tabbar).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
+      ['Assessments', '/assessments'],
+      ['Tutor', '/tutor'],
+      ['Progress', '/progress'],
+    ])
+    const tutorTab = within(tabbar).getByRole('link', { name: 'Tutor' })
+    expect(tutorTab).toHaveAttribute('aria-current', 'page')
+    expect(tutorTab).toHaveClass('active')
+    expect(within(tabbar).getByRole('link', { name: 'Progress' })).not.toHaveAttribute('aria-current')
+    await userEvent.click(within(tabbar).getByRole('button', { name: 'Log out' }))
+    expect(logout).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('login page')).toBeInTheDocument()
+  })
+
 })

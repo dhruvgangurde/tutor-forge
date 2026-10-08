@@ -101,7 +101,7 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
       {enrollments.data && enrollments.data.length > 0 && (
         <div className="card table-card">
         <div className="table-scroll">
-        <table className="data-table">
+        <table className="data-table data-table-stack">
           <thead>
             <tr>
               <th>Student</th>
@@ -112,8 +112,8 @@ export function CourseEnrollmentPanel({ courseId }: CourseEnrollmentPanelProps) 
           <tbody>
             {enrollments.data.map((s) => (
               <tr key={s.student_id}>
-                <td className="cell-strong">{s.email}</td>
-                <td>{new Date(s.enrolled_at).toLocaleDateString()}</td>
+                <td data-label="Student" className="cell-strong">{s.email}</td>
+                <td data-label="Enrolled">{new Date(s.enrolled_at).toLocaleDateString()}</td>
                 <td className="cell-actions">
                   <button
                     type="button"
