@@ -1,14 +1,21 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAssessmentForStudent, useMySubmissions, useSubmitAssessment } from './hooks'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonBlock } from '../../components/ui/Skeleton'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
+import { NotFoundState } from '../../components/ui/NotFoundState'
+import { CheckIcon } from '../../components/ui/icons'
 import { GradeStatus } from './GradeStatus'
 import type { StudentQuestion, SubmissionResponseItem } from '../../lib/api/types'
 import { getErrorMessage } from '../../lib/api/errors'
 import { MAX_ANSWER_TEXT_CHARS } from '../../lib/limits'
 import styles from './assessments.module.css'
+
+/** Approved quiz footer (design brief): true of the product today. */
+function QuizFooter() {
+  return <p className={styles.quizFooter}>Your teacher reviews every grade before you see it.</p>
+}
 
 export function AssessmentTakePage() {
   const { assessmentId } = useParams<{ assessmentId: string }>()
@@ -27,100 +34,82 @@ export function AssessmentTakePage() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
 
   if (!assessmentId) {
-    return <div className="text-center py-8">Invalid assessment ID</div>
+    return <p className="placeholder-label">Invalid assessment ID</p>
   }
 
   if (isLoading || mySubmissions.isLoading) {
     return (
-      <>
+      <div className={styles.quizColumn}>
         <div className="page-header">
           <h1 className="page-title">Loading Assessment</h1>
         </div>
-        <div className="flex justify-center py-8">
-          <Spinner />
+        <div className={styles.skeletonPanel} aria-hidden="true">
+          <SkeletonBlock height="6px" />
+          <SkeletonBlock width="80%" height="2rem" />
+          <SkeletonBlock height="3.75rem" />
+          <SkeletonBlock height="3.75rem" />
+          <SkeletonBlock height="3.75rem" />
         </div>
-      </>
+      </div>
     )
   }
 
   const existing = mySubmissions.data?.find((s) => s.assessment_id === assessmentId)
   if (existing) {
     return (
-      <>
+      <div className={styles.quizColumn}>
         <div className="page-header">
           <h1 className="page-title">{assessment?.title ?? existing.assessment_title}</h1>
           <p className="page-subtitle">{existing.course_name}</p>
         </div>
-        <div className={styles.noticeCard} role="status">
-          <h2>You have already submitted this assessment</h2>
-          <p>
+        <div className={`card ${styles.noticeCard}`} role="status">
+          <h2 className={styles.noticeTitle}>You have already submitted this assessment</h2>
+          <p className={styles.noticeText}>
             Each assessment can be submitted once. You submitted this one on{' '}
             {new Date(existing.submitted_at).toLocaleString()}.
           </p>
           <GradeStatus
             submission={existing}
             showPercent
-            leading={
-              <span className={`${styles.statusPill} ${styles.statusSubmitted}`}>Submitted</span>
-            }
+            leading={<span className={styles.submittedLabel}>Submitted</span>}
           />
           <div className={styles.noticeActions}>
             <button
               type="button"
-              className={styles.cardButton}
+              className="btn btn-primary"
               onClick={() => navigate(`/assessments/submissions/${existing.submission_id}`)}
             >
               View your submission
             </button>
-            <button
-              type="button"
-              className={styles.cardButtonSecondary}
-              onClick={() => navigate('/assessments')}
-            >
+            <button type="button" className="btn btn-secondary" onClick={() => navigate('/assessments')}>
               Back to Assessments
             </button>
           </div>
         </div>
-      </>
+      </div>
     )
   }
 
   if (error || !assessment) {
     return (
-      <>
-        <div className="page-header">
-          <h1 className="page-title">Assessment Not Found</h1>
-        </div>
-        <div className="text-center py-8">
-          <p className="text-red-600 mb-4">Failed to load assessment.</p>
-          <button
-            onClick={() => navigate('/assessments')}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Back to Assessments
-          </button>
-        </div>
-      </>
+      <NotFoundState
+        title="Assessment Not Found"
+        message="Failed to load assessment."
+        linkTo="/assessments"
+        linkLabel="Back to Assessments"
+      />
     )
   }
 
   const questions = assessment.questions || []
   if (questions.length === 0) {
     return (
-      <>
-        <div className="page-header">
-          <h1 className="page-title">Assessment Error</h1>
-        </div>
-        <div className="text-center py-8">
-          <p className="text-red-600 mb-4">This assessment has no questions.</p>
-          <button
-            onClick={() => navigate('/assessments')}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Back to Assessments
-          </button>
-        </div>
-      </>
+      <NotFoundState
+        title="Assessment Error"
+        message="This assessment has no questions."
+        linkTo="/assessments"
+        linkLabel="Back to Assessments"
+      />
     )
   }
 
@@ -174,13 +163,13 @@ export function AssessmentTakePage() {
 
   if (isReviewing) {
     return (
-      <>
+      <div className={styles.quizColumn}>
         <div className="page-header">
           <h1 className="page-title">Review Your Answers</h1>
           <p className="page-subtitle">{assessment.title}</p>
         </div>
 
-        <div className={styles.reviewContainer}>
+        <ol className={styles.reviewList}>
           {questions.map((question, idx) => {
             const resp = responses[question.id]
             let answerDisplay = 'Not answered'
@@ -191,27 +180,28 @@ export function AssessmentTakePage() {
             }
 
             return (
-              <div key={question.id} className={styles.reviewItem}>
+              <li key={question.id} className={`card ${styles.reviewItem}`}>
                 <div className={styles.reviewQuestion}>
                   <span className={styles.questionNumber}>Q{idx + 1}</span>
-                  <h4>{question.stem}</h4>
+                  <h4 className={styles.reviewStem}>{question.stem}</h4>
                 </div>
                 <div className={styles.reviewAnswer}>
                   <strong>Your answer:</strong> {answerDisplay}
                 </div>
                 <button
+                  type="button"
                   onClick={() => {
                     setCurrentQuestionIndex(idx)
                     setIsReviewing(false)
                   }}
-                  className="text-sm text-blue-600 hover:underline"
+                  className="btn btn-tertiary btn-sm"
                 >
                   Edit answer
                 </button>
-              </div>
+              </li>
             )
           })}
-        </div>
+        </ol>
 
         {/* Above the buttons, styled, where it is seen. Surfaces the server's
             actual detail (same helper the tutor chat uses) -- a hardcoded
@@ -226,21 +216,21 @@ export function AssessmentTakePage() {
           />
         )}
 
-        <div className={styles.buttonGroup}>
-          <button
-            onClick={() => setIsReviewing(false)}
-            className="px-6 py-2 border border-gray-300 rounded hover:bg-gray-50"
-          >
+        <div className={styles.quizNavButtons}>
+          <button type="button" onClick={() => setIsReviewing(false)} className="btn btn-secondary">
             Back to Questions
           </button>
           <button
+            type="button"
             onClick={() => setShowSubmitConfirm(true)}
             disabled={submitMutation.isPending}
-            className="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+            className="btn btn-primary"
           >
             {submitMutation.isPending ? 'Submitting...' : 'Submit Assessment'}
           </button>
         </div>
+
+        <QuizFooter />
 
         <ConfirmDialog
           open={showSubmitConfirm}
@@ -253,41 +243,51 @@ export function AssessmentTakePage() {
           }}
           onCancel={() => setShowSubmitConfirm(false)}
         />
-      </>
+      </div>
     )
   }
 
   return (
-    <>
-      <div className="page-header">
-        <h1 className="page-title">{assessment.title}</h1>
-        <p className="page-subtitle">
-          Question {currentQuestionIndex + 1} of {questions.length}
-        </p>
-      </div>
-
-      <div className={styles.takingContainer}>
-        {/* Question Display */}
-        <div className={styles.questionSection}>
-          <QuestionDisplay
-            question={currentQuestion}
-            response={currentResponse}
-            onChange={(answer) => handleResponseChange(currentQuestion.id, answer)}
-          />
-        </div>
-
-        {/* Navigation */}
-        <div className={styles.navigationSection}>
-          <QuestionNav
-            current={currentQuestionIndex}
-            total={questions.length}
-            onPrevious={handlePrevious}
-            onNext={handleNext}
-            onJump={handleJumpToQuestion}
-          />
+    <div className={styles.quizColumn}>
+      {/* The position is shown once: "Question N of M" beside a thin bar. */}
+      <div className={styles.quizHeader}>
+        <h1 className={styles.quizTitle}>{assessment.title}</h1>
+        <div className={styles.progressRow}>
+          <div
+            className={styles.progressBar}
+            role="progressbar"
+            aria-label="Quiz progress"
+            aria-valuemin={1}
+            aria-valuemax={questions.length}
+            aria-valuenow={currentQuestionIndex + 1}
+          >
+            <div
+              className={styles.progressFill}
+              style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+            />
+          </div>
+          <span className={styles.progressText}>
+            Question {currentQuestionIndex + 1} of {questions.length}
+          </span>
         </div>
       </div>
-    </>
+
+      <QuestionDisplay
+        question={currentQuestion}
+        response={currentResponse}
+        onChange={(answer) => handleResponseChange(currentQuestion.id, answer)}
+      />
+
+      <QuestionNav
+        current={currentQuestionIndex}
+        total={questions.length}
+        onPrevious={handlePrevious}
+        onNext={handleNext}
+        onJump={handleJumpToQuestion}
+      />
+
+      <QuizFooter />
+    </div>
   )
 }
 
@@ -352,35 +352,47 @@ function MCQQuestion({
   return (
     <fieldset className={styles.optionsContainer}>
       <legend className="sr-only">Choose one answer</legend>
-      {options.map((option, idx) => (
-        <label key={idx} className={styles.optionLabel}>
-          <input
-            type="radio"
-            name="mcq"
-            value={choices[idx]}
-            checked={selectedChoice === choices[idx]}
-            onChange={(e) => onChange(e.target.value)}
-            className={styles.optionInput}
-          />
-          <span className={styles.optionText}>
-            {choices[idx]}. {option}
-          </span>
-        </label>
-      ))}
+      {options.map((option, idx) => {
+        const selected = selectedChoice === choices[idx]
+        return (
+          <label key={idx} className={`${styles.option} ${selected ? styles.optionSelected : ''}`}>
+            <input
+              type="radio"
+              name="mcq"
+              value={choices[idx]}
+              checked={selected}
+              onChange={(e) => onChange(e.target.value)}
+              className={styles.optionInput}
+            />
+            {/* The letter is drawn in the tile; screen readers get it from the
+                hidden prefix, and the checked state from the radio itself. */}
+            <span className={styles.optionTile} aria-hidden="true">{choices[idx]}</span>
+            <span className={styles.optionText}>
+              <span className="sr-only">{choices[idx]}.</span> {option}
+            </span>
+            {selected && (
+              <span className={styles.optionSelectedTag} aria-hidden="true">
+                <CheckIcon size={16} />
+                Selected
+              </span>
+            )}
+          </label>
+        )
+      })}
     </fieldset>
   )
 }
 
 function ShortAnswerQuestion({ value, onChange }: { value: string; onChange: (text: string) => void }) {
   return (
-    <fieldset>
+    <fieldset className={styles.answerFieldset}>
       <legend className="sr-only">Enter your answer</legend>
       <textarea
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Type your answer here..."
         maxLength={MAX_ANSWER_TEXT_CHARS}
-        className={styles.textarea}
+        className="field-input"
         rows={6}
       />
     </fieldset>
@@ -389,7 +401,7 @@ function ShortAnswerQuestion({ value, onChange }: { value: string; onChange: (te
 
 function NumericQuestion({ value, onChange }: { value: string; onChange: (text: string) => void }) {
   return (
-    <fieldset>
+    <fieldset className={styles.answerFieldset}>
       <legend className="sr-only">Enter your numeric answer</legend>
       {/* Text, not type="number": some answers are an ordered list of
           numbers ("3, 27, 38, 43"), and a number input refuses commas. The
@@ -401,7 +413,7 @@ function NumericQuestion({ value, onChange }: { value: string; onChange: (text: 
         placeholder="Enter a number (separate several values with commas)"
         aria-label="Numeric answer"
         maxLength={MAX_ANSWER_TEXT_CHARS}
-        className={styles.numberInput}
+        className={`field-input ${styles.numberInput}`}
       />
     </fieldset>
   )
@@ -422,8 +434,14 @@ function QuestionNav({
 }) {
   return (
     <div className={styles.navContainer}>
-      <div className={styles.progressBar}>
-        <div className={styles.progressFill} style={{ width: `${((current + 1) / total) * 100}%` }} />
+      <div className={styles.quizNavButtons}>
+        <button type="button" onClick={onPrevious} disabled={current === 0} className="btn btn-secondary">
+          Previous
+        </button>
+
+        <button type="button" onClick={onNext} className="btn btn-primary">
+          {current === total - 1 ? 'Review & Submit' : 'Next'}
+        </button>
       </div>
 
       <div className={styles.questionJump}>
@@ -432,34 +450,16 @@ function QuestionNav({
           {Array.from({ length: total }).map((_, idx) => (
             <button
               key={idx}
+              type="button"
               onClick={() => onJump(idx)}
-              className={`
-                ${styles.jumpButton}
-                ${idx === current ? styles.jumpButtonActive : ''}
-              `}
+              className={`${styles.jumpButton} ${idx === current ? styles.jumpButtonActive : ''}`}
               aria-label={`Question ${idx + 1}`}
+              aria-current={idx === current ? 'step' : undefined}
             >
               {idx + 1}
             </button>
           ))}
         </div>
-      </div>
-
-      <div className={styles.buttonGroup}>
-        <button
-          onClick={onPrevious}
-          disabled={current === 0}
-          className={`px-4 py-2 border rounded ${current === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50'}`}
-        >
-          Previous
-        </button>
-
-        <button
-          onClick={onNext}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          {current === total - 1 ? 'Review & Submit' : 'Next'}
-        </button>
       </div>
     </div>
   )

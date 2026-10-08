@@ -1,7 +1,7 @@
 import { useMyCourseProgress } from './hooks'
 import { scorePercent } from './CourseProgressList'
 import { Badge } from '../../components/ui/Badge'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
 import { statusLabel } from '../../lib/statusVariant'
@@ -30,7 +30,7 @@ function masteryLabel(mastery: number): string {
 export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
   const { data, isLoading, isError, error } = useMyCourseProgress(courseId)
 
-  if (isLoading) return <Spinner label="Loading progress…" />
+  if (isLoading) return <SkeletonRows label="Loading progress…" rows={3} columns={3} />
   if (isError) return <ErrorBanner message={getErrorMessage(error)} />
   if (!data) return null
 

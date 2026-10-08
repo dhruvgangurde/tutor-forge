@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMyProgress } from './hooks'
 import { CourseProgressList } from './CourseProgressList'
 import { CourseProgressPanel } from './CourseProgressPanel'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -28,14 +28,11 @@ export function ProgressPage() {
         </p>
       </div>
 
-      {isLoading && <Spinner label="Loading progress…" />}
+      {isLoading && <SkeletonRows label="Loading progress…" rows={3} columns={5} />}
       {isError && <ErrorBanner message={getErrorMessage(error)} />}
 
       {courses && courses.length === 0 && (
-        <EmptyState
-          icon="📈"
-          label="No progress yet. Take an assessment and your results will appear here."
-        />
+        <EmptyState label="No progress yet. Take an assessment and your results will appear here." />
       )}
 
       {courses && courses.length > 0 && (
@@ -50,7 +47,7 @@ export function ProgressPage() {
       )}
 
       {selectedCourseId && (
-        <div className="card">
+        <div className="card course-progress-card">
           {/* Keyed by course so switching rows remounts rather than briefly
               showing the previous course's data under the new heading. */}
           <CourseProgressPanel key={selectedCourseId} courseId={selectedCourseId} />

@@ -1,564 +1,500 @@
-/* Assessment List */
+/* Student assessment area: list, take/review, My Submissions, detail.
+   Tokens only (index.css); shared buttons, cards and chips come from the
+   global classes (.btn, .card, .badge). */
+
+/* ── Page toolbar (count + secondary action) ────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.toolbarCount {
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+/* ── Cards (Assessments, My Submissions) ────────────────────────────────── */
 .assessmentGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  margin-top: 1.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-5);
 }
 
 .assessmentCard {
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  overflow: hidden;
-  background: var(--surface);
-  transition: all 0.2s;
   display: flex;
   flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.clickableCard {
   cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-.assessmentCard:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--accent);
-}
-
-.cardHeader {
-  padding: 1rem;
-  border-bottom: 1px solid var(--line);
-}
+.clickableCard:hover { border-color: var(--line-strong); }
 
 .cardTitle {
-  font-size: 1.125rem;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
   font-weight: 600;
-  margin: 0 0 0.5rem 0;
+  line-height: 1.25;
   color: var(--ink);
 }
 
-.courseBadge {
-  display: inline-block;
-  font-size: 0.75rem;
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 0.25rem 0.75rem;
-  border-radius: 9999px;
-  margin-top: 0.5rem;
+.courseName {
+  color: var(--muted);
+  font-size: 1rem;
+  margin-bottom: var(--space-2);
 }
 
-.cardContent {
-  padding: 1rem;
-  flex-grow: 1;
+.cardMeta {
+  color: var(--ink);
+  font-size: 1rem;
 }
 
 .cardDate {
-  font-size: 0.8125rem;
   color: var(--muted);
-  margin: 0.375rem 0 0 0;
+  font-size: 0.9rem;
 }
 
-.cardFooter {
-  padding: 0 1rem 1rem 1rem;
-  border-top: 1px solid var(--line);
-}
-
-/* Assessment Taking Page */
-.takingContainer {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 2rem;
-  margin-top: 2rem;
-}
-
-@media (max-width: 1024px) {
-  .takingContainer {
-    grid-template-columns: 1fr;
-  }
-}
-
-.questionSection {
-  min-height: 400px;
-}
-
-.navigationSection {
-  position: sticky;
-  top: 1rem;
-  height: fit-content;
-}
-
-.questionContainer {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 2rem;
-  margin-bottom: 2rem;
-}
-
-.questionStem {
-  font-size: 1.25rem;
+.submittedLabel {
+  color: var(--muted);
+  font-size: 0.9rem;
   font-weight: 600;
-  color: var(--ink);
-  margin: 0 0 1.5rem 0;
-  line-height: 1.5;
 }
 
-.optionsContainer {
-  border: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.optionLabel {
-  display: flex;
-  align-items: flex-start;
-  cursor: pointer;
-  padding: 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.375rem;
-  transition: all 0.2s;
-}
-
-.optionLabel:hover {
-  background: var(--bg);
-  border-color: var(--line-strong);
-}
-
-.optionInput {
-  margin-top: 0.25rem;
-  margin-right: 0.75rem;
-  cursor: pointer;
-}
-
-.optionText {
-  font-size: 1rem;
-  color: var(--ink);
-  line-height: 1.5;
-}
-
-.textarea,
-.numberInput {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  font-family: inherit;
-}
-
-.textarea:focus,
-.numberInput:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--focus-ring);
-}
-
-.textarea {
-  resize: vertical;
-}
-
-/* Navigation */
-.navContainer {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 1rem;
-}
-
-.progressBar {
-  width: 100%;
-  height: 0.5rem;
-  background: var(--line);
-  border-radius: 9999px;
-  overflow: hidden;
-  margin-bottom: 1rem;
-}
-
-.progressFill {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.3s;
-}
-
-.questionJump {
-  margin-bottom: 1.5rem;
-}
-
-.jumpLabel {
-  display: block;
-  font-size: 0.875rem;
-  font-weight: 500;
+.statusNote {
   color: var(--muted);
-  margin-bottom: 0.5rem;
-}
-
-.jumpButtons {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
-  gap: 0.5rem;
-}
-
-.jumpButton {
-  padding: 0.5rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 0.375rem;
-  background: var(--surface);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: var(--muted);
-}
-
-.jumpButton:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.jumpButtonActive {
-  background: var(--accent-fill);
-  color: var(--on-accent);
-  border-color: var(--accent);
-}
-
-.buttonGroup {
-  display: flex;
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.buttonGroup button {
-  flex: 1;
-}
-
-/* Review Page */
-.reviewContainer {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 2rem;
-  margin-bottom: 2rem;
-}
-
-.reviewItem {
-  padding: 1.5rem;
-  border: 1px solid var(--line);
-  border-radius: 0.375rem;
-  margin-bottom: 1rem;
-}
-
-.reviewItem:last-child {
-  margin-bottom: 0;
-}
-
-.reviewQuestion {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  align-items: flex-start;
-}
-
-.questionNumber {
-  display: inline-block;
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  margin-top: 0.125rem;
-}
-
-.reviewQuestion h4 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0;
-  flex: 1;
-}
-
-.reviewAnswer {
-  padding: 1rem;
-  background: var(--bg);
-  border-left: 3px solid var(--accent);
-  border-radius: 0.375rem;
-  margin-bottom: 1rem;
   font-size: 0.95rem;
 }
 
-.noAnswer {
-  color: var(--tertiary);
-  font-style: italic;
-}
-
-/* Submission List */
-.submissionGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
-  margin-top: 1.5rem;
-}
-
-/* Submission Detail */
-.detailContainer {
-  margin-top: 2rem;
-  max-width: 900px;
-}
-
-.headerCard {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 2rem;
-  margin-bottom: 2rem;
-}
-
-.headerContent {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 2rem;
-}
-
-.headerContent > div > p:first-child {
-  font-size: 0.875rem;
-  color: var(--muted);
-  margin: 0 0 0.5rem 0;
-}
-
-.headerContent > div > p:last-child {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.responsesContainer {
-  margin-bottom: 2rem;
-}
-
-.sectionTitle {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0 0 1.5rem 0;
-}
-
-.responseCard {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.responseHeader {
+.cardActions {
   display: flex;
-  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-4);
+}
+
+.cardFooterRow {
+  display: flex;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--line);
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-4);
 }
 
-.questionNumber {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--line);
-  padding: 0.25rem 0.75rem;
-  border-radius: 0.375rem;
-}
-
-.maxPoints {
-  font-size: 0.875rem;
-  color: var(--muted);
-}
-
-.questionText {
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0 0 1rem 0;
-}
-
-.answerDisplay {
-  padding: 1rem;
-  background: var(--bg);
-  border-left: 3px solid var(--accent);
-  border-radius: 0.375rem;
-}
-
-.answerDisplay strong {
-  display: block;
-  font-size: 0.875rem;
-  color: var(--muted);
-  margin-bottom: 0.5rem;
-}
-
-.answerContent {
-  font-size: 1rem;
-  color: var(--ink);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.feedbackCard {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.feedbackContent {
-  font-size: 1rem;
-  color: var(--ink);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.actionButtons {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  padding-top: 2rem;
-  border-top: 1px solid var(--line);
-}
-
-/* Responsive */
-@media (max-width: 640px) {
-  .assessmentGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .takingContainer {
-    grid-template-columns: 1fr;
-  }
-
-  .navigationSection {
-    position: static;
-  }
-
-  .questionContainer {
-    padding: 1rem;
-  }
-
-  .headerContent {
-    grid-template-columns: 1fr;
-  }
-
-  .actionButtons {
-    flex-direction: column;
-  }
-
-  .actionButtons button {
-    width: 100%;
-  }
-
-  .buttonGroup {
-    flex-direction: column;
-  }
-
-  .buttonGroup button {
-    width: 100%;
-  }
-}
-
-/* ── Submission / grade status ─────────────────────────────────────────────
-   These cards are white, so the app's dark-theme badges (light text on a faint
-   tint) are unreadable here. Same pill shape, colours chosen for a light card. */
+/* GradeStatus: chip, then the released score in the serif. */
 .statusRow {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
-  margin-top: 0.5rem;
-}
-
-/* Same shape as the shared .badge chip (index.css). */
-.statusPill {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 0.75rem;
-  border-radius: 999px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  line-height: 1.3;
-  white-space: nowrap;
-}
-
-.statusSubmitted {
-  background: var(--accent-soft);
-  color: var(--accent);
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
 }
 
 .scoreValue {
   font-family: var(--font-serif);
+  font-size: 1.5rem;
   font-weight: 600;
+  line-height: 1.2;
   color: var(--ink);
 }
 
-.statusNote {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin: 0.25rem 0 0;
+.skeletonPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
-/* Full-width card buttons. The page's other buttons use Tailwind utility
-   classes, but Tailwind is not installed, so those render unstyled. */
-.cardButton,
-.cardButtonSecondary {
-  width: 100%;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
+/* ── Quiz (take + review + already-submitted notice) ───────────────────── */
+.quizColumn {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.quizHeader {
+  margin-bottom: var(--space-8);
+}
+
+.quizTitle {
+  font-family: var(--font-sans);
+  font-size: 1rem;
   font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
 }
 
-.cardButton {
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.progressBar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 999px;
   background: var(--accent-fill);
-  border: 1px solid var(--accent-fill);
+  transition: width var(--duration-normal) var(--ease-out);
+}
+
+.progressText {
+  flex-shrink: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.questionContainer {
+  margin-bottom: var(--space-8);
+}
+
+.questionStem {
+  font-family: var(--font-serif);
+  font-size: 1.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--ink);
+  margin-bottom: var(--space-6);
+}
+
+.optionsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: none;
+}
+
+/* Large outlined options with a lettered tile. */
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out);
+}
+
+.option:hover { border-color: var(--muted); }
+
+.option:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Selected: accent border, soft fill, filled tile, and the word "Selected". */
+.optionSelected {
+  background: var(--accent-soft);
+  border: 2px solid var(--accent);
+  padding: calc(var(--space-3) - 1px) calc(var(--space-5) - 1px);
+}
+
+.optionSelected:hover { border-color: var(--accent); }
+
+.optionInput {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.optionTile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.optionSelected .optionTile {
+  background: var(--accent-fill);
   color: var(--on-accent);
 }
 
-.cardButton:hover {
-  background: var(--accent-hover);
-}
-
-.cardButtonSecondary {
-  background: var(--surface);
-  border: 1px solid var(--accent);
-  color: var(--accent);
-}
-
-.cardButtonSecondary:hover {
-  background: var(--accent-soft);
-}
-
-.noticeCard {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
+.optionText {
+  flex: 1;
   color: var(--ink);
-  max-width: 40rem;
+  font-size: 1.075rem;
+  line-height: 1.45;
 }
 
-.noticeCard h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.1rem;
+.optionSelectedTag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.answerFieldset { border: none; }
+
+.numberInput { max-width: 420px; }
+
+.navContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.quizNavButtons {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+/* Existing "Jump to question" row: quiet numbered buttons. */
+.questionJump {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.jumpLabel {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.jumpButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.jumpButton {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.jumpButton:hover { border-color: var(--muted); background: var(--hover); }
+
+.jumpButtonActive,
+.jumpButtonActive:hover {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.quizFooter {
+  margin-top: var(--space-10);
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* Review step */
+.reviewList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.reviewItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.reviewQuestion {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.reviewStem {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.reviewAnswer {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+/* Already-submitted notice */
+.noticeCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.noticeTitle {
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.noticeText {
   color: var(--ink);
 }
 
 .noticeActions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1.25rem;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
-.noticeActions button {
-  width: auto;
+/* ── Submission detail ──────────────────────────────────────────────────── */
+.readingColumn {
+  max-width: 860px;
+}
+
+.summaryCard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-6);
+  margin-bottom: var(--space-8);
+}
+
+.summaryLabel {
+  color: var(--tertiary);
+  font-size: 0.84375rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-1);
+}
+
+.summaryValue {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.answersSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+
+.sectionTitle {
+  font-family: var(--font-serif);
+  font-size: 1.625rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: var(--space-2);
+}
+
+.responseCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.responseHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.questionNumber {
+  color: var(--tertiary);
+  font-size: 0.84375rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.maxPoints {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.questionText {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.answerDisplay {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.answerLabel {
+  display: block;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: var(--space-1);
+}
+
+.answerContent {
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+
+.noAnswer {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.feedbackCard {
+  margin-bottom: var(--space-8);
+}
+
+.feedbackContent {
+  color: var(--ink);
+}
+
+.gradedOn {
+  margin-top: var(--space-4);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.actionButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
