@@ -27,8 +27,9 @@ export interface CourseDetail {
   name: string
   status: string
   created_at: string
-  chapter_count: number
-  concept_count: number
+  /** From the stored outline; null unless the course is ready. */
+  chapter_count: number | null
+  concept_count: number | null
   /** Plain-language reason; set only when status is "failed". */
   failure_reason?: string | null
 }

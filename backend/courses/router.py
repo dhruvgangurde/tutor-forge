@@ -17,7 +17,7 @@ Routes:
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.service import require_teacher, require_student
@@ -55,7 +55,7 @@ from courses.lifecycle import (
     restore_course,
 )
 from courses.service import create_course, get_course_structure
-from db.models import Course, IngestionJob, User
+from db.models import Chapter, Concept, Course, IngestionJob, User
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -222,13 +222,27 @@ async def get_course(
     course = result.scalar_one_or_none()
     if not course or course.owner_id != teacher.id:
         raise HTTPException(status_code=404, detail="Course not found.")
+    # These were hard-coded to 0 for every course. Counted from the stored
+    # outline now -- and only for a ready course: before ingestion finishes,
+    # or when it failed, there is no outline, and "0 chapters" would read as a
+    # fact about the course rather than "not known".
+    chapter_count = concept_count = None
+    if course.status == "ready":
+        chapter_count = (await db.execute(
+            select(func.count()).select_from(Chapter).where(Chapter.course_id == course.id)
+        )).scalar_one()
+        concept_count = (await db.execute(
+            select(func.count()).select_from(Concept)
+            .join(Chapter, Concept.chapter_id == Chapter.id)
+            .where(Chapter.course_id == course.id)
+        )).scalar_one()
     return CourseDetail(
         id=course.id,
         name=course.name,
         status=course.status,
         created_at=course.created_at,
-        chapter_count=0,
-        concept_count=0,
+        chapter_count=chapter_count,
+        concept_count=concept_count,
         failure_reason=(await _failure_reasons(db, [course])).get(course.id),
     )
 

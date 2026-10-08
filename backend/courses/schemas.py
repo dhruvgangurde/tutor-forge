@@ -59,8 +59,10 @@ class CourseDetail(BaseModel):
     name: str
     status: str
     created_at: datetime
-    chapter_count: int
-    concept_count: int
+    # From the stored outline; None unless the course is ready (no outline yet,
+    # or ingestion failed).
+    chapter_count: int | None = None
+    concept_count: int | None = None
     # Plain-language reason, set only when status is "failed".
     failure_reason: str | None = None
 

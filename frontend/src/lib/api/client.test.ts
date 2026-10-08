@@ -1,5 +1,31 @@
+import { AxiosHeaders, type InternalAxiosRequestConfig } from 'axios'
 import { afterEach, describe, expect, it } from 'vitest'
-import { isExpiredSession } from './client'
+import { attachStoredToken, isExpiredSession } from './client'
+
+function requestWith(headers: Record<string, string> = {}): InternalAxiosRequestConfig {
+  return { headers: new AxiosHeaders(headers) } as InternalAxiosRequestConfig
+}
+
+describe('stored token on requests', () => {
+  afterEach(() => localStorage.clear())
+
+  it('attaches the stored token when the caller set none', () => {
+    localStorage.setItem('tf_access_token', 'stored-tok')
+    expect(attachStoredToken(requestWith()).headers.Authorization).toBe('Bearer stored-tok')
+  })
+
+  it('keeps a token the caller set explicitly', () => {
+    // E.g. revoking the previous session, or /auth/me with a just-issued token:
+    // overwriting it sent the wrong session's token.
+    localStorage.setItem('tf_access_token', 'stored-tok')
+    const config = attachStoredToken(requestWith({ Authorization: 'Bearer explicit-tok' }))
+    expect(config.headers.Authorization).toBe('Bearer explicit-tok')
+  })
+
+  it('sends nothing when signed out', () => {
+    expect(attachStoredToken(requestWith()).headers.Authorization).toBeUndefined()
+  })
+})
 
 function at(path: string) {
   window.history.replaceState(null, '', path)

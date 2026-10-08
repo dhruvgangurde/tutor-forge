@@ -46,3 +46,43 @@ describe('AuthContext logout', () => {
     expect(screen.getByTestId('state')).toHaveTextContent('out')
   })
 })
+
+function LoginProbe({ token }: { token: string }) {
+  const { login } = useAuth()
+  return <button onClick={() => login(token, { id: 'u2', email: 't@demo.com', role: 'teacher' })}>sign in</button>
+}
+
+describe('AuthContext login over an existing session', () => {
+  beforeEach(() => {
+    post.mockReset()
+    post.mockResolvedValue({ data: { status: 'logged_out' } })
+    localStorage.clear()
+  })
+
+  it('revokes the token it replaces, using that old token', () => {
+    localStorage.setItem('tf_access_token', 'old-tok')
+    render(<AuthProvider><LoginProbe token="new-tok" /></AuthProvider>)
+    act(() => screen.getByText('sign in').click())
+
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith('/auth/logout', {}, { headers: { Authorization: 'Bearer old-tok' } })
+    expect(localStorage.getItem('tf_access_token')).toBe('new-tok')
+  })
+
+  it('keeps the new session even if revoking the old one fails', async () => {
+    post.mockRejectedValue(new Error('network down'))
+    localStorage.setItem('tf_access_token', 'old-tok')
+    render(<AuthProvider><LoginProbe token="new-tok" /></AuthProvider>)
+    await act(async () => screen.getByText('sign in').click())
+    expect(localStorage.getItem('tf_access_token')).toBe('new-tok')
+  })
+
+  it('revokes nothing on a first login or when the token is unchanged', () => {
+    const { unmount } = render(<AuthProvider><LoginProbe token="new-tok" /></AuthProvider>)
+    act(() => screen.getByText('sign in').click())
+    unmount()
+    render(<AuthProvider><LoginProbe token="new-tok" /></AuthProvider>)
+    act(() => screen.getByText('sign in').click())
+    expect(post).not.toHaveBeenCalled()
+  })
+})
