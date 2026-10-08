@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type InternalAxiosRequestConfig } from 'axios'
 
 // API base URL (F2):
 //  - Dev: defaults to '/api', which Vite proxies to http://localhost:8000
@@ -13,14 +13,24 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
-// Inject JWT from localStorage on every request
-api.interceptors.request.use((config) => {
+/**
+ * Attach the stored JWT -- unless the caller already set Authorization.
+ *
+ * An explicit header names a specific token on purpose: the new token right
+ * after login (LoginPage's /auth/me), or the old one being revoked
+ * (AuthContext). Overwriting it with whatever is in storage used to send the
+ * PREVIOUS session's token on those calls.
+ */
+export function attachStoredToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
   const token = localStorage.getItem('tf_access_token')
-  if (token) {
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
-})
+}
+
+// Inject JWT from localStorage on every request
+api.interceptors.request.use(attachStoredToken)
 
 // A 401 from these is a wrong email or password, not an expired session.
 const CREDENTIAL_PATHS = ['/auth/login', '/auth/register']
