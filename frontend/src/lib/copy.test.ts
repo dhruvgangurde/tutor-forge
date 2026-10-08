@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { plural } from './plural'
-import { statusLabel } from './statusVariant'
+import { statusLabel, statusToVariant } from './statusVariant'
 
 // Copy fixes (frontend audit #10).
 
@@ -40,5 +40,16 @@ describe('student chat timestamp', () => {
     const rule = css.match(/\.chat-bubble\.student \.message-time\s*\{([^}]*)\}/)
     expect(rule).not.toBeNull()
     expect(rule![1]).toMatch(/color:\s*var\(--muted\)/)
+  })
+})
+
+describe('statusToVariant (chip meaning)', () => {
+  it('keeps red for errors only and amber for anything awaiting review', () => {
+    expect(statusToVariant('failed')).toBe('danger')
+    expect(statusToVariant('overridden')).toBe('muted')
+    expect(statusToVariant('pending_review')).toBe('warning')
+    expect(statusToVariant('pending_grading')).toBe('warning')
+    expect(statusToVariant('published')).toBe('success')
+    expect(statusToVariant('draft')).toBe('muted')
   })
 })
