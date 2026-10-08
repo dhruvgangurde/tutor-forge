@@ -33,10 +33,12 @@ describe('statusLabel', () => {
 })
 
 describe('student chat timestamp', () => {
-  it('is light on the indigo student bubble, not the dim grey used elsewhere', () => {
+  it('uses the secondary-text token on the student bubble (4.6:1 on --surface-2)', () => {
+    // Restyle phase 1: the bubble moved from indigo to --surface-2, so the
+    // white timestamp became --muted. --tertiary would only reach 4.4:1 there.
     const css = readFileSync(resolve(__dirname, '../index.css'), 'utf8')
     const rule = css.match(/\.chat-bubble\.student \.message-time\s*\{([^}]*)\}/)
     expect(rule).not.toBeNull()
-    expect(rule![1]).toMatch(/color:\s*rgba\(255,\s*255,\s*255/)
+    expect(rule![1]).toMatch(/color:\s*var\(--muted\)/)
   })
 })
