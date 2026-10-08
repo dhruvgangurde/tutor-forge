@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useCourses } from './hooks'
 import { CourseCard } from './CourseCard'
 import { CourseUploadForm } from './CourseUploadForm'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonCards } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -29,14 +29,11 @@ export function CoursesPage() {
         </div>
       )}
 
-      {isLoading && <Spinner label="Loading courses…" />}
+      {isLoading && <SkeletonCards label="Loading courses…" count={3} />}
       {isError && <ErrorBanner message={getErrorMessage(error)} />}
 
       {!isLoading && !isError && courses && courses.length === 0 && (
-        <EmptyState
-          icon="📚"
-          label="No courses yet. Upload your first course to get started."
-        />
+        <EmptyState label="No courses yet. Upload your first course to get started." />
       )}
 
       {!isLoading && !isError && courses && courses.length > 0 && (

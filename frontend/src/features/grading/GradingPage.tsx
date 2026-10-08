@@ -3,7 +3,7 @@ import { useGradingQueue } from './hooks'
 import { GradingQueue } from './GradingQueue'
 import { FinalizedGrades } from './FinalizedGrades'
 import { GradingReviewPanel } from './GradingReviewPanel'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -26,29 +26,28 @@ export function GradingPage() {
         <p className="page-subtitle">Review AI grade recommendations and finalize grades.</p>
       </div>
 
-      {isLoading && <Spinner label="Loading review queue…" />}
+      {isLoading && <SkeletonRows label="Loading review queue…" rows={3} columns={5} />}
       {isError && <ErrorBanner message={getErrorMessage(error)} />}
 
       {queue && queue.length === 0 && (
-        <EmptyState
-          icon="🎓"
-          label="Nothing awaiting review. Recommendations appear here once students submit."
-        />
+        <EmptyState label="Nothing awaiting review. Recommendations appear here once students submit." />
       )}
 
       {queue && queue.length > 0 && (
         <section className="detail-section">
           <h2 className="section-title">Awaiting review ({queue.length})</h2>
-          <GradingQueue
-            items={queue}
-            selectedId={selectedSubmissionId}
-            onSelect={setSelectedSubmissionId}
-          />
+          <div className="card table-card">
+            <GradingQueue
+              items={queue}
+              selectedId={selectedSubmissionId}
+              onSelect={setSelectedSubmissionId}
+            />
+          </div>
         </section>
       )}
 
       {selectedSubmissionId && (
-        <div className="card">
+        <div className="card grading-review-card">
           {/* Keyed by submission so switching rows remounts the panel and its
               note / override form start empty instead of carrying over. */}
           <GradingReviewPanel

@@ -5,6 +5,8 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { QuestionEditForm } from './QuestionEditForm'
 import { mcqKeyIndex } from './answerKey'
 import { Badge } from '../../components/ui/Badge'
+import { SkeletonRows } from '../../components/ui/Skeleton'
+import { AlertIcon } from '../../components/ui/icons'
 import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { plural } from '../../lib/plural'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -43,7 +45,7 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
     }
   }
 
-  if (isLoading) return <Spinner label="Loading assessment…" />
+  if (isLoading) return <SkeletonRows label="Loading assessment…" rows={3} columns={1} />
   if (isError) return <ErrorBanner message={getErrorMessage(error)} />
   if (!draft) return null
 
@@ -61,8 +63,8 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
 
   return (
     <div className="assessment-preview">
-      <div className="card-header-row">
-        <h3 className="card-title">{draft.title}</h3>
+      <div className="preview-header">
+        <h3 className="preview-title">{draft.title}</h3>
         <Badge variant={statusToVariant(draft.status)}>{statusLabel(draft.status)}</Badge>
       </div>
 
@@ -85,12 +87,17 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
                 </button>
               )}
             </div>
-            <div className="question-meta">
-              <Badge variant="info">{statusLabel(q.question_type)}</Badge>
-              {q.bloom_level && <Badge variant="muted">{statusLabel(q.bloom_level)}</Badge>}
-              {q.difficulty && <Badge variant="muted">{statusLabel(q.difficulty)}</Badge>}
-              <span className="question-points">{plural(q.max_points, 'pt', 'pts')}</span>
-            </div>
+            {/* Quiet metadata line, not a chip per attribute. */}
+            <p className="question-meta">
+              {[
+                statusLabel(q.question_type),
+                q.bloom_level && statusLabel(q.bloom_level),
+                q.difficulty && statusLabel(q.difficulty),
+                plural(q.max_points, 'pt', 'pts'),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
 
             {q.options && (
               <ul className="question-options">
@@ -105,9 +112,10 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
                   return (
                     <li
                       key={`${idx}-${opt}`}
-                      className={isKey ? 'question-option-correct' : undefined}
+                      className={isKey ? 'question-option question-option-correct' : 'question-option'}
                     >
-                      {String.fromCharCode(65 + idx)}. {opt}
+                      <span className="question-option-letter">{String.fromCharCode(65 + idx)}.</span>{' '}
+                      <span className="question-option-text">{opt}</span>
                       {isKey && <span className="answer-key-tag">✓ Marked correct</span>}
                     </li>
                   )
@@ -117,7 +125,8 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
 
             {q.question_type === 'mcq' &&
               mcqKeyIndex(q.correct_answer, q.options?.length ?? 0) === null && (
-                <p className="field-error">
+                <p className="answer-key-warning">
+                  <AlertIcon size={18} className="answer-key-warning-icon" />
                   No valid answer key
                   {q.correct_answer ? ` (stored as “${q.correct_answer}”)` : ''} — students
                   cannot score on this question. Edit it to mark the correct option.
@@ -126,7 +135,10 @@ export function AssessmentPreview({ assessmentId, courseId }: AssessmentPreviewP
 
             {q.question_type !== 'mcq' && q.correct_answer && (
               <p className="answer-key-line">
-                <span className="answer-key-label">Answer key:</span> {q.correct_answer}
+                <span className="answer-key-label">Answer key:</span>{' '}
+                <span className={q.question_type === 'numeric' ? 'answer-key-value answer-key-mono' : 'answer-key-value'}>
+                  {q.correct_answer}
+                </span>
               </p>
             )}
 

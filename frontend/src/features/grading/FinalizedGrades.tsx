@@ -1,6 +1,6 @@
 import { useFinalizedGrades } from './hooks'
 import { Badge } from '../../components/ui/Badge'
-import { Spinner } from '../../components/ui/Spinner'
+import { SkeletonRows } from '../../components/ui/Skeleton'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { statusLabel, statusToVariant } from '../../lib/statusVariant'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -22,10 +22,12 @@ export function FinalizedGrades() {
   return (
     <section className="detail-section">
       <h2 className="section-title">Finalized{data ? ` (${data.length})` : ''}</h2>
-      {isLoading && <Spinner label="Loading finalized grades…" />}
+      {isLoading && <SkeletonRows label="Loading finalized grades…" rows={2} columns={5} />}
       {isError && <ErrorBanner message={getErrorMessage(error)} />}
       {data && data.length === 0 && <p className="card-meta">No grades have been finalized yet.</p>}
       {data && data.length > 0 && (
+        <div className="card table-card">
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -52,6 +54,8 @@ export function FinalizedGrades() {
             ))}
           </tbody>
         </table>
+        </div>
+        </div>
       )}
     </section>
   )

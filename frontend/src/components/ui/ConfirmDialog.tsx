@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useFocusTrap } from '../../hooks/useFocusTrap'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -24,6 +25,10 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Tab stays inside the dialog; focus returns to the trigger on close.
+  useFocusTrap(dialogRef, open)
 
   // Escape-to-cancel + focus the safe default action (Cancel) on open.
   useEffect(() => {
@@ -43,6 +48,8 @@ export function ConfirmDialog({
   return (
     <div className="modal-overlay" role="presentation" onClick={onCancel}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         className="modal-dialog"
         role="alertdialog"
         aria-modal="true"

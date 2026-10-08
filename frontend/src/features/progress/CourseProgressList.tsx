@@ -38,8 +38,7 @@ export function CourseProgressList({
             <tr
               key={c.course_id}
               onClick={() => onSelect(c.course_id)}
-              className={c.course_id === selectedId ? 'row-selected' : undefined}
-              style={{ cursor: 'pointer' }}
+              className={`clickable-row${c.course_id === selectedId ? ' row-selected' : ''}`}
             >
               <td>{c.course_name}</td>
               <td>{c.assessments_graded}</td>
