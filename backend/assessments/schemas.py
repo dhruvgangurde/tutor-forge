@@ -13,6 +13,13 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from core.limits import (
+    MAX_ANSWER_TEXT_CHARS,
+    MAX_ASSESSMENT_TITLE_CHARS,
+    MAX_ASSESSMENT_TOPIC_CHARS,
+    MAX_SUBMISSION_ANSWERS,
+)
+
 
 # ── Constants used in validators ──────────────────────────────────────────────
 
@@ -34,9 +41,9 @@ class GenerateRequest(BaseModel):
 
     course_id: uuid.UUID
 
-    title: Annotated[str, Field(min_length=1, max_length=200)]
+    title: Annotated[str, Field(min_length=1, max_length=MAX_ASSESSMENT_TITLE_CHARS)]
 
-    topic: Annotated[str, Field(min_length=3, max_length=300,
+    topic: Annotated[str, Field(min_length=3, max_length=MAX_ASSESSMENT_TOPIC_CHARS,
                                 description="The topic or concept to focus questions on.")]
 
     difficulty: str = Field(
@@ -305,6 +312,7 @@ class SubmissionResponseItem(BaseModel):
     question_id: uuid.UUID
     answer_text: str | None = Field(
         default=None,
+        max_length=MAX_ANSWER_TEXT_CHARS,
         description=(
             "Free-text answer for short_answer or numeric questions. "
             "Null (or blank) means the question was left unanswered."
@@ -341,7 +349,9 @@ class SubmissionResponseItem(BaseModel):
 
 
 class SubmitRequest(BaseModel):
-    responses: list[SubmissionResponseItem] = Field(min_length=1)
+    responses: list[SubmissionResponseItem] = Field(
+        min_length=1, max_length=MAX_SUBMISSION_ANSWERS
+    )
 
 
 # ── Response: submission acknowledgement ──────────────────────────────────────

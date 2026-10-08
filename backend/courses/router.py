@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from auth.service import require_teacher, require_student
 from core.config import settings
+from core.limits import MAX_COURSE_NAME_CHARS
 from core.dependencies import (
     get_db_session,
     get_gemini_pro,
@@ -37,6 +38,8 @@ from courses.enrollment import (
     list_enrollments,
     remove_enrollment,
 )
+from courses.failure import failure_reason
+from courses.file_types import content_mismatch
 from courses.schemas import (
     CourseDetail,
     CourseStructure,
@@ -52,7 +55,7 @@ from courses.lifecycle import (
     restore_course,
 )
 from courses.service import create_course, get_course_structure
-from db.models import Course, User
+from db.models import Course, IngestionJob, User
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -87,7 +90,7 @@ async def read_upload_capped(upload: UploadFile, max_bytes: int) -> bytes:
 
 @router.post("/upload", response_model=CourseUploadResponse)
 async def upload_course(
-    name: str = Form(...),
+    name: str = Form(..., max_length=MAX_COURSE_NAME_CHARS),
     files: list[UploadFile] = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db_session),
@@ -109,6 +112,11 @@ async def upload_course(
         if ext not in _ALLOWED_EXTENSIONS:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {uf.filename}")
         content = await read_upload_capped(uf, settings.max_upload_bytes)
+        # The extension alone proves nothing: the declared type and the bytes
+        # themselves must agree with it (audit #7a).
+        mismatch = content_mismatch(uf.filename or "", ext, uf.content_type, content)
+        if mismatch:
+            raise HTTPException(status_code=400, detail=mismatch)
         file_data.append({
             "filename": uf.filename,
             "content": content,
@@ -134,6 +142,20 @@ async def upload_course(
     )
 
 
+async def _failure_reasons(db: AsyncSession, courses: list[Course]) -> dict[uuid.UUID, str]:
+    """Plain-language failure reason per failed course, from its latest ingestion job."""
+    failed_ids = [c.id for c in courses if c.status == "failed"]
+    if not failed_ids:
+        return {}
+    jobs = await db.execute(
+        select(IngestionJob.course_id, IngestionJob.error_message)
+        .where(IngestionJob.course_id.in_(failed_ids))
+        .order_by(IngestionJob.created_at)
+    )
+    latest = {course_id: message for course_id, message in jobs.all()}  # last one wins
+    return {cid: failure_reason(latest.get(cid)) for cid in failed_ids}
+
+
 @router.get("", response_model=list[CourseSummary])
 async def list_courses(
     db: AsyncSession = Depends(get_db_session),
@@ -142,6 +164,8 @@ async def list_courses(
     result = await db.execute(
         select(Course).where(Course.owner_id == teacher.id).order_by(Course.created_at.desc())
     )
+    courses = list(result.scalars().all())
+    reasons = await _failure_reasons(db, courses)
     return [
         # The teacher sees archived courses, clearly marked — archiving is for
         # tidying their own list, not for hiding a course from themselves.
@@ -152,8 +176,9 @@ async def list_courses(
             created_at=c.created_at,
             archived_at=c.archived_at,
             is_archived=c.archived_at is not None,
+            failure_reason=reasons.get(c.id),
         )
-        for c in result.scalars().all()
+        for c in courses
     ]
 
 
@@ -202,6 +227,7 @@ async def get_course(
         created_at=course.created_at,
         chapter_count=0,
         concept_count=0,
+        failure_reason=(await _failure_reasons(db, [course])).get(course.id),
     )
 
 

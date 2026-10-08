@@ -41,7 +41,8 @@ class EvidenceCitation(BaseModel):
     text: str
     source_file: str
     page_or_slide: int | None = None
-    confidence: Annotated[float, Field(ge=0.0, le=1.0)] = 0.0
+    # Retrieval confidence of the quoted chunk; None when it is not known.
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)] | None = None
 
 
 # ── Per-criterion grading result ──────────────────────────────────────────────

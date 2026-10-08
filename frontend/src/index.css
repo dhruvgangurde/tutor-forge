@@ -1167,6 +1167,11 @@ code {
   margin-top: var(--space-1);
 }
 
+/* The dim grey above is unreadable on the student's indigo bubble. */
+.chat-bubble.student .message-time {
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .citations {
   display: flex;
   flex-wrap: wrap;

@@ -97,14 +97,19 @@ class DeletionImpact:
 
     def describe(self) -> str:
         """Human-readable reason, for the 409 a teacher actually reads."""
-        parts = [f"{self.submissions} student submission(s)"]
+        parts = [_plural(self.submissions, "student submission")]
         if self.final_grades:
-            parts.append(f"{self.final_grades} released grade(s)")
+            parts.append(_plural(self.final_grades, "released grade"))
         if self.audit_records:
-            parts.append(f"{self.audit_records} grade audit record(s)")
+            parts.append(_plural(self.audit_records, "grade audit record"))
         if self.concept_mastery_rows:
-            parts.append(f"{self.concept_mastery_rows} concept-mastery record(s)")
+            parts.append(_plural(self.concept_mastery_rows, "concept-mastery record"))
         return ", ".join(parts)
+
+
+def _plural(n: int, noun: str) -> str:
+    """'1 released grade', '3 released grades' -- never 'grade(s)'."""
+    return f"{n} {noun}" if n == 1 else f"{n} {noun}s"
 
 
 async def deletion_impact(course_id: uuid.UUID, db: AsyncSession) -> DeletionImpact:

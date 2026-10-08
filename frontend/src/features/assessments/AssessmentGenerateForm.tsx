@@ -2,6 +2,7 @@ import { FormEvent, useState } from 'react'
 import { useGenerateAssessment } from './hooks'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
+import { MAX_ASSESSMENT_TITLE_CHARS, MAX_ASSESSMENT_TOPIC_CHARS } from '../../lib/limits'
 import { useToast } from '../../hooks/useToast'
 import type { QuestionDifficulty } from '../../lib/api/types'
 
@@ -56,6 +57,7 @@ export function AssessmentGenerateForm({ courseId, onDone }: AssessmentGenerateF
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
+          maxLength={MAX_ASSESSMENT_TITLE_CHARS}
           placeholder="e.g. Chapter 3 Quiz"
         />
       </div>
@@ -72,6 +74,7 @@ export function AssessmentGenerateForm({ courseId, onDone }: AssessmentGenerateF
           onChange={(e) => setTopic(e.target.value)}
           required
           minLength={3}
+          maxLength={MAX_ASSESSMENT_TOPIC_CHARS}
           placeholder="The concept or topic to focus questions on"
         />
       </div>

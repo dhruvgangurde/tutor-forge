@@ -21,6 +21,22 @@ const MIN_REASON_LENGTH = 5
 const MAX_REASON_LENGTH = 2000
 const MAX_NOTE_LENGTH = 2000
 
+/** "4.5", "0.67" -- the same rounding the score summary uses, without a trailing .0. */
+function fmtScore(n: number): string {
+  return String(Math.round(n * 100) / 100)
+}
+
+/**
+ * The override score as it would be sent, or null while the field is empty or
+ * out of range. Used only for the button label: handleOverride still parses
+ * and validates the input itself before anything is submitted.
+ */
+function typedOverride(input: string, max: number): number | null {
+  if (input.trim() === '') return null
+  const n = Number(input)
+  return Number.isNaN(n) || n < 0 || n > max ? null : n
+}
+
 interface GradingReviewPanelProps {
   submissionId: string
   /** Called after a successful approve/override so the parent can clear selection. */
@@ -156,7 +172,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
                   {qIdx + 1}. {q.stem ?? <em>Question no longer available</em>}
                 </div>
                 <div className="question-meta">
-                  <Badge variant="info">{q.question_type}</Badge>
+                  <Badge variant="info">{statusLabel(q.question_type)}</Badge>
                   <span className="question-points">
                     {earned} / {possible} pts
                   </span>
@@ -235,7 +251,11 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
           onClick={handleApprove}
           disabled={isBusy}
         >
-          {approve.isPending ? 'Approving…' : 'Approve recommended score'}
+          {/* The label names the score approval actually finalizes: approve
+              always sends the recommendation, whatever is typed below. */}
+          {approve.isPending
+            ? 'Approving…'
+            : `Approve recommended score (${fmtScore(data.recommended_score)} / ${fmtScore(data.max_score)})`}
         </button>
         <button
           type="button"
@@ -294,7 +314,11 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
           </div>
 
           <button type="submit" className="btn btn-danger" disabled={isBusy}>
-            {override.isPending ? 'Overriding…' : 'Override and finalize'}
+            {override.isPending
+              ? 'Overriding…'
+              : typedOverride(scoreInput, data.max_score) === null
+                ? 'Override and finalize'
+                : `Override and finalize (${fmtScore(Number(scoreInput))} / ${fmtScore(data.max_score)})`}
           </button>
         </form>
       )}

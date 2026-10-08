@@ -582,3 +582,22 @@ class Enrollment(Base):
 
     course: Mapped["Course"] = relationship("Course")
     student: Mapped["User"] = relationship("User")
+
+
+# ── 19. RevokedToken ──────────────────────────────────────────────────────────
+
+class RevokedToken(Base):
+    """
+    A revoked JWT, by its `jti`, kept until the token would have expired.
+
+    Access and refresh tokens both carry a jti. Logout revokes the caller's
+    access token (and refresh token, if sent); refresh rotation revokes the old
+    refresh token. Persisted so a revocation survives a restart and is shared by
+    every worker -- the previous in-memory set was lost on restart.
+    Rows past `expires_at` are purged on write (core/token_store.py).
+    """
+    __tablename__ = "revoked_tokens"
+    __table_args__ = (Index("ix_revoked_tokens_expires_at", "expires_at"),)
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

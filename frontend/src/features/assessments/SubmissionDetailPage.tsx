@@ -4,6 +4,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { Markdown } from '../../components/ui/Markdown'
 import { GradeStatus } from './GradeStatus'
 import { gradeState } from './gradeState'
+import { plural } from '../../lib/plural'
 import styles from './assessments.module.css'
 
 export function SubmissionDetailPage() {
@@ -86,7 +87,7 @@ export function SubmissionDetailPage() {
             <div key={response.question_id} className={styles.responseCard}>
               <div className={styles.responseHeader}>
                 <span className={styles.questionNumber}>Question {idx + 1}</span>
-                <span className={styles.maxPoints}>{response.max_points} pts</span>
+                <span className={styles.maxPoints}>{plural(response.max_points, 'pt', 'pts')}</span>
               </div>
 
               <h3 className={styles.questionText}>{response.question_text}</h3>

@@ -3,7 +3,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
+
+from core.limits import MAX_CITATION_EXCERPT_CHARS, MAX_TUTOR_QUESTION_CHARS
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────
@@ -18,19 +20,46 @@ class CreateSessionRequest(BaseModel):
 class ChatRequest(BaseModel):
     """Request to send a question to the tutor."""
 
-    question: str
+    question: str = Field(max_length=MAX_TUTOR_QUESTION_CHARS)
 
 
 # ── Response schemas ──────────────────────────────────────────────────────────
 
 
+def excerpt(text: str, limit: int = MAX_CITATION_EXCERPT_CHARS) -> str:
+    """
+    ``text`` shortened to at most ``limit`` characters, ending on a word
+    boundary with an ellipsis. Text already within the limit is unchanged.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 1]  # leave room for the ellipsis
+    space = cut.rfind(" ")
+    if space > limit // 2:  # a single huge "word" is cut mid-word instead
+        cut = cut[:space]
+    return cut.rstrip(" .,;:-") + "…"
+
+
 class Citation(BaseModel):
-    """A cited passage from the course material."""
+    """
+    A cited passage from the course material.
+
+    ``chunk_text`` is a short excerpt, not the whole retrieved chunk: every
+    tutor response (chat, hint, and message history) is built through this
+    schema, so the cap applies to all of them. The model is given the full
+    chunks separately (RetrievalService.build_context_window).
+    """
 
     chunk_text: str
     source_file: str
     page_or_slide: int | None
     confidence: float
+
+    @field_validator("chunk_text")
+    @classmethod
+    def shorten_to_excerpt(cls, v: str) -> str:
+        return excerpt(v)
 
 
 class SessionCreated(BaseModel):

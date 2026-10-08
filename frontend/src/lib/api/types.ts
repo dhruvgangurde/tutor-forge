@@ -18,6 +18,8 @@ export interface CourseSummary {
   created_at: string
   archived_at: string | null
   is_archived: boolean
+  /** Plain-language reason; set only when status is "failed". */
+  failure_reason?: string | null
 }
 
 export interface CourseDetail {
@@ -27,6 +29,8 @@ export interface CourseDetail {
   created_at: string
   chapter_count: number
   concept_count: number
+  /** Plain-language reason; set only when status is "failed". */
+  failure_reason?: string | null
 }
 
 export interface ConceptSummary {
@@ -270,7 +274,8 @@ export interface EvidenceCitation {
   text: string
   source_file: string
   page_or_slide: number | null
-  confidence: number
+  /** Retrieval confidence 0-1 of the quoted chunk; null when it is not known. */
+  confidence: number | null
 }
 
 export interface CriterionGrade {

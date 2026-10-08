@@ -419,6 +419,40 @@ def check_evidence_groundedness_node(
 
 # ── Node 3: grade_responses_node ──────────────────────────────────────────────
 
+def _collapse(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def citation_confidence(cite: dict, evidence: list[dict]) -> float | None:
+    """
+    Retrieval confidence of the evidence chunk a model citation quotes.
+
+    The lookup used to be an exact substring test of the quote against each
+    chunk, which almost never held: PDF chunks keep the page's line breaks
+    ("a dealer
+combining two sorted hands") while the model quotes them with
+    spaces. Every citation therefore fell through to a default of 0.0 and
+    every evidence chip read "0%" (frontend audit #9).
+
+    The quote is now matched with whitespace collapsed and case ignored;
+    failing that, a retrieved chunk from the cited file and page is used. If
+    nothing matches the score is unknown -- None, not 0.0 -- and the UI shows
+    no percentage. Display-only: scores never read this value.
+    """
+    quote = _collapse(str(cite.get("quoted_text") or ""))
+    if quote:
+        for e in evidence:
+            if quote in _collapse(str(e.get("text", ""))):
+                return float(e["confidence"])
+    source, page = cite.get("source_file"), cite.get("page_or_slide")
+    same_page = [
+        float(e["confidence"])
+        for e in evidence
+        if source and e.get("source_file") == source and str(e.get("page_or_slide")) == str(page)
+    ]
+    return max(same_page) if same_page else None
+
+
 def grade_responses_node(
     state: GradingState,
     gemini_pro,
@@ -732,11 +766,7 @@ def grade_responses_node(
                         "text": cite.get("quoted_text", ""),
                         "source_file": cite.get("source_file", ""),
                         "page_or_slide": cite.get("page_or_slide"),
-                        "confidence": next(
-                            (e["confidence"] for e in evidence
-                             if cite.get("quoted_text", "") in e.get("text", "")),
-                            0.0,
-                        ),
+                        "confidence": citation_confidence(cite, evidence),
                     }
                     for cite in llm_entry.get("citations", [])
                 ]

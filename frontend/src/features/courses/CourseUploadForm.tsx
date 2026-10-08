@@ -2,6 +2,7 @@ import { FormEvent, useRef, useState } from 'react'
 import { useUploadCourse } from './hooks'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
+import { MAX_COURSE_NAME_CHARS } from '../../lib/limits'
 import { useToast } from '../../hooks/useToast'
 
 const ALLOWED_EXTENSIONS = '.pdf,.pptx,.ppt,.txt'
@@ -48,6 +49,7 @@ export function CourseUploadForm({ onDone }: CourseUploadFormProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
+          maxLength={MAX_COURSE_NAME_CHARS}
           placeholder="e.g. Biology 101"
         />
       </div>

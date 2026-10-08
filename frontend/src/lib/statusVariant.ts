@@ -10,6 +10,20 @@ const STATUS_LABELS: Record<string, string> = {
   pending_grading: 'Awaiting grading',
   approved: 'Approved',
   overridden: 'Overridden',
+  // Course ingestion
+  pending: 'Pending',
+  ingesting: 'Processing',
+  ready: 'Ready',
+  failed: 'Failed',
+  // Assessment lifecycle
+  generating: 'Generating',
+  draft: 'Draft',
+  published: 'Published',
+  graded: 'Graded',
+  // Question types
+  mcq: 'Multiple choice',
+  short_answer: 'Short answer',
+  numeric: 'Numeric',
 }
 
 /**

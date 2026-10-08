@@ -141,6 +141,11 @@ class Settings(BaseSettings):
     rate_limit_auth_window_seconds: int = 60
     rate_limit_ai_max: int = 20              # generate/grade/chat/hint/upload per window
     rate_limit_ai_window_seconds: int = 60
+    # Trust X-Forwarded-For for the client address only when the app is
+    # deployed behind a reverse proxy that sets it (TRUSTED_PROXY=true).
+    # Otherwise the header is ignored: anyone can send it, and honouring it
+    # let a client pick a fresh rate-limit bucket per request (audit #7b).
+    trusted_proxy: bool = False
 
     # ── Security headers (F18) ────────────────────────────────────────────────
     security_headers_enabled: bool = True
