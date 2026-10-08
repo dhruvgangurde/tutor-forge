@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // Guards for the restyle's colour rules (design/DESIGN-BRIEF.md).
@@ -45,6 +45,26 @@ describe('restyle colour rules', () => {
     expect(sidebar.body).not.toMatch(/height:\s*100vh/)
     expect(blocks(css).find((b) => b.selector === '.app-shell--sidebar')!.body).toMatch(/align-items:\s*stretch/)
     expect(inner.body).toMatch(/position:\s*sticky/)
+  })
+
+  it('uses no Tailwind-style class names anywhere (Tailwind is not installed)', () => {
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name)
+        if (statSync(path).isDirectory()) walk(path)
+        else if (path.endsWith('.tsx') && !path.includes('.test.')) files.push(path)
+      }
+    }
+    walk(resolve(__dirname, '..'))
+    const utility =
+      /(^|\s)(space-[xy]-\d|flex|items-(center|start|end)|justify-(between|center|end|start)|text-(xs|sm|base|lg|xl|\dxl|center|left|right|white|(gray|red|green|blue)-\d+)|m[tbxylr]?-\d+|p[xytblr]?-\d+|rounded(-\w+)?|bg-\w+|grid-cols-\d+|gap-\d+|font-(bold|semibold|medium)|w-(full|\d+)|mx-auto|hover:\S+|disabled:\S+)(\s|$)/
+    const offenders = files.flatMap((f) =>
+      [...readFileSync(f, 'utf8').matchAll(/className="([^"]*)"/g)]
+        .filter((m) => utility.test(m[1]))
+        .map((m) => `${f.split(/[\\/]src[\\/]/)[1]}: ${m[1]}`)
+    )
+    expect(offenders).toEqual([])
   })
 
   it('sets the wordmark all in ink, in the serif', () => {

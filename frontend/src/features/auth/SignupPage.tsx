@@ -87,7 +87,7 @@ export function SignupPage() {
               autoComplete="new-password"
               placeholder="••••••••"
             />
-            <p className="text-xs text-gray-500 mt-1">At least 6 characters</p>
+            <p className="field-hint">At least 6 characters</p>
           </div>
 
           <div className="field-group">
@@ -114,8 +114,8 @@ export function SignupPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-4">
-          Already have an account? <Link to="/login" className="text-blue-600 hover:text-blue-700">Sign in</Link>
+        <p className="login-switch">
+          Already have an account? <Link to="/login" className="login-switch-link">Sign in</Link>
         </p>
       </div>
     </div>

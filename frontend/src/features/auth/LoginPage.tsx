@@ -88,8 +88,8 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600 mt-4">
-          Don't have an account? <Link to="/signup" className="text-blue-600 hover:text-blue-700">Sign up</Link>
+        <p className="login-switch">
+          Don't have an account? <Link to="/signup" className="login-switch-link">Sign up</Link>
         </p>
 
       </div>

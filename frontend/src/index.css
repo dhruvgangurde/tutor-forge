@@ -376,50 +376,48 @@ code {
   text-decoration: underline;
 }
 
-/* ── Login Page ─────────────────────────────────────────────────────────────── */
+/* ── Login and signup ───────────────────────────────────────────────────────── */
 .login-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg);
-  padding: var(--space-4);
+  padding: var(--space-6) var(--space-4);
 }
 
 .login-card {
   width: 100%;
-  max-width: 400px;
-  background: var(--clr-surface);
-  border: 1px solid var(--clr-border);
-  border-radius: var(--radius-xl);
-  padding: var(--space-10);
-  box-shadow: none;
-  animation: fadeSlideUp 0.4s var(--ease-out) both;
+  max-width: 440px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--space-10) var(--space-8);
+  animation: fadeSlideUp 0.3s var(--ease-out) both;
 }
 
 @keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(20px); }
+  from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
 .login-header {
-  text-align: center;
   margin-bottom: var(--space-8);
 }
 
 .login-title {
   font-family: var(--font-serif);
-  font-size: 1.75rem;
+  font-size: 2rem;
   font-weight: 600;
+  line-height: 1.2;
   letter-spacing: -0.01em;
   color: var(--ink);
-  background-clip: text;
 }
 
 .login-subtitle {
-  color: var(--clr-text-muted);
+  color: var(--muted);
   margin-top: var(--space-2);
-  font-size: 0.9rem;
+  font-size: 1.0625rem;
 }
 
 .login-form {
@@ -428,12 +426,15 @@ code {
   gap: var(--space-5);
 }
 
-.demo-hint {
+.login-switch {
   margin-top: var(--space-6);
   text-align: center;
-  font-size: 0.78rem;
-  color: var(--clr-text-dim);
-  line-height: 1.8;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.login-switch-link {
+  font-weight: 600;
 }
 
 /* ── Form Primitives ─────────────────────────────────────────────────────────── */
@@ -1036,7 +1037,8 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 /* ── Selected table row ─────────────────────────────────────────────────────────── */
-.row-selected td {
+.row-selected td,
+.data-table tbody tr.row-selected:hover td {
   background: var(--accent-soft);
 }
 
@@ -1203,10 +1205,10 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-4);
+  padding: var(--space-4) var(--space-5);
   margin: var(--space-4) 0;
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
+  background: var(--bg);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
@@ -1217,27 +1219,29 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .score-summary-label {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--clr-text-muted);
+  font-size: 0.84375rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tertiary);
 }
 
 .score-summary-value {
   font-family: var(--font-serif);
-  font-size: 1.5rem;
+  font-size: 2rem;
   font-weight: 600;
   color: var(--clr-text);
 }
 
 .score-summary-max {
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--clr-text-dim);
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .score-summary-note {
-  font-size: 0.8rem;
-  color: var(--clr-text-dim);
+  font-size: 0.95rem;
+  color: var(--muted);
 }
 
 .criterion-list {
@@ -1299,13 +1303,13 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .field-hint {
-  font-size: 0.75rem;
-  color: var(--clr-text-dim);
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 
 .field-error {
-  font-size: 0.8rem;
-  color: var(--clr-danger);
+  font-size: 0.95rem;
+  color: var(--red);
 }
 
 /* ── Course lifecycle (archive / delete) ────────── */
@@ -1369,11 +1373,18 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 /* ── Student progress ───────────────────────────── */
+.course-progress-card { margin-top: var(--space-6); }
+
+.course-progress .section-title {
+  font-size: 1.3rem;
+  margin: var(--space-8) 0 var(--space-3);
+}
+
 .mastery-list {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
   margin: var(--space-4) 0;
 }
 
@@ -1391,17 +1402,17 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 
 .mastery-name {
-  color: var(--clr-text);
-  font-size: 0.9rem;
-  font-weight: 500;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .mastery-meta {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  color: var(--clr-text-dim);
-  font-size: 0.8rem;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .mastery-chapter {
@@ -1410,15 +1421,14 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 
 .mastery-bar {
   height: 6px;
-  border-radius: var(--radius-sm);
-  background: var(--clr-surface-2);
-  border: 1px solid var(--clr-border);
+  border-radius: 999px;
+  background: var(--line);
   overflow: hidden;
 }
 
 .mastery-bar-fill {
   height: 100%;
-  border-radius: var(--radius-sm);
+  border-radius: 999px;
   transition: width var(--duration-fast) var(--ease-out);
 }
 
