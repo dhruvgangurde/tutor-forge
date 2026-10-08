@@ -1235,8 +1235,10 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--accent);
 }
 
-/* Missing or unusable key: an amber notice at full width, not small red text. */
-.answer-key-warning {
+/* Missing or unusable key: an amber notice at full width, not small red text.
+   The draft-wide "check every key" notice uses the same treatment. */
+.answer-key-warning,
+.answer-key-notice {
   display: flex;
   align-items: flex-start;
   gap: var(--space-2);
@@ -1248,6 +1250,10 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   color: var(--ink);
   font-size: 0.95rem;
   font-weight: 500;
+}
+
+.answer-key-notice {
+  margin: var(--space-4) 0 0;
 }
 
 .answer-key-warning-icon {

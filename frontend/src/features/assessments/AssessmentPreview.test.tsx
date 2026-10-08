@@ -91,6 +91,18 @@ describe('AssessmentPreview answer key', () => {
     expect(screen.getByText(/No valid answer key — students cannot score/)).toBeInTheDocument()
   })
 
+  it('reminds the teacher to check every key on a draft, even when every key is valid', () => {
+    render(<AssessmentPreview assessmentId="a1" courseId="c1" />)
+    expect(screen.getByText('Check every answer key before you publish.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument()
+  })
+
+  it('does not show the check-every-key notice once the assessment is published', () => {
+    draft = { ...makeDraft([mcq()]), status: 'published', published_at: '2026-10-08T00:00:00Z' }
+    render(<AssessmentPreview assessmentId="a1" courseId="c1" />)
+    expect(screen.queryByText('Check every answer key before you publish.')).not.toBeInTheDocument()
+  })
+
   it('shows the expected answer for a numeric question', () => {
     draft = makeDraft([
       mcq(),
