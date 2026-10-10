@@ -298,3 +298,18 @@ async def test_api_schema_says_teacher_not_instructor(client):
     assert "requires teacher review before release" in schema
     assert "requires teacher approval before it is released" in schema
     assert "after the teacher approves or overrides" in schema
+
+
+def test_backend_source_says_teacher_not_instructor():
+    """Comments and docstrings too: the backend mirror of frontend/src/lib/copy.test.ts."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    skip = {".venv", "tests", "__pycache__", "alembic"}
+    offenders = [
+        str(path.relative_to(root))
+        for path in root.rglob("*.py")
+        if not skip & set(path.relative_to(root).parts)
+        and "instructor" in path.read_text(encoding="utf-8").lower()
+    ]
+    assert offenders == []

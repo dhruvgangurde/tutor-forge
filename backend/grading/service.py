@@ -8,11 +8,11 @@ Responsibilities:
   2. _run_grading_graph()     — async wrapper; catches exceptions; marks Submission
   3. get_grading_detail()     — load GradeRecommendation + parsed rationale for API
   4. list_grading_queue()     — teacher queue of submissions needing review
-  5. finalize_grade()         — write FinalGrade + GradeAuditRecord (instructor action)
+  5. finalize_grade()         — write FinalGrade + GradeAuditRecord (teacher action)
 
 Architecture constraints:
   - The BackgroundTask owns its own DB session (never shares with the HTTP request).
-  - GradeRecommendation is the agent's output; FinalGrade is instructor-only.
+  - GradeRecommendation is the agent's output; FinalGrade is teacher-only.
   - No grade is released to the student until finalize_grade() is called.
   - Temperature = 0 is enforced inside GeminiProClient.generate_deterministic().
 """
@@ -443,7 +443,7 @@ async def finalize_grade(
     Write FinalGrade + GradeAuditRecord in a single atomic transaction.
 
     This is the ONLY path to a released grade — enforcing the
-    'instructor approval required before grade release' constraint.
+    'teacher approval required before grade release' constraint.
 
     Raises ValueError on:
       - No pending recommendation for this submission
