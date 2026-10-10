@@ -279,3 +279,22 @@ async def test_other_teacher_cannot_change_anything(client, other_teacher_token,
         )
     async with _Session() as db:
         assert (await db.execute(select(FinalGrade))).scalars().all() == []
+
+
+async def test_grading_ack_says_teacher_not_instructor(client, teacher_token, submissions):
+    resp = await client.post(f"/grading/{submissions['ungraded']}/grade", headers=_auth(teacher_token))
+    assert resp.status_code == 202
+    message = resp.json()["message"]
+    assert "All results require teacher review before they are released." in message
+    assert "instructor" not in message.lower()
+
+
+async def test_api_schema_says_teacher_not_instructor(client):
+    """Route descriptions and model docstrings are published in the OpenAPI schema."""
+    resp = await client.get("/openapi.json")
+    assert resp.status_code == 200
+    schema = resp.text
+    assert "instructor" not in schema.lower()
+    assert "requires teacher review before release" in schema
+    assert "requires teacher approval before it is released" in schema
+    assert "after the teacher approves or overrides" in schema

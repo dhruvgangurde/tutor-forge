@@ -188,11 +188,11 @@ class GradingAck(BaseModel):
 
 class FinalGradeResponse(BaseModel):
     """
-    Returned by approve and override endpoints after instructor action.
+    Returned by approve and override endpoints after the teacher approves or overrides.
 
-    Note: This represents the instructor decision record — not a grade
+    Note: This represents the teacher's decision record — not a grade
     released to the student. Display language must always say "Finalized by
-    instructor" rather than "Official grade released".
+    teacher" rather than "Official grade released".
     """
     final_grade_id: uuid.UUID
     final_score: float

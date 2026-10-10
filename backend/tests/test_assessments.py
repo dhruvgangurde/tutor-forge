@@ -1750,3 +1750,46 @@ async def test_duplicate_submission_does_not_enqueue_a_second_grading_run(
 
     assert second.status_code == 409
     run_graph.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submission_ack_says_teacher_not_instructor(client, student_token, ready_course_id):
+    """User-visible copy says "teacher" (CLAUDE.md section 10)."""
+    from db.models import Question
+
+    async with _TestSessionFactory() as db:
+        from sqlalchemy import select as _select
+        course = (await db.execute(_select(Course).where(Course.id == ready_course_id))).scalar_one()
+        assessment = Assessment(
+            course_id=ready_course_id,
+            created_by=course.owner_id,
+            title="Wording Test",
+            status="published",
+            config="{}",
+        )
+        db.add(assessment)
+        await db.flush()
+        question = Question(
+            assessment_id=assessment.id,
+            question_type="mcq",
+            stem="Q?",
+            options=json.dumps(["A. a", "B. b", "C. c", "D. d"]),
+            answer_key=json.dumps({"correct_answer": "A", "worked_solution": "A."}),
+            bloom_level="remember",
+            difficulty="easy",
+            max_points=1.0,
+            order_index=0,
+        )
+        db.add(question)
+        await db.commit()
+        aid, qid = assessment.id, question.id
+
+    resp = await client.post(
+        f"/assessments/{aid}/submit",
+        json={"responses": [{"question_id": str(qid), "answer_choice": "A"}]},
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert resp.status_code == 201
+    message = resp.json()["message"]
+    assert "your teacher must review before grades are released" in message
+    assert "instructor" not in message.lower()

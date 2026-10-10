@@ -119,7 +119,7 @@ async def _require_teacher_owns_submission(
     description=(
         "Enqueues AI-assisted grading for the specified submission. "
         "The grading runs asynchronously. Poll GET /{submission_id} for results. "
-        "The resulting recommendation requires instructor review before release."
+        "The resulting recommendation requires teacher review before release."
     ),
 )
 async def grade_submission(
@@ -152,7 +152,7 @@ async def grade_submission(
         message=(
             "Grading has been enqueued. "
             "Poll GET /grading/{submission_id} for the recommendation. "
-            "All results require instructor review before they are released."
+            "All results require teacher review before they are released."
         ),
     )
 
@@ -230,7 +230,7 @@ async def get_finalized_grades(
     description=(
         "Returns the full grading recommendation for a submission, "
         "including per-criterion scores, suggested feedback, and evidence citations. "
-        "The recommendation requires instructor approval before it is released."
+        "The recommendation requires teacher approval before it is released."
     ),
 )
 async def get_grading_recommendation(
