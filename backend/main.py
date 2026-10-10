@@ -46,6 +46,10 @@ from core.throttle import EMBED, GENERATE, throttle
 # ── Gemini client wrappers ────────────────────────────────────────────────────
 # Imported here to keep lifespan readable; actual classes live in their own modules.
 
+#: The Gemini API accepts at most this many texts in one embedding request.
+_EMBED_BATCH_LIMIT = 100
+
+
 class GeminiProClient:
     """Thin wrapper around google-generativeai for Gemini Pro."""
 
@@ -99,6 +103,47 @@ class GeminiProClient:
 
         return call_gemini(
             _call, description=f"Gemini embed ({settings.embedding_model})", generation=False
+        )
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """
+        Embed course chunks for indexing, ``embedding_batch_size`` per request.
+
+        One request per batch, each paced and retried on its own. The API
+        accepts at most 100 texts per request, so a larger setting is capped.
+        """
+        size = max(1, min(settings.embedding_batch_size, _EMBED_BATCH_LIMIT))
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), size):
+            vectors.extend(self._embed_batch(texts[start:start + size], "retrieval_document"))
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a search query; queries use the query task type, chunks the document one."""
+        return self._embed_batch([text], "retrieval_query")[0]
+
+    def _embed_batch(self, texts: list[str], task_type: str) -> list[list[float]]:
+        import google.generativeai as genai
+
+        def _call() -> list[list[float]]:
+            throttle(EMBED, settings.embedding_model)  # one request per batch
+            result = genai.embed_content(
+                model=settings.embedding_model,
+                content=texts,
+                task_type=task_type,
+                request_options={"timeout": settings.gemini_timeout_seconds},
+            )
+            vectors = result["embedding"]
+            if len(vectors) != len(texts):
+                raise ValueError(
+                    f"Gemini returned {len(vectors)} embeddings for {len(texts)} texts"
+                )
+            return vectors
+
+        return call_gemini(
+            _call,
+            description=f"Gemini embed x{len(texts)} ({settings.embedding_model})",
+            generation=False,
         )
 
 

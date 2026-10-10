@@ -273,6 +273,17 @@ class OllamaClient:
             description=f"Ollama embed ({self._embedding_model})",
         )
 
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """
+        Provider-neutral batch form. One request per text, exactly as before:
+        Ollama is local, has no request quota, and prefixing task types for
+        nomic-embed-text would change the vectors of every existing collection.
+        """
+        return [self.embed(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
     # ── Startup warm-up ───────────────────────────────────────────────────────
 
     def warm_up(self) -> None:

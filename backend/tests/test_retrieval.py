@@ -34,6 +34,10 @@ def _make_mock_gemini(embed_dim: int = 384) -> MagicMock:
         return [base] * embed_dim
 
     mock.embed.side_effect = fake_embed
+    # RetrievalService embeds chunks with embed_documents and queries with
+    # embed_query; both give the same vectors as embed() did.
+    mock.embed_documents.side_effect = lambda texts: [fake_embed(t) for t in texts]
+    mock.embed_query.side_effect = fake_embed
     return mock
 
 

@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     # Defaults are safe for the free tier; 0 turns pacing off.
     gemini_generate_rpm: int = 5
     gemini_embed_rpm: int = 90
+    # Course chunks embedded per request (the API maximum is 100). A 165-chunk
+    # upload is two requests, not 165.
+    embedding_batch_size: int = 100
 
     # ── Background job recovery (F4-minimal) ──────────────────────────────────
     # A job left in an in-flight state (assessment "generating", ingestion

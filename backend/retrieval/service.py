@@ -122,7 +122,9 @@ class RetrievalService:
             settings.embedding_model,
         )
 
-        embeddings = [self._gemini.embed(doc) for doc in documents]
+        # One request per batch, not per chunk: a 165-chunk upload used to
+        # make 165 calls and trip the provider's per-minute limit.
+        embeddings = self._gemini.embed_documents(documents)
         if embeddings:
             logger.info(
                 "[ADD-CHUNKS-EMBEDDING-COMPLETE] course_id=%s chunks=%d embedding_dim=%d",
@@ -202,7 +204,7 @@ class RetrievalService:
             return result
 
         # Embed query
-        query_embedding = self._gemini.embed(query)
+        query_embedding = self._gemini.embed_query(query)
         logger.info(
             "[RETRIEVE-QUERY-EMBEDDED] course_id=%s query=%r embedding_dim=%d",
             course_id,
