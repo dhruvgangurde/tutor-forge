@@ -18,6 +18,7 @@ from agents.tutor.output_guard import (
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
     RULE_INVENTED_REFERENCE,
+    RULE_ONE_QUESTION,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
     RULE_VERDICT_AFTER_NON_ANSWER,
@@ -347,8 +348,9 @@ def test_low_rung_left_with_no_question_falls_back():
 def test_a_normal_reply_is_left_unchanged(path, level, reply):
     text = (
         "Think about what it takes to push two like charges closer together.\n\n"
-        "- Where does that effort go?\n"
-        "- What do you think happens when you let go?"
+        "- Picture holding them there.\n"
+        "- Then picture letting go.\n\n"
+        "What do you think happens when you let go?"
     )
     out, tripped = _guard(text, path=path, level=level, reply=reply)
     assert out == text
@@ -424,3 +426,59 @@ class TestGuardPromptRules:
 
         assert "Give no verdict" in reply_instruction(True)
         assert "Give no verdict" not in reply_instruction(False)
+
+
+# ── 6. One question only ──────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "path, level, reply",
+    [
+        (PATH_NEW_QUESTION, 0, None),
+        (PATH_HINT, 3, None),
+        (PATH_HINT, 4, None),
+        (PATH_REPLY, 1, "something about energy"),
+    ],
+)
+def test_only_the_first_question_is_kept(path, level, reply):
+    out, tripped = _guard(
+        "Think about pushing two like charges together. What does that take? "
+        "Where does the effort go? Why might that matter?",
+        path=path,
+        level=level,
+        reply=reply,
+    )
+    assert out == "Think about pushing two like charges together. What does that take?"
+    assert tripped == [RULE_ONE_QUESTION]
+
+
+def test_statements_after_the_first_question_are_kept():
+    out, _ = _guard("What does that take? Picture holding them close. Where does the effort go?")
+    assert out == "What does that take? Picture holding them close."
+
+
+def test_questions_in_a_list_are_trimmed_to_one():
+    out, _ = _guard("Try these:\n\n- What does that take?\n- Where does the effort go?")
+    assert out == "Try these:\n\n- What does that take?"
+
+
+def test_a_question_removed_by_an_earlier_rule_does_not_count():
+    out, tripped = _guard(
+        "Since potential difference is the work done per unit charge, what is it per coulomb? "
+        "What has to happen to move a charge? Where does the energy go?",
+    )
+    assert out == "What is it per coulomb?"
+    assert tripped == [RULE_STATES_ANSWER, RULE_ONE_QUESTION]
+
+
+def test_one_question_never_empties_a_reply():
+    for text in ("What is work?", "Why? How? When?", "Work is force times distance."):
+        out, _ = _guard(text, level=4)
+        assert out.strip()
+
+
+def test_every_instruction_asks_for_one_question():
+    from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+    for text in [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True, 4)]:
+        assert "Ask at most one question" in text

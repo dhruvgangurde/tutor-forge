@@ -116,3 +116,12 @@ def test_raw_latex_is_turned_into_plain_text():
     assert "\\" not in out
     assert "frac" not in out
     assert out == "Think about the relationship V = W/Q. What does W stand for here?"
+
+
+def test_only_the_first_of_several_questions_is_kept():
+    out = _run(
+        "What is work? How is it related to charge? Can you connect the two?",
+        reply="something to do with energy",
+        hint_level=1,
+    )
+    assert out == "What is work?"

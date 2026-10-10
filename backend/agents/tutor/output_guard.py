@@ -31,6 +31,9 @@ asks the model again. If nothing is left, or the low rungs or a reply are left
 with no question, the reply becomes a fixed Socratic question. A reply never
 comes out empty.
 
+Last of all, a reply keeps only its first question: the model often stacked
+three, which leaves the student unsure which one to answer.
+
 No model call, no new retrieval and no change to the groundedness gate: this
 only ever removes text the model produced, or replaces it with fixed wording.
 
@@ -69,6 +72,7 @@ RULE_VERDICT_AFTER_NON_ANSWER = "verdict_after_non_answer"
 RULE_EXAMPLE_REFERENCE = "example_reference"
 RULE_UNUSED_NUMBER = "unused_number"
 RULE_FALLBACK = "fallback"
+RULE_ONE_QUESTION = "one_question"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -377,7 +381,7 @@ def _cut_reference_qualifier(sentence: str) -> str | None:
 
 
 def guard_tutor_reply(text: str, turn: TutorTurn) -> str:
-    """Apply checks 1-4 to a sanitised reply; log each rule that tripped."""
+    """Apply the checks and the one-question rule to a sanitised reply; log each rule that tripped."""
     out, tripped = apply_guards(text, turn)
     for rule in tripped:
         logger.info("[TUTOR-GUARD] rule=%s path=%s hint_level=%s", rule, turn.path, turn.hint_level)
@@ -450,12 +454,27 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     if low_rung and course_numbers:
         run(RULE_UNUSED_NUMBER, lambda s: None if _numbers(_plain(s)) & course_numbers else s)
 
-    result = _render(lines)
-    if not result or (
+    if not _render(lines) or (
         tripped
         and (low_rung or turn.path == PATH_REPLY)
         and not any(_is_question(s) for line in lines if line for s in line.sentences)
     ):
-        result = GUARD_FALLBACK_NON_ANSWER if turn.is_non_answer else GUARD_FALLBACK_QUESTION
         tripped.append(RULE_FALLBACK)
-    return result, tripped
+        return (GUARD_FALLBACK_NON_ANSWER if turn.is_non_answer else GUARD_FALLBACK_QUESTION), tripped
+
+    # 6. One question only, checked last so a question an earlier rule removed
+    # does not count. The first is kept, so a reply that had a question still
+    # has one, and statements are never touched.
+    seen_question = False
+
+    def first_question_only(s: str) -> str | None:
+        nonlocal seen_question
+        if not _is_question(s):
+            return s
+        if seen_question:
+            return None
+        seen_question = True
+        return s
+
+    run(RULE_ONE_QUESTION, first_question_only)
+    return _render(lines), tripped
