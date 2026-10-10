@@ -146,6 +146,7 @@ npm run dev                # → http://localhost:5173
 | `GEMINI_GENERATE_RPM`     | `5`                      | Client-side pacing per generation model, requests per minute (0 = off); safe for the free tier                                          |
 | `GEMINI_EMBED_RPM`        | `90`                     | Client-side pacing per embedding model, requests per minute (0 = off)                                                                   |
 | `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one Gemini call (429 retries or a pacing slot) before the user sees "The AI service is busy"                           |
+| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0`           | The same limit for background course ingestion (embedding a large upload can take a few one-minute windows)                             |
 | `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                                            |
 | `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                                        |
 | `CORS_ALLOWED_ORIGINS`    | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)                                                                                    |

@@ -141,6 +141,10 @@ class Settings(BaseSettings):
     # delay a 429 asks for), and separately while waiting for a rate-limit slot.
     # Past it the call fails with "The AI service is busy" instead of hanging.
     gemini_max_wait_seconds: float = 60.0
+    # The same limit for background course ingestion, where nobody is waiting
+    # on a page: embedding a large upload on the free tier can need a few
+    # one-minute windows. Interactive calls (tutor, hints) keep the 60s above.
+    gemini_ingest_max_wait_seconds: float = 300.0
     # Client-side pacing (core/throttle.py), per model, in requests per minute.
     # Defaults are safe for the free tier; 0 turns pacing off.
     gemini_generate_rpm: int = 5

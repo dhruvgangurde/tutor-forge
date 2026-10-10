@@ -126,21 +126,28 @@ class GeminiProClient:
         than the API's 100).
         """
         size = embedding_batch_limit(_EMBED_BATCH_LIMIT)
+        # Course ingestion runs in the background, so it may wait longer for
+        # quota than a tutor reply may.
+        cap = settings.gemini_ingest_max_wait_seconds
         vectors: list[list[float]] = []
         for start in range(0, len(texts), size):
-            vectors.extend(self._embed_batch(texts[start:start + size], "retrieval_document"))
+            vectors.extend(
+                self._embed_batch(texts[start:start + size], "retrieval_document", max_wait=cap)
+            )
         return vectors
 
     def embed_query(self, text: str) -> list[float]:
         """Embed a search query; queries use the query task type, chunks the document one."""
         return self._embed_batch([text], "retrieval_query")[0]
 
-    def _embed_batch(self, texts: list[str], task_type: str) -> list[list[float]]:
+    def _embed_batch(
+        self, texts: list[str], task_type: str, max_wait: float | None = None
+    ) -> list[list[float]]:
         import google.generativeai as genai
 
         def _call() -> list[list[float]]:
             # Weighed by texts: each one counts against the per-minute quota.
-            throttle(EMBED, settings.embedding_model, weight=len(texts))
+            throttle(EMBED, settings.embedding_model, weight=len(texts), max_wait=max_wait)
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=texts,
@@ -162,6 +169,7 @@ class GeminiProClient:
             _call,
             description=f"Gemini embed x{len(texts)} ({settings.embedding_model})",
             generation=False,
+            max_wait=max_wait,
         )
 
 

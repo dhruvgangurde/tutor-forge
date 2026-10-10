@@ -270,3 +270,47 @@ def test_logged_429s_replayed_never_retry_inside_the_same_window(defaults, fake_
     # Each retry of the second batch starts at least a window after the attempt before it.
     for earlier, later in pairwise(times[1:]):
         assert later - earlier >= 60.0
+
+
+# ── 3. Ingestion waits longer than an interactive call ────────────────────────
+
+
+def test_ingest_cap_defaults_to_300_and_is_in_env_example():
+    from pathlib import Path
+
+    from core.config import Settings
+
+    assert Settings.model_fields["gemini_ingest_max_wait_seconds"].default == 300.0
+    assert Settings.model_fields["gemini_max_wait_seconds"].default == 60.0
+    example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+    assert "GEMINI_INGEST_MAX_WAIT_SECONDS=300.0" in example.splitlines()
+
+
+def test_logged_429s_during_ingestion_complete_under_the_ingest_cap(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    from core.config import Settings
+
+    monkeypatch.setattr(
+        defaults, "gemini_ingest_max_wait_seconds",
+        Settings.model_fields["gemini_ingest_max_wait_seconds"].default, raising=False,
+    )
+    api = _ScriptedAPI(fake_time, _log_replay())
+    monkeypatch.setattr(genai, "embed_content", api.embed_content)
+
+    vectors = _client().embed_documents([f"chunk {i}" for i in range(152)])
+    assert len(vectors) == 152                       # 60s interactive cap left untouched
+    assert defaults.gemini_max_wait_seconds == 60.0
+
+
+def test_the_same_429s_on_an_interactive_query_give_up_as_busy(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    from core.exceptions import AIServiceBusy
+
+    api = _ScriptedAPI(fake_time, _log_replay())
+    monkeypatch.setattr(genai, "embed_content", api.embed_content)
+    client = _client()
+    client.embed_query("first question")             # answered
+    with pytest.raises(AIServiceBusy):
+        client.embed_query("second question")        # 18.67s + ~1s + 59s would pass 60s

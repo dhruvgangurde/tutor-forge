@@ -196,12 +196,20 @@ def _busy_reason(exc: BaseException) -> str | None:
     return None
 
 
-def call_gemini[T](fn: Callable[[], T], *, description: str, generation: bool) -> T:
+def call_gemini[T](
+    fn: Callable[[], T],
+    *,
+    description: str,
+    generation: bool,
+    max_wait: float | None = None,
+) -> T:
     """
     Run one Gemini request with retries, as described in the module docstring.
 
     ``generation`` limits a timed-out generation to one retry; embeddings keep
-    the normal attempt count.
+    the normal attempt count. ``max_wait`` caps the total retry wait; it
+    defaults to the interactive ``gemini_max_wait_seconds``, and background
+    ingestion passes ``gemini_ingest_max_wait_seconds``.
     """
     try:
         return call_with_retry(
@@ -213,7 +221,7 @@ def call_gemini[T](fn: Callable[[], T], *, description: str, generation: bool) -
             description=description,
             sleep=lambda seconds: time.sleep(seconds),
             delay_hint=rate_limit_wait,
-            max_total_wait=settings.gemini_max_wait_seconds,
+            max_total_wait=settings.gemini_max_wait_seconds if max_wait is None else max_wait,
             stop_if=is_daily_quota,
             attempts_for=(lambda exc: 2 if is_timeout(exc) else None) if generation else None,
         )
