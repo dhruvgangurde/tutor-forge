@@ -118,8 +118,11 @@ def strip_context_references(text: str) -> str:
         return text
 
     out = _NEGATION_RE.sub("the course material does not cover", text)
-    out = _SUBJECT_RE.sub("", out)
-    out = _QUALIFIER_RE.sub("", out)
+    # Sentence-aware: a phrase that opened a later sentence used to leave
+    # "difference., potential difference is..." behind.
+    starts_upper = text[:1].isupper()
+    out = _remove_keeping_sentence_case(_SUBJECT_RE, out, capitalise_start=starts_upper)
+    out = _remove_keeping_sentence_case(_QUALIFIER_RE, out, capitalise_start=starts_upper)
 
     # Tidy the seams the removals leave behind.
     out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
@@ -181,11 +184,16 @@ def strip_source_narration(text: str) -> str:
     return out
 
 
-def _remove_keeping_sentence_case(pattern: re.Pattern, text: str) -> str:
+def _remove_keeping_sentence_case(
+    pattern: re.Pattern, text: str, capitalise_start: bool = True
+) -> str:
     """
     Delete each match. When a match opened a sentence, capitalise what now
     opens it and drop the comma a leading qualifier leaves behind
     ("According to the course, like charges repel" -> "Like charges repel").
+
+    ``capitalise_start=False`` leaves the very start of the text as it was
+    written, for callers that also clean lowercase fragments.
     """
     out = ""
     pos = 0
@@ -205,7 +213,7 @@ def _remove_keeping_sentence_case(pattern: re.Pattern, text: str) -> str:
         if not kept or kept[-1] in ".!?\n":
             while pos < len(text) and text[pos] in ",;: ":
                 pos += 1
-            capitalise = True
+            capitalise = bool(kept) or capitalise_start
             if kept and out == kept:
                 out += " "  # the pattern ate the space after the previous sentence
     return out + take(text[pos:])

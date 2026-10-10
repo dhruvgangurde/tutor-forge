@@ -15,6 +15,7 @@ from dataclasses import asdict
 from unittest.mock import MagicMock
 
 from agents.tutor.nodes import advance_hint_node, generate_guiding_question_node
+from core.context_phrasing import strip_context_references
 from retrieval.models import Chunk
 from retrieval.service import RetrievalService
 
@@ -55,6 +56,14 @@ def _state(*, hint_level=0, reply=None, non_answer=False):
         "pedagogy_trace": {},
     }
     return state
+
+
+def _run_state(model_output, state, *, hint=False):
+    gemini = MagicMock()
+    gemini.generate.return_value = model_output
+    retrieval = RetrievalService.__new__(RetrievalService)  # real context and citation builders
+    node = advance_hint_node if hint else generate_guiding_question_node
+    return node(state, retrieval, gemini)["response"]
 
 
 def _run(model_output, *, hint=False, **state_kwargs):
@@ -125,3 +134,32 @@ def test_only_the_first_of_several_questions_is_kept():
         hint_level=1,
     )
     assert out == "What is work?"
+
+
+# ── Round 1c: a second live replay (qwen2.5:7b, hint level 0) ─────────────────
+
+#: Shown to the student, verbatim, after they answered "no".
+_LIVE_AFTER_NO = (
+    "It seems like you're not sure about the concept of potential difference., potential "
+    "difference is related to the work required to move charges against the force of "
+    "attraction or repulsion between them. Can you try to describe in your own words what "
+    "potential difference means in this context?"
+)
+_LIVE_HEAD = "It seems like you're not sure about the concept of potential difference."
+
+
+def test_context_qualifier_opening_a_later_sentence_leaves_no_broken_join():
+    raw = (
+        _LIVE_HEAD + " According to the context provided, potential difference is related "
+        "to the work required to move charges."
+    )
+    assert strip_context_references(raw) == (
+        _LIVE_HEAD + " Potential difference is related to the work required to move charges."
+    )
+
+
+def test_live_garbled_join_is_repaired_into_sentences():
+    out = _run(_LIVE_AFTER_NO, hint_level=3)  # Hint 3: only the join repair applies
+    assert ".," not in out
+    assert ", potential" not in out
+    assert "potential difference. Potential difference is related to the work" in out

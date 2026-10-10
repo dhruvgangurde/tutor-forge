@@ -17,6 +17,7 @@ from agents.tutor.output_guard import (
     PATH_REPLY,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
+    RULE_FRAGMENT,
     RULE_INVENTED_REFERENCE,
     RULE_ONE_QUESTION,
     RULE_STATES_ANSWER,
@@ -482,3 +483,56 @@ def test_every_instruction_asks_for_one_question():
 
     for text in [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True, 4)]:
         assert "Ask at most one question" in text
+
+
+# ── Repairing joins left by removals ──────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (
+            "Think about moving a charge., it takes effort to do that. What does it take?",
+            "Think about moving a charge. It takes effort to do that. What does it take?",
+        ),
+        ("Like charges repel,. What happens next?", "Like charges repel. What happens next?"),
+        ("Like charges repel, , so what happens next?", "Like charges repel, so what happens next?"),
+        (", like charges repel each other. What happens next?", "Like charges repel each other. What happens next?"),
+        ("Think about it ; what happens next?", "Think about it; what happens next?"),
+    ],
+)
+def test_broken_joins_become_well_formed_sentences(raw, expected):
+    out, tripped = _guard(raw, level=3)
+    assert out == expected
+    assert tripped == []
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Think about moving a charge., which is why it matters. What does it take?",
+        "Think about moving a charge., and so on. What does it take?",
+        "Think about moving a charge., then. What does it take?",
+    ],
+)
+def test_fragments_that_cannot_be_repaired_are_dropped(raw):
+    out, tripped = _guard(raw, level=3)
+    assert out == "Think about moving a charge. What does it take?"
+    assert tripped == [RULE_FRAGMENT]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Some quantities, e.g., voltage, compare two points. What else compares two points?",
+        "Lists, tables, etc., can help. What would you put in a table?",
+        "Note: like charges repel. What happens next?",
+    ],
+)
+def test_ordinary_punctuation_is_not_treated_as_debris(text):
+    assert _guard(text, level=3) == (text, [])
+
+
+def test_a_variable_opening_an_orphan_keeps_its_case():
+    out, _ = _guard("Look at the equation., x is the unknown here. What is x?", level=3)
+    assert out == "Look at the equation. x is the unknown here. What is x?"

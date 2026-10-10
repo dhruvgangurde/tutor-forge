@@ -73,6 +73,7 @@ RULE_EXAMPLE_REFERENCE = "example_reference"
 RULE_UNUSED_NUMBER = "unused_number"
 RULE_FALLBACK = "fallback"
 RULE_ONE_QUESTION = "one_question"
+RULE_FRAGMENT = "fragment"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -377,6 +378,63 @@ def _cut_reference_qualifier(sentence: str) -> str | None:
     return _capitalise(out)
 
 
+# ── Repairing joins ───────────────────────────────────────────────────────────
+#
+# A removal upstream (the context sanitiser) or here can leave debris where two
+# sentences meet: "difference., potential difference is...". The tidy pass runs
+# before the rules, so they see real sentences, and again after them.
+
+_STRAY_BEFORE_END_RE = re.compile(r"[ \t]*[,;:]+[ \t]*(?=[.!?])")  # "repel,." -> "repel."
+_REPEATED_RE = re.compile(r"([,;:])(?:[ \t]*[,;:])+")                # ", ," -> ","
+_SPACE_BEFORE_RE = re.compile(r"[ \t]+([.,;:!?])")
+#: A sentence end, or the start of the reply, followed by stray , ; or :
+_DEBRIS_RE = re.compile(r"(^|[.!?])[ \t]*[,;:]+[ \t]*")
+#: The orphaned text after the debris, up to its own sentence end.
+_ORPHAN_RE = re.compile(r"[^.!?\n]*(?:[.!?]+[\"'”’)\]*_]*)?")
+_CONNECTIVES = frozenset({
+    "which", "that", "and", "but", "or", "so", "because", "while", "whereas", "where",
+})
+
+
+def _capitalise_first_word(text: str) -> str:
+    """Capitalise an ordinary lowercase word; leave "x", "pH" and "iPhone" alone."""
+    m = re.search(r"[A-Za-z]+", text)
+    if m and len(m.group(0)) > 1 and m.group(0).islower():
+        return text[:m.start()] + m.group(0).capitalize() + text[m.end():]
+    return text
+
+
+def _tidy(text: str) -> tuple[str, bool]:
+    """
+    Return the text with broken joins repaired, and whether an orphaned
+    fragment had to be dropped because it could not be made a sentence.
+    """
+    out = _STRAY_BEFORE_END_RE.sub("", text)
+    out = _REPEATED_RE.sub(r"\1", out)
+    out = _SPACE_BEFORE_RE.sub(r"\1", out)
+    dropped = False
+    pos = 0
+    while m := _DEBRIS_RE.search(out, pos):
+        before = out[:m.start()].split()
+        if m.group(1) == "." and before and before[-1].lower().rstrip(".") in _ABBREVIATIONS:
+            pos = m.end()  # "e.g., voltage" is ordinary punctuation
+            continue
+        head = out[:m.start()] + m.group(1)
+        orphan = _ORPHAN_RE.match(out, m.end())
+        words = orphan.group(0).split()
+        first = re.sub(r"[^a-z']", "", words[0].lower()) if words else ""
+        if len(words) < 3 or first in _CONNECTIVES:
+            mid = ""
+            dropped = True
+        else:
+            mid = _capitalise_first_word(orphan.group(0))
+        rest = out[orphan.end():]
+        joiner = " " if head and mid else ""
+        out = head + joiner + mid + rest
+        pos = len(head) + len(joiner) + len(mid)
+    return re.sub(r"[ \t]{2,}", " ", out).strip(), dropped
+
+
 # ── The guard ─────────────────────────────────────────────────────────────────
 
 
@@ -390,8 +448,9 @@ def guard_tutor_reply(text: str, turn: TutorTurn) -> str:
 
 def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     """Return the guarded reply and the names of the rules that changed it."""
-    lines = _parse(text or "")
-    tripped: list[str] = []
+    text, dropped = _tidy(text or "")
+    lines = _parse(text)
+    tripped: list[str] = [RULE_FRAGMENT] if dropped else []
     reply_words = _content_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
     student_numbers = _numbers(turn.question) | _numbers(turn.student_reply or "")
     course_numbers = _numbers(turn.course_text) - student_numbers
@@ -454,7 +513,13 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     if low_rung and course_numbers:
         run(RULE_UNUSED_NUMBER, lambda s: None if _numbers(_plain(s)) & course_numbers else s)
 
-    if not _render(lines) or (
+    # Repair any join the removals above left, then judge what is left.
+    text, dropped = _tidy(_render(lines))
+    if dropped and RULE_FRAGMENT not in tripped:
+        tripped.append(RULE_FRAGMENT)
+    lines = _parse(text)
+
+    if not text or (
         tripped
         and (low_rung or turn.path == PATH_REPLY)
         and not any(_is_question(s) for line in lines if line for s in line.sentences)
