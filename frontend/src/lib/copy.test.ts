@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { plural } from './plural'
 import { statusLabel, statusToVariant } from './statusVariant'
@@ -40,6 +40,22 @@ describe('student chat timestamp', () => {
     const rule = css.match(/\.chat-bubble\.student \.message-time\s*\{([^}]*)\}/)
     expect(rule).not.toBeNull()
     expect(rule![1]).toMatch(/color:\s*var\(--muted\)/)
+  })
+})
+
+describe('teacher, not instructor (fix round 1)', () => {
+  it('never says "instructor" anywhere in the frontend source', () => {
+    const files: string[] = []
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name)
+        if (statSync(path).isDirectory()) walk(path)
+        else if (/\.(tsx?|css)$/.test(path) && !path.includes('.test.')) files.push(path)
+      }
+    }
+    walk(resolve(__dirname, '..'))
+    const offenders = files.filter((f) => /instructor/i.test(readFileSync(f, 'utf8')))
+    expect(offenders).toEqual([])
   })
 })
 

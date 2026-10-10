@@ -10,7 +10,7 @@ import { getErrorMessage } from '../../lib/api/errors'
 /**
  * Student progress view.
  *
- * Shows only grades an instructor has released. A submission whose AI
+ * Shows only grades a teacher has released. A submission whose AI
  * recommendation is still awaiting review is counted as awaiting and carries no
  * score — surfacing the recommendation here would route around the
  * teacher-approval gate the whole grading flow exists to enforce.

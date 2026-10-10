@@ -98,10 +98,10 @@ export function SubmissionDetailPage() {
         ))}
       </section>
 
-      {/* Instructor feedback exists only once the grade is finalized. */}
+      {/* Teacher feedback exists only once the grade is finalized. */}
       {released && submission.feedback && (
         <section className={`card ${styles.feedbackCard}`}>
-          <h2 className={styles.sectionTitle}>Instructor Feedback</h2>
+          <h2 className={styles.sectionTitle}>Teacher Feedback</h2>
           <Markdown className={styles.feedbackContent}>{submission.feedback}</Markdown>
           {submission.graded_at && (
             <p className={styles.gradedOn}>Graded on {new Date(submission.graded_at).toLocaleString()}</p>

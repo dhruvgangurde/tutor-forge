@@ -27,7 +27,7 @@ export function FinalizedGrades() {
       {data && data.length > 0 && (
         <div className="card table-card">
         <div className="table-scroll">
-        <table className="data-table data-table-stack" role="table">
+        <table className="data-table data-table-stack data-table-readonly" role="table">
           <thead role="rowgroup">
             <tr role="row">
               <th role="columnheader">Student</th>

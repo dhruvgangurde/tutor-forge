@@ -747,6 +747,9 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
 }
 .data-table tbody tr:hover td { background: var(--hover); }
 
+/* Read-only tables: rows do nothing on click, so they don't light up on hover. */
+.data-table-readonly tbody tr:hover td { background: transparent; }
+
 /* ── Empty state, placeholder page, 404 ─────────────────────────────────── */
 .empty-state {
   padding: var(--space-8) 0;
@@ -850,9 +853,11 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   overflow-x: auto;
 }
 
+/* No negative bottom margin: the tab list scrolls sideways, so a tab reaching
+   1px into its border made the list 1px taller than its box and drew a stray
+   vertical scrollbar (the overlap was clipped anyway). */
 .tab {
   min-height: 44px;
-  margin-bottom: -1px;
   padding: var(--space-2) 2px;
   border: none;
   border-bottom: 3px solid transparent;
