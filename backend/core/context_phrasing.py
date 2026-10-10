@@ -154,11 +154,11 @@ _SOURCE_SUBJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
-#: "according to the course material, X" / "as the course mentions, X" /
-#: "as mentioned in the course material" -> removed.
+#: "according to the course material, X" / "based on the course material, X" /
+#: "as the course mentions, X" / "as mentioned in the course material" -> removed.
 _SOURCE_QUALIFIER_RE = re.compile(
     r"\s*,?\s*(?:"
-    r"according\s+to\s+" + _COURSE
+    r"(?:according\s+to|based\s+on)\s+" + _COURSE
     + r"|as\s+" + _COURSE + r"\s+" + _NARRATING_VERB
     + r"|as\s+(?:stated|mentioned|described|explained|noted|shown)\s+in\s+" + _COURSE
     + r")",
@@ -206,6 +206,8 @@ def _remove_keeping_sentence_case(pattern: re.Pattern, text: str) -> str:
             while pos < len(text) and text[pos] in ",;: ":
                 pos += 1
             capitalise = True
+            if kept and out == kept:
+                out += " "  # the pattern ate the space after the previous sentence
     return out + take(text[pos:])
 
 

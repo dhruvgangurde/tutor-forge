@@ -2259,6 +2259,15 @@ class TestSourceNarration:
                 "Given that the course says like charges repel, why would that take work?",
                 "Given that like charges repel, why would that take work?",
             ),
+            # Seen in the Ollama replay after the first round of this fix.
+            (
+                "What is the exact definition of potential difference based on the course material?",
+                "What is the exact definition of potential difference?",
+            ),
+            (
+                "That's okay. Based on the course material, potential difference is related to work.",
+                "That's okay. Potential difference is related to work.",
+            ),
             # Saying the course does not cover something is honest, not narration.
             ("The course material does not cover that part.", "The course material does not cover that part."),
             ("What do you think happens next?", "What do you think happens next?"),
