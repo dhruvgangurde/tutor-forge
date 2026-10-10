@@ -82,7 +82,7 @@ class OllamaTransientError(RuntimeError):
     """A retryable Ollama failure (429, 5xx, connection reset, timeout)."""
 
 
-# Retryable set, mirroring main._transient_gemini_errors(). urllib.error.HTTPError
+# Retryable set, mirroring core.gemini_calls._transient_gemini_errors(). urllib.error.HTTPError
 # is a subclass of URLError, so _post() converts every HTTPError into either
 # OllamaError or OllamaTransientError before it can escape — that way listing
 # URLError here cannot accidentally retry a permanent 4xx.

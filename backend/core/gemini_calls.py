@@ -1,0 +1,191 @@
+"""
+core/gemini_calls.py
+--------------------
+How every real Gemini call is retried, and when it gives up as "busy".
+
+What went wrong before
+----------------------
+On the free tier a 429 says how long to wait (about 20 seconds). The retry
+backed off 0.5s, 1s and 2s instead, so every retry landed inside the window,
+spent more of the same quota and failed again. A slow outline generation that
+hit the 30-second timeout was re-sent up to four times, each one a full
+request against the quota.
+
+Now
+---
+- A 429 is retried no sooner than the delay the server asked for, and only
+  while the total wait stays within ``settings.gemini_max_wait_seconds``.
+- A daily quota fails at once: no wait inside a request can fix it.
+- A timed-out generation is retried at most once.
+- When it gives up for any of those reasons, the caller gets AIServiceBusy,
+  whose text is the plain "The AI service is busy" message, never the
+  provider's own. Other errors propagate exactly as before.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+from collections.abc import Callable
+
+from core.config import settings
+from core.exceptions import AIServiceBusy
+from core.retry import call_with_retry
+
+
+def _transient_gemini_errors() -> tuple[type[BaseException], ...]:
+    """
+    Exception types that warrant a retry (F10): timeouts, connection drops, and
+    the transient google-api-core status errors (429/503/deadline/500). Bad
+    requests, auth, and not-found errors are intentionally excluded so they fail
+    fast. google.api_core is a google-generativeai dependency; if it is somehow
+    unavailable we still retry the stdlib transient errors.
+    """
+    errors: list[type[BaseException]] = [TimeoutError, ConnectionError]
+    try:
+        from google.api_core import exceptions as gexc
+
+        errors += [
+            gexc.TooManyRequests,       # 429
+            gexc.ResourceExhausted,     # 429 (quota)
+            gexc.ServiceUnavailable,    # 503
+            gexc.DeadlineExceeded,      # 504 / timeout
+            gexc.InternalServerError,   # 500
+            gexc.Aborted,               # transient conflict
+        ]
+    except ImportError:  # retry set is best-effort
+        pass
+    return tuple(errors)
+
+
+def _rate_limit_errors() -> tuple[type[BaseException], ...]:
+    try:
+        from google.api_core import exceptions as gexc
+
+        return (gexc.TooManyRequests, gexc.ResourceExhausted)
+    except ImportError:
+        return ()
+
+
+def _timeout_errors() -> tuple[type[BaseException], ...]:
+    try:
+        from google.api_core import exceptions as gexc
+
+        return (TimeoutError, gexc.DeadlineExceeded)
+    except ImportError:
+        return (TimeoutError,)
+
+
+GEMINI_TRANSIENT = _transient_gemini_errors()
+_RATE_LIMITED = _rate_limit_errors()
+_TIMED_OUT = _timeout_errors()
+
+# ── Reading the server's retry delay ──────────────────────────────────────────
+
+#: "Please retry in 20.468s." / "retryDelay": "20s" / retry_delay { seconds: 20 }
+_DELAY_PATTERNS = (
+    re.compile(r"retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE),
+    re.compile(r"retry_?delay\"?\s*[:=]\s*\"?(\d+(?:\.\d+)?)s", re.IGNORECASE),
+    re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)", re.IGNORECASE),
+)
+
+
+def _seconds(value: object) -> float | None:
+    """A delay from a Duration-like object, a "20s" string or a number."""
+    if value is None:
+        return None
+    if hasattr(value, "seconds"):
+        return float(getattr(value, "seconds", 0)) + float(getattr(value, "nanos", 0)) / 1e9
+    text = str(value).strip().rstrip("s")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def retry_delay_seconds(exc: BaseException) -> float | None:
+    """
+    The wait a rate-limit error asks for, in seconds, or None.
+
+    Looks, in order, at structured RetryInfo details, a Retry-After header, and
+    the error text, because the SDK surfaces it differently by transport.
+    """
+    if not isinstance(exc, _RATE_LIMITED):
+        return None
+    for detail in getattr(exc, "details", None) or []:
+        if hasattr(detail, "retry_delay"):
+            delay = _seconds(detail.retry_delay)
+        elif isinstance(detail, dict):
+            delay = _seconds(detail.get("retryDelay") or detail.get("retry_delay"))
+        else:
+            delay = None
+        if delay is not None:
+            return delay
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    try:
+        retry_after = headers.get("Retry-After") or headers.get("retry-after")
+    except AttributeError:
+        retry_after = None
+    if retry_after is not None:
+        delay = _seconds(retry_after)
+        if delay is not None:
+            return delay
+    text = f"{exc} {getattr(exc, 'details', '')}"
+    for pattern in _DELAY_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            return float(m.group(1))
+    return None
+
+
+def is_daily_quota(exc: BaseException) -> bool:
+    """A per-day quota: waiting a minute will not help, so do not retry."""
+    if not isinstance(exc, _RATE_LIMITED):
+        return False
+    text = f"{exc} {getattr(exc, 'details', '')}".lower()
+    return "perday" in text or "per day" in text or "daily" in text
+
+
+def is_timeout(exc: BaseException) -> bool:
+    return isinstance(exc, _TIMED_OUT)
+
+
+def _busy_reason(exc: BaseException) -> str | None:
+    """Why the call is being given up as busy, or None if it is another failure."""
+    if is_daily_quota(exc):
+        return "daily quota reached"
+    if isinstance(exc, _RATE_LIMITED):
+        delay = retry_delay_seconds(exc)
+        asked = f"; the server asked to wait {delay:.0f}s" if delay is not None else ""
+        return f"rate limited{asked}"
+    if is_timeout(exc):
+        return f"timed out after {settings.gemini_timeout_seconds:.0f}s"
+    return None
+
+
+def call_gemini[T](fn: Callable[[], T], *, description: str, generation: bool) -> T:
+    """
+    Run one Gemini request with retries, as described in the module docstring.
+
+    ``generation`` limits a timed-out generation to one retry; embeddings keep
+    the normal attempt count.
+    """
+    try:
+        return call_with_retry(
+            fn,
+            attempts=settings.gemini_max_attempts,
+            base_delay=settings.gemini_retry_base_delay,
+            max_delay=settings.gemini_retry_max_delay,
+            retry_on=GEMINI_TRANSIENT,
+            description=description,
+            sleep=lambda seconds: time.sleep(seconds),
+            delay_hint=retry_delay_seconds,
+            max_total_wait=settings.gemini_max_wait_seconds,
+            stop_if=is_daily_quota,
+            attempts_for=(lambda exc: 2 if is_timeout(exc) else None) if generation else None,
+        )
+    except GEMINI_TRANSIENT as exc:
+        reason = _busy_reason(exc)
+        if reason is None:
+            raise
+        raise AIServiceBusy(f"{description}: {reason}") from exc

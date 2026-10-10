@@ -94,6 +94,25 @@ class DomainError(Exception):
     """
 
 
+#: What a person is told when the AI provider is rate-limiting or over quota.
+AI_BUSY_MESSAGE = "The AI service is busy. Please try again in a minute."
+
+
+class AIServiceBusy(Exception):
+    """
+    The AI provider refused or timed out for capacity reasons (a 429, a quota,
+    a timeout) and waiting within the allowed time did not help.
+
+    ``str()`` is always the plain AI_BUSY_MESSAGE, so wherever it is shown it
+    never carries the provider's own text. ``reason`` says what happened, for
+    logs and the stored ingestion error only.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(AI_BUSY_MESSAGE)
+        self.reason = reason
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all global exception handlers on the FastAPI application."""
 

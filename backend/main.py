@@ -38,41 +38,12 @@ from core.config import assert_safe_production_config, legacy_env_warnings, sett
 from core.exceptions import register_exception_handlers
 from core.logging import RequestIdMiddleware, configure_logging
 from core.ratelimit import RateLimitMiddleware
-from core.retry import call_with_retry
+from core.gemini_calls import call_gemini
 from core.security_headers import SecurityHeadersMiddleware
 
 
 # ── Gemini client wrappers ────────────────────────────────────────────────────
 # Imported here to keep lifespan readable; actual classes live in their own modules.
-
-def _transient_gemini_errors() -> tuple[type[BaseException], ...]:
-    """
-    Exception types that warrant a retry (F10): timeouts, connection drops, and
-    the transient google-api-core status errors (429/503/deadline/500). Bad
-    requests, auth, and not-found errors are intentionally excluded so they fail
-    fast. google.api_core is a google-generativeai dependency; if it is somehow
-    unavailable we still retry the stdlib transient errors.
-    """
-    errors: list[type[BaseException]] = [TimeoutError, ConnectionError]
-    try:
-        from google.api_core import exceptions as gexc
-
-        errors += [
-            gexc.TooManyRequests,       # 429
-            gexc.ResourceExhausted,     # 429 (quota)
-            gexc.ServiceUnavailable,    # 503
-            gexc.DeadlineExceeded,      # 504 / timeout
-            gexc.InternalServerError,   # 500
-            gexc.Aborted,               # transient conflict
-        ]
-    except Exception:  # noqa: BLE001 - retry set is best-effort
-        pass
-    return tuple(errors)
-
-
-# Computed once; used by both real clients.
-_GEMINI_TRANSIENT = _transient_gemini_errors()
-
 
 class GeminiProClient:
     """Thin wrapper around google-generativeai for Gemini Pro."""
@@ -103,13 +74,8 @@ class GeminiProClient:
             )
             return response.text
 
-        return call_with_retry(
-            _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini Pro generate ({self._model_name})",
+        return call_gemini(
+            _call, description=f"Gemini Pro generate ({self._model_name})", generation=True
         )
 
     def generate_deterministic(self, prompt: str) -> str:
@@ -128,13 +94,8 @@ class GeminiProClient:
             )
             return result["embedding"]
 
-        return call_with_retry(
-            _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini embed ({settings.embedding_model})",
+        return call_gemini(
+            _call, description=f"Gemini embed ({settings.embedding_model})", generation=False
         )
 
 
@@ -167,13 +128,8 @@ class GeminiFlashClient:
             )
             return response.text
 
-        return call_with_retry(
-            _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini Flash generate ({self._model_name})",
+        return call_gemini(
+            _call, description=f"Gemini Flash generate ({self._model_name})", generation=True
         )
 
 
