@@ -70,7 +70,12 @@ from agents.tutor.query_resolution import (
     resolve_retrieval_query,
 )
 from agents.tutor.state import TutorState
-from core.context_phrasing import mentions_context, strip_context_references
+from core.context_phrasing import (
+    mentions_context,
+    refers_to_learner_in_third_person,
+    strip_context_references,
+    strip_source_narration,
+)
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 
 logger = logging.getLogger(__name__)
@@ -287,11 +292,17 @@ def generate_guiding_question_node(
 
     raw = state.get("retrieval_result") or {}
     chunks = [Chunk(**c) for c in raw.get("chunks", [])]
-    result = RetrievalResult(
-        query=raw.get("query", ""),
-        chunks=chunks,
-        confidence_scores=raw.get("confidence_scores", []),
-    )
+    scores = raw.get("confidence_scores", [])
+
+    # Only passages that clear the groundedness bar on their own reach the
+    # model and the citations. All five retrieved chunks used to go in, so a
+    # low-scoring passage on three-phase loads was stitched into an answer
+    # about charges. The gate has already passed, so the best chunk clears it.
+    threshold = settings.active_groundedness_threshold
+    relevant = [(c, s) for c, s in zip(chunks, scores) if s >= threshold]
+    if relevant:
+        chunks, scores = [c for c, _ in relevant], [s for _, s in relevant]
+    result = RetrievalResult(query=raw.get("query", ""), chunks=chunks, confidence_scores=scores)
 
     context = retrieval_service.build_context_window(
         result, token_budget=settings.tutor_context_token_budget
@@ -318,8 +329,10 @@ def generate_guiding_question_node(
         prompt = "\n\n".join(parts)
         system = reply_instruction(bool(state.get("is_non_answer")))
     else:
+        # Labelled "The question", not "Student question": the label was
+        # echoed back as "the student" in the reply.
         prompt = (
-            f"Student question:\n{wrap_untrusted(topic, 'STUDENT QUESTION')}\n\n"
+            f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}\n\n"
             f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
         )
         system = system_instruction_for_level(hint_level)
@@ -335,10 +348,18 @@ def generate_guiding_question_node(
     # "the course context provided does not directly mention...". So the output
     # is sanitised too, on the same principle as the grading groundedness gate:
     # an instruction the model may ignore is not an enforcement.
-    response = strip_context_references(raw_response)
+    response = strip_source_narration(strip_context_references(raw_response))
+    if refers_to_learner_in_third_person(response):
+        # Not rewritten ("the student is considering" has no safe "you" form);
+        # loud so the prompt can be tightened if it keeps happening.
+        logger.warning(
+            "Tutor response refers to the learner in the third person (session %s): %r",
+            state.get("session_id"),
+            response[:160],
+        )
     if response != raw_response:
         logger.info(
-            "Stripped context framing from tutor response (session %s).",
+            "Stripped context framing or source narration from tutor response (session %s).",
             state.get("session_id"),
         )
     elif mentions_context(response):

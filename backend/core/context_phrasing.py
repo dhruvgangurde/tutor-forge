@@ -133,3 +133,82 @@ def strip_context_references(text: str) -> str:
     if out and out[0].islower() and text[:1].isupper():
         out = out[0].upper() + out[1:]
     return out
+
+
+# ── Tutor only: narrating the source ──────────────────────────────────────────
+#
+# The tutor opened nearly every turn with "the course material states / mentions
+# / says". The student already sees the cited sources under the reply, so the
+# narration is noise. Kept out of strip_context_references on purpose: that one
+# also cleans assessment stems, which this change is not about.
+
+_COURSE = r"(?:the\s+|your\s+)?course(?:\s+materials?|\s+notes)?"
+_NARRATING_VERB = (
+    r"(?:states|says|mentions|notes|explains|describes|indicates|shows|"
+    r"tells\s+us|points\s+out)"
+)
+
+#: "the course material states that X" -> "X". The claim is kept.
+_SOURCE_SUBJECT_RE = re.compile(
+    r"\b" + _COURSE + r"\s+" + _NARRATING_VERB + r"\s+(?:that\s+)?",
+    re.IGNORECASE,
+)
+
+#: "according to the course material, X" / "as the course mentions, X" /
+#: "as mentioned in the course material" -> removed.
+_SOURCE_QUALIFIER_RE = re.compile(
+    r"\s*,?\s*(?:"
+    r"according\s+to\s+" + _COURSE
+    + r"|as\s+" + _COURSE + r"\s+" + _NARRATING_VERB
+    + r"|as\s+(?:stated|mentioned|described|explained|noted|shown)\s+in\s+" + _COURSE
+    + r")",
+    re.IGNORECASE,
+)
+
+#: For the detector only: the tutor talking about the person it is talking to.
+_THIRD_PERSON_RE = re.compile(r"\bthe\s+(?:student|learner)(?:'s)?\b", re.IGNORECASE)
+
+
+def strip_source_narration(text: str) -> str:
+    """Remove "the course material states that…" style narration, keeping the claim."""
+    if not text:
+        return text
+    out = text
+    for pattern in (_SOURCE_QUALIFIER_RE, _SOURCE_SUBJECT_RE):
+        out = _remove_keeping_sentence_case(pattern, out)
+    out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
+    out = _WS_RE.sub(" ", out).strip()
+    return out
+
+
+def _remove_keeping_sentence_case(pattern: re.Pattern, text: str) -> str:
+    """
+    Delete each match. When a match opened a sentence, capitalise what now
+    opens it and drop the comma a leading qualifier leaves behind
+    ("According to the course, like charges repel" -> "Like charges repel").
+    """
+    out = ""
+    pos = 0
+    capitalise = False
+
+    def take(segment: str) -> str:
+        nonlocal capitalise
+        if capitalise and segment:
+            segment = segment[0].upper() + segment[1:]
+            capitalise = False
+        return segment
+
+    for m in pattern.finditer(text):
+        out += take(text[pos:m.start()])
+        pos = m.end()
+        kept = out.rstrip()
+        if not kept or kept[-1] in ".!?\n":
+            while pos < len(text) and text[pos] in ",;: ":
+                pos += 1
+            capitalise = True
+    return out + take(text[pos:])
+
+
+def refers_to_learner_in_third_person(text: str) -> bool:
+    """True when the reply calls the person it is talking to "the student"."""
+    return bool(text) and bool(_THIRD_PERSON_RE.search(text))

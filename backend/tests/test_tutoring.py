@@ -1257,13 +1257,18 @@ class TestHintLadderPrompts:
     def test_low_rungs_forbid_the_answer(self):
         ladder = self._ladder()
         for level in (0, 1):
-            assert "do not give the student the answer" in ladder[level].lower()
+            assert "do not give them the answer" in ladder[level].lower()
+        # The rungs talk about the learner as "them", never "the student", which
+        # the model echoed back ("Given that the student is considering…").
+        for level, text in ladder.items():
+            assert "the student" not in text.lower().replace('"the student"', ""), level
 
     def test_terminal_rung_requires_the_answer(self):
         text = self._ladder()[4].lower()
         assert "full explanation" in text
         assert "state the answer plainly" in text
         # The absolute that made every rung read the same must be gone up here.
+        assert "do not give them the answer" not in text
         assert "do not give the student the answer" not in text
 
     def test_directness_is_stated_at_every_level(self):
@@ -1537,8 +1542,9 @@ async def test_each_rung_sends_a_different_and_escalating_instruction(
         assert f"HINT LEVEL {level}" in text
 
     # 3. Directness escalates: the low rungs withhold, the top rung does not.
-    assert "Do not give the student the answer" in systems[0]
-    assert "Do not give the student the answer" in systems[1]
+    assert "Do not give them the answer" in systems[0]
+    assert "Do not give them the answer" in systems[1]
+    assert "Do not give them the answer" not in systems[4]
     assert "STOP short of" in systems[2]
     assert "do not withhold" in systems[4].lower()
     assert "State the answer plainly" in systems[4]
@@ -1572,7 +1578,8 @@ async def test_terminal_rung_instruction_is_distinct_from_level_three(
     # Level 3 still frames itself as a hint; level 4 must not ask a question
     # in place of the answer.
     assert "near-answer" in level_3
-    assert "Do not ask the student a guiding question in place of the answer" in level_4
+    assert "Do not ask a guiding question in place of the answer" in level_4
+    assert "Do not ask a guiding question in place of the answer" not in level_3
 
 
 @pytest.mark.asyncio
@@ -2187,3 +2194,149 @@ async def test_anchor_follows_grounded_new_questions_and_clears_on_a_refused_one
         assert await anchor_content() is None, "a refused new question leaves no open question"
     finally:
         _clear_tutor_mocks()
+
+
+# ── Answer quality: voice, narration, relevant chunks, full explanation ──────
+
+
+class TestTutorVoicePrompts:
+    """Point 5, as far as prompts can carry it; the sanitiser covers the rest."""
+
+    def _all_instructions(self):
+        from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+        return [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True)]
+
+    def test_every_instruction_speaks_to_you_and_forbids_narrating_sources(self):
+        for text in self._all_instructions():
+            assert 'Speak directly to the person you are tutoring as "you"' in text
+            assert 'Never call them "the student"' in text
+            assert 'never write "the course material states"' in text
+            assert "Never quote the material word for word" in text
+            assert "never repeat a passage that is cut off" in text
+            assert "never combine facts from unrelated passages" in text
+            # The line that taught the narration is gone.
+            assert "Say \"the course material doesn't cover that\" instead" not in text
+
+    def test_full_explanation_is_short_and_conversational(self):
+        from agents.tutor.prompts import HINT_LADDER
+
+        level_4 = HINT_LADDER[4]
+        assert "about 120 to" in level_4 and "200 words" in level_4
+        assert "No headings" in level_4
+        assert '"Conclusion"' in level_4 and '"Next steps"' in level_4
+        assert "do not compress" not in level_4
+
+    def test_reply_acknowledges_neutrally_unless_actually_correct(self):
+        from agents.tutor.prompts import reply_instruction
+
+        for text in (reply_instruction(False), reply_instruction(True)):
+            assert "Say a reply is correct only when it fully and accurately answers" in text
+            assert "If it is partly right, say which part is right and what is still missing" in text
+            assert "Do not open with praise" in text
+        assert "Do not praise it" in reply_instruction(True)
+
+
+class TestSourceNarration:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            (
+                "The course mentions that like charges repel each other. What happens next?",
+                "Like charges repel each other. What happens next?",
+            ),
+            (
+                "According to the course material, potential difference is work per unit charge.",
+                "Potential difference is work per unit charge.",
+            ),
+            ("Like charges repel, according to the course material.", "Like charges repel."),
+            (
+                "Good start. The course material states that work is done when a charge moves.",
+                "Good start. Work is done when a charge moves.",
+            ),
+            ("As mentioned in the course notes, voltage is measured in volts.", "Voltage is measured in volts."),
+            (
+                "Given that the course says like charges repel, why would that take work?",
+                "Given that like charges repel, why would that take work?",
+            ),
+            # Saying the course does not cover something is honest, not narration.
+            ("The course material does not cover that part.", "The course material does not cover that part."),
+            ("What do you think happens next?", "What do you think happens next?"),
+        ],
+    )
+    def test_strips_narration_and_keeps_the_claim(self, raw, expected):
+        from core.context_phrasing import strip_source_narration
+
+        assert strip_source_narration(raw) == expected
+
+    def test_detects_third_person_learner(self):
+        from core.context_phrasing import refers_to_learner_in_third_person
+
+        assert refers_to_learner_in_third_person("Given that the student is considering charges")
+        assert refers_to_learner_in_third_person("the learner's answer")
+        assert not refers_to_learner_in_third_person("You are close.")
+
+
+def _node_state(scores, provider_threshold_chunks):
+    from dataclasses import asdict
+
+    from retrieval.models import Chunk
+
+    chunks = [
+        Chunk(text=text, source_file="physics.pdf", page_or_slide=i + 1, course_id=uuid.UUID(int=0))
+        for i, text in enumerate(provider_threshold_chunks)
+    ]
+    return {
+        "session_id": uuid.uuid4(),
+        "question": _PD,
+        "hint_level": 3,
+        "retrieval_result": {"query": _PD, "chunks": [asdict(c) for c in chunks], "confidence_scores": scores},
+        "pedagogy_trace": {},
+    }
+
+
+def test_only_passages_that_clear_the_bar_reach_the_model_and_the_citations():
+    """Point 5: a low-scoring three-phase-load passage was stitched into the answer."""
+    from agents.tutor.nodes import generate_guiding_question_node
+    from core.config import settings
+    from retrieval.service import RetrievalService
+
+    texts = [
+        "Potential difference is the work done per unit charge between two points.",
+        "Moving a charge against an electric field requires work.",
+        "In a balanced three-phase load the phase currents have the same magnitude.",
+    ]
+    retrieval = RetrievalService.__new__(RetrievalService)  # real context and citation builders
+    gemini = _make_mock_gemini_pro()
+    saved = settings.llm_provider
+    settings.llm_provider = "ollama"
+    try:
+        bar = settings.active_groundedness_threshold  # 0.57 by default; a local .env may differ
+        scores = [bar + 0.14, bar + 0.03, bar - 0.16]
+        out = generate_guiding_question_node(_node_state(scores, texts), retrieval, gemini)
+    finally:
+        settings.llm_provider = saved
+
+    prompt = gemini.generate.call_args.args[0]
+    assert texts[0] in prompt and texts[1] in prompt
+    assert "three-phase" not in prompt
+    assert [c["page_or_slide"] for c in out["citations"]] == [1, 2]
+
+
+def test_tutor_output_is_cleaned_of_narration_and_third_person_is_logged(caplog):
+    from agents.tutor.nodes import generate_guiding_question_node
+
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.return_value = (
+        "The course mentions that like charges repel. Given that the student is "
+        "considering charges, what would moving them closer take?"
+    )
+    retrieval = _make_mock_retrieval(grounded=True)
+    with caplog.at_level(logging.WARNING, logger="agents.tutor.nodes"):
+        out = generate_guiding_question_node(
+            _node_state([0.9], ["Like charges repel."]), retrieval, gemini
+        )
+
+    assert out["response"].startswith("Like charges repel. Given that")
+    assert "course mentions" not in out["response"]
+    assert any("third person" in r.getMessage() for r in caplog.records)
