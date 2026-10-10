@@ -9,6 +9,8 @@ rejected request still counts. A fake clock stands in for real time in both the
 retry sleeps and the client-side pacing. No network, no real SDK call.
 """
 
+from itertools import pairwise
+
 import pytest
 
 from core import throttle
@@ -167,3 +169,104 @@ def test_generation_still_takes_one_slot_per_call(defaults, fake_time):
     assert fake_time.elapsed == 0
     throttle.throttle(throttle.GENERATE, "gemini-flash-lite-latest")
     assert fake_time.elapsed == pytest.approx(60.0)
+
+
+# ── 2. Reading the retry hint; never retrying inside the same window ──────────
+
+
+def _rate_limited(text_hint=None, detail_seconds=None, empty_detail=False):
+    from google.api_core import exceptions as gexc
+    from google.protobuf import duration_pb2
+    from google.rpc import error_details_pb2
+
+    details = []
+    if detail_seconds is not None:
+        details.append(error_details_pb2.RetryInfo(retry_delay=duration_pb2.Duration(seconds=detail_seconds)))
+    elif empty_detail:
+        details.append(error_details_pb2.RetryInfo())  # "retry_delay { }"
+    message = "You exceeded your current quota."
+    if text_hint:
+        message += f"\nPlease retry in {text_hint}."
+    return gexc.ResourceExhausted(message, details=details)
+
+
+@pytest.mark.parametrize(
+    "exc_kwargs, expected",
+    [
+        ({"text_hint": "396.356914ms", "empty_detail": True}, 0.396356914),
+        ({"text_hint": "18.67s", "detail_seconds": 18}, 18.0),     # structured detail first
+        ({"text_hint": "59.09s"}, 59.09),
+        ({"empty_detail": True}, None),                            # empty means unknown
+        ({"detail_seconds": 0}, None),                             # zero means unknown
+        ({}, None),
+    ],
+)
+def test_retry_hint_parsing(exc_kwargs, expected):
+    from core.gemini_calls import retry_delay_seconds
+
+    delay = retry_delay_seconds(_rate_limited(**exc_kwargs))
+    if expected is None:
+        assert delay is None
+    else:
+        assert delay == pytest.approx(expected)
+
+
+def test_a_429_with_no_usable_hint_waits_a_full_window_not_a_backoff(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    calls: list[float] = []
+
+    def flaky(**kwargs):
+        calls.append(fake_time.now)
+        if len(calls) == 1:
+            raise _rate_limited(empty_detail=True)
+        return {"embedding": [[1.0, 0.0]]}
+
+    monkeypatch.setattr(genai, "embed_content", flaky)
+    defaults.gemini_embed_rpm = 0  # pacing off: the limiter cannot help here
+    _client().embed_query("q")
+    assert calls[1] - calls[0] >= 60.0
+
+
+class _ScriptedAPI:
+    """First request succeeds, then the scripted errors, then success; records times."""
+
+    def __init__(self, fake_time, script):
+        self.time = fake_time
+        self.script = list(script)
+        self.calls: list[tuple[float, int]] = []
+
+    def embed_content(self, **kwargs):
+        content = kwargs["content"]
+        n = len(content) if isinstance(content, list) else 1
+        self.calls.append((self.time.now, n))
+        if len(self.calls) > 1 and self.script:
+            raise self.script.pop(0)
+        vectors = [[1.0, 0.0] for _ in range(n)]
+        return {"embedding": vectors if isinstance(content, list) else vectors[0]}
+
+
+def _log_replay():
+    """The three 429s from the failed upload, in order."""
+    return [
+        _rate_limited(text_hint="18.67s", detail_seconds=18),
+        _rate_limited(text_hint="396.356914ms", empty_detail=True),
+        _rate_limited(text_hint="59.09s", detail_seconds=59),
+    ]
+
+
+def test_logged_429s_replayed_never_retry_inside_the_same_window(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    api = _ScriptedAPI(fake_time, _log_replay())
+    monkeypatch.setattr(genai, "embed_content", api.embed_content)
+    defaults.gemini_max_wait_seconds = 300.0
+
+    vectors = _client().embed_documents([f"chunk {i}" for i in range(152)])
+
+    assert len(vectors) == 152
+    times = [t for t, _ in api.calls]
+    assert [n for _, n in api.calls] == [90, 62, 62, 62, 62]
+    # Each retry of the second batch starts at least a window after the attempt before it.
+    for earlier, later in pairwise(times[1:]):
+        assert later - earlier >= 60.0

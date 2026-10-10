@@ -31,6 +31,7 @@ from collections.abc import Callable
 from core.config import settings
 from core.exceptions import AIServiceBusy
 from core.retry import call_with_retry
+from core.throttle import WINDOW_SECONDS
 
 
 def _transient_gemini_errors() -> tuple[type[BaseException], ...]:
@@ -83,22 +84,37 @@ _TIMED_OUT = _timeout_errors()
 # ── Reading the server's retry delay ──────────────────────────────────────────
 
 #: "Please retry in 20.468s." / "retryDelay": "20s" / retry_delay { seconds: 20 }
+#: Each pattern captures a number and its unit ("ms" or "s"); "Please retry in
+#: 396.356914ms." is seconds / 1000, not 396 seconds.
 _DELAY_PATTERNS = (
-    re.compile(r"retry in\s+(\d+(?:\.\d+)?)\s*s", re.IGNORECASE),
-    re.compile(r"retry_?delay\"?\s*[:=]\s*\"?(\d+(?:\.\d+)?)s", re.IGNORECASE),
-    re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)", re.IGNORECASE),
+    re.compile(r"retry in\s+(\d+(?:\.\d+)?)\s*(ms|s)\b", re.IGNORECASE),
+    re.compile(r"retry_?delay\"?\s*[:=]\s*\"?(\d+(?:\.\d+)?)(ms|s)\b", re.IGNORECASE),
+    re.compile(r"retry_delay\s*\{\s*seconds:\s*(\d+)()", re.IGNORECASE),
 )
 
 
+def _positive(seconds: float) -> float | None:
+    """A delay of zero or less tells us nothing: None, not "retry now"."""
+    return seconds if seconds > 0 else None
+
+
 def _seconds(value: object) -> float | None:
-    """A delay from a Duration-like object, a "20s" string or a number."""
+    """A delay from a Duration-like object, a "20s" / "396ms" string or a number."""
     if value is None:
         return None
     if hasattr(value, "seconds"):
-        return float(getattr(value, "seconds", 0)) + float(getattr(value, "nanos", 0)) / 1e9
-    text = str(value).strip().rstrip("s")
+        # An empty "retry_delay { }" reads as 0s and 0ns: unknown, not zero.
+        return _positive(
+            float(getattr(value, "seconds", 0)) + float(getattr(value, "nanos", 0)) / 1e9
+        )
+    text = str(value).strip().lower()
+    scale = 1.0
+    if text.endswith("ms"):
+        text, scale = text[:-2], 0.001
+    elif text.endswith("s"):
+        text = text[:-1]
     try:
-        return float(text)
+        return _positive(float(text) * scale)
     except ValueError:
         return None
 
@@ -134,8 +150,25 @@ def retry_delay_seconds(exc: BaseException) -> float | None:
     for pattern in _DELAY_PATTERNS:
         m = pattern.search(text)
         if m:
-            return float(m.group(1))
+            delay = _positive(float(m.group(1)) * (0.001 if m.group(2).lower() == "ms" else 1.0))
+            if delay is not None:
+                return delay
     return None
+
+
+def rate_limit_wait(exc: BaseException) -> float | None:
+    """
+    How long to wait before retrying a failed call, or None to use the backoff.
+
+    A 429 waits at least what the server asked for. With no usable hint (an
+    empty retry_delay, or none at all) it waits a whole pacing window: a short
+    backoff would land inside the same window and spend quota on a request
+    that cannot succeed, as the free tier counts rejected requests too.
+    """
+    if not isinstance(exc, _RATE_LIMITED):
+        return None
+    delay = retry_delay_seconds(exc)
+    return delay if delay is not None else WINDOW_SECONDS
 
 
 def is_daily_quota(exc: BaseException) -> bool:
@@ -179,7 +212,7 @@ def call_gemini[T](fn: Callable[[], T], *, description: str, generation: bool) -
             retry_on=GEMINI_TRANSIENT,
             description=description,
             sleep=lambda seconds: time.sleep(seconds),
-            delay_hint=retry_delay_seconds,
+            delay_hint=rate_limit_wait,
             max_total_wait=settings.gemini_max_wait_seconds,
             stop_if=is_daily_quota,
             attempts_for=(lambda exc: 2 if is_timeout(exc) else None) if generation else None,
