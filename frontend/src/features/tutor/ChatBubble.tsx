@@ -70,8 +70,8 @@ export function ChatBubble({
   return (
     <div className={`chat-bubble-row ${role}`}>
       <div className={`chat-bubble ${role} ${isRefusal ? 'refusal' : ''}`}>
-        {/* Tutor turns are plain text under a small TUTOR label with a book
-            mark (no avatar); student turns sit in a --surface-2 bubble. */}
+        {/* Tutor turns sit in a --surface card under a small TUTOR label with
+            a book mark (no avatar); student turns sit in a --surface-2 bubble. */}
         {isTutor && (
           <div className="tutor-label">
             <BookIcon size={15} />

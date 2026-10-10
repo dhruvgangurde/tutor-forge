@@ -1738,7 +1738,8 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   flex-direction: column;
   max-width: 860px;
   margin: 0 auto;
-  height: calc(100vh - 64px - 2 * var(--space-12));
+  /* The top bar is 64px plus its 1px bottom border. */
+  height: calc(100vh - 64px - 1px - 2 * var(--space-12));
   min-height: 520px;
 }
 
@@ -1765,7 +1766,11 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   margin-top: var(--space-1);
 }
 
+/* position: relative holds the visually hidden "You:" labels inside the
+   scrolling log; without it they were placed against the page and stretched
+   the document far below the composer. */
 .chat-thread {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -1773,6 +1778,14 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   flex-direction: column;
   gap: var(--space-5);
   padding: var(--space-4) var(--space-1) var(--space-6);
+}
+
+/* The log is focusable for keyboard scrolling. Its ring is a thin inset line
+   (--field-border, 3.4:1 on --bg) rather than the accent outline, which drew
+   a heavy frame round the whole conversation. */
+.chat-thread:focus-visible {
+  outline: 2px solid var(--field-border);
+  outline-offset: -2px;
 }
 
 /* Empty chat: a serif prompt and the tutor's note; no suggestion chips. */
@@ -1824,9 +1837,19 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   border-bottom-right-radius: var(--radius-sm);
 }
 
-/* Tutor: plain text on the page under the TUTOR label. */
+/* Tutor: a --surface card with a hairline edge, under the TUTOR label. */
 .chat-bubble.tutor {
   max-width: 88%;
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+/* Keep a readable measure: message text stops at about 70 characters. */
+.chat-bubble > p,
+.chat-bubble > .markdown {
+  max-width: 70ch;
 }
 
 .chat-bubble.refusal {
@@ -2397,9 +2420,10 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
     padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--space-4));
   }
 
+  /* The 1px is the top bar's bottom border. */
   .tutor-page {
-    height: calc(100vh - var(--mobile-bar-h) - var(--tabbar-h) - var(--space-6) - var(--space-4));
-    height: calc(100dvh - var(--mobile-bar-h) - var(--tabbar-h) - env(safe-area-inset-bottom)
+    height: calc(100vh - var(--mobile-bar-h) - 1px - var(--tabbar-h) - var(--space-6) - var(--space-4));
+    height: calc(100dvh - var(--mobile-bar-h) - 1px - var(--tabbar-h) - env(safe-area-inset-bottom)
       - var(--space-6) - var(--space-4));
     min-height: 380px;
   }
