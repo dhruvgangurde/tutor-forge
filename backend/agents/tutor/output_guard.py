@@ -77,6 +77,8 @@ RULE_FRAGMENT = "fragment"
 RULE_NON_ANSWER_STATEMENT = "non_answer_statement"
 RULE_SOURCE_REFERENCE = "source_reference"
 RULE_CLAIM_QUESTION = "claim_question"
+RULE_PRONOUN_STATEMENT = "pronoun_statement"
+RULE_BACK_REFERENCE = "back_reference"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -326,6 +328,10 @@ class _AnswerSignals:
     reply_words: set[str]
     all_course_sentences: list[set[str]]  # content words of every course sentence
 
+    @property
+    def course_words(self) -> set[str]:
+        return set().union(*self.all_course_sentences)
+
 
 def _answer_signals(turn: TutorTurn, reply_words: set[str]) -> _AnswerSignals:
     topic = _content_words(turn.question)
@@ -370,6 +376,52 @@ def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
     return len(words) >= 3 and any(
         _overlap(words, course) >= 0.6 for course in signals.all_course_sentences
     )
+
+
+# ── 2a. The answer behind a pronoun ───────────────────────────────────────────
+
+_PRONOUN_SUBJECT_RE = re.compile(
+    r"^(?:it|this|that|they|these)"
+    r"(?:'s|’s|'re|’re|\s+is|\s+are|\s+means|\s+refers\s+to|\s+represents|\s+measures)\b",
+    re.IGNORECASE,
+)
+
+
+def _pronoun_states_answer(statement: str, previous: str | None, signals: _AnswerSignals) -> bool:
+    """
+    "It's the work or energy per unit charge..." straight after a sentence about
+    the topic (or opening the reply) is the answer with "it" for the topic.
+    Trips when what follows the verb has 3+ content words, at least half of
+    them from the course, and they are not mostly the student's own words.
+    """
+    if _is_question(statement) or not signals.needed:
+        return False
+    plain = _plain(statement)
+    m = _PRONOUN_SUBJECT_RE.match(plain)
+    if not m:
+        return False
+    if previous is not None and len(_content_words(previous) & signals.topic) < signals.needed:
+        return False  # "it" is probably not the topic
+    complement = _content_words(plain[m.end():])
+    if len(complement) < 3:
+        return False  # "That's a common mix-up."
+    if _overlap(complement, signals.reply_words) >= 0.6:
+        return False  # restating what they said correctly
+    return _overlap(complement, signals.course_words) >= 0.5
+
+
+# ── After a removed answer sentence ───────────────────────────────────────────
+
+_BACK_REFERENCE = r"(?:based\s+on\s+that(?:\s+idea)?|using\s+that\s+idea|with\s+that\s+in\s+mind)"
+_TRAILING_BACK_REFERENCE_RE = re.compile(r",?\s+" + _BACK_REFERENCE + r"(?=\s*\?)", re.IGNORECASE)
+_LEADING_BACK_REFERENCE_RE = re.compile(r"^" + _BACK_REFERENCE + r"\s*,\s*", re.IGNORECASE)
+
+
+def _cut_back_reference(question: str) -> str:
+    """ "Can you define it based on that idea?" -> "Can you define it?" """
+    out = _TRAILING_BACK_REFERENCE_RE.sub("", question)
+    led = _LEADING_BACK_REFERENCE_RE.sub("", out)
+    return _capitalise(led) if led != out else out
 
 
 # ── 2c. A yes/no question that carries the answer ─────────────────────────────
@@ -536,21 +588,39 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     low_rung = turn.hint_level <= MAX_ANSWER_GUARD_LEVEL
     signals = _answer_signals(turn, reply_words) if low_rung else None
 
-    def run(rule: str, fix) -> None:
-        changed = False
+    def run(rule: str, fix, *, answer: bool = False, with_previous: bool = False) -> None:
+        """
+        Apply ``fix`` to every sentence in order. ``with_previous`` also passes
+        the sentence before it (as it stood before this pass, None for the
+        first). ``answer`` marks a pass that removes answer sentences: the
+        question right after a removed one loses "based on that idea" and the
+        like, which would otherwise point at nothing.
+        """
+        changed = cut_back = pending = False
+        previous = None
         for line in lines:
             if line is None:
                 continue
             kept = []
             for sentence in line.sentences:
-                new = fix(sentence)
+                new = fix(sentence, previous) if with_previous else fix(sentence)
+                previous = sentence
                 if new != sentence:
                     changed = True
-                if new:
-                    kept.append(new)
+                if not new:
+                    pending = pending or answer
+                    continue
+                if pending and _is_question(new):
+                    trimmed = _cut_back_reference(new)
+                    cut_back = cut_back or trimmed != new
+                    new = trimmed
+                pending = False
+                kept.append(new)
             line.sentences = kept
         if changed:
             tripped.append(rule)
+        if cut_back:
+            tripped.append(RULE_BACK_REFERENCE)
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
@@ -565,7 +635,16 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 return None if _states_answer(s, signals) else s
             return _cut_leading_clause(s, lambda clause: _states_answer(clause, signals))
 
-        run(RULE_STATES_ANSWER, no_answer)
+        run(RULE_STATES_ANSWER, no_answer, answer=True)
+
+        # 2a. The same answer behind a pronoun: "It's the work or energy per
+        # unit charge..." right after a sentence about the topic.
+        run(
+            RULE_PRONOUN_STATEMENT,
+            lambda s, previous: None if _pronoun_states_answer(s, previous, signals) else s,
+            answer=True,
+            with_previous=True,
+        )
 
         # 2b. After a non-answer the tutor only asks a smaller question: no
         # statement about the topic at all, however it is worded.
@@ -575,7 +654,7 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                     return None if _non_answer_statement(s, signals) else s
                 return _cut_leading_clause(s, lambda clause: _non_answer_statement(clause, signals))
 
-            run(RULE_NON_ANSWER_STATEMENT, only_ask)
+            run(RULE_NON_ANSWER_STATEMENT, only_ask, answer=True)
 
         # 2c. A yes/no question whose claim gives the answer away: after a
         # non-answer below Hint 3 judged as strictly as a statement, and on the

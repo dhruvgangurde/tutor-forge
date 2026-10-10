@@ -15,6 +15,7 @@ from agents.tutor.output_guard import (
     PATH_HINT,
     PATH_NEW_QUESTION,
     PATH_REPLY,
+    RULE_BACK_REFERENCE,
     RULE_CLAIM_QUESTION,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
@@ -22,6 +23,7 @@ from agents.tutor.output_guard import (
     RULE_INVENTED_REFERENCE,
     RULE_NON_ANSWER_STATEMENT,
     RULE_ONE_QUESTION,
+    RULE_PRONOUN_STATEMENT,
     RULE_SOURCE_REFERENCE,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
@@ -940,3 +942,122 @@ def test_claim_rule_logs_only_rule_path_and_level(caplog):
     assert [r.getMessage() for r in caplog.records] == [
         "[TUTOR-GUARD] rule=claim_question path=new_question hint_level=0"
     ]
+
+
+# ── The answer behind a pronoun (levels 0-2, every path) ──────────────────────
+
+_PRONOUN_COURSE = (
+    "Potential difference is the work done per unit charge in moving a charge between two "
+    "points. Work is required to move a charge against the force of attraction or repulsion "
+    "between charges."
+)
+_LIVE_PRONOUN = (
+    "It's the work or energy per unit charge utilized when charges are moved to overcome the "
+    "force of attraction or repulsion."
+)
+
+
+def _pronoun_guard(text, *, path=PATH_REPLY, level=1, reply="is it about batteries?", non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PD,
+            course_text=_PRONOUN_COURSE,
+            student_reply=reply if path == PATH_REPLY else None,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+#: The prototype table from the round 1e proposal: (sentence, previous sentence or None, trips).
+_PRONOUN_TABLE = [
+    (_LIVE_PRONOUN, "The potential difference is not the product of current and resistance.", True),
+    ("It is the work done per unit charge.", "Potential difference is not current times resistance.", True),
+    ("It is the work done per unit charge.", None, True),
+    ("That's a common mix-up.", "Potential difference is not current times resistance.", False),
+    ("It's the key idea in this chapter.", "Potential difference matters.", False),
+    # Known miss, kept visible: "it" follows a sentence that is not about the
+    # topic, so the rule does not assume "it" means the topic.
+    ("It's the work done per unit charge.", "Think about lifting a box.", False),
+    ("This is related to energy, so think about what gets used up.", "Potential difference matters in circuits.", False),
+    ("It's okay to be unsure about this.", None, False),
+]
+
+
+@pytest.mark.parametrize("sentence, previous, trips", _PRONOUN_TABLE)
+def test_pronoun_table(sentence, previous, trips):
+    head = previous + " " if previous else ""
+    question = "What do you think comes next?"
+    out, tripped = _pronoun_guard(head + sentence + " " + question)
+    if trips:
+        assert out == head + question
+        assert RULE_PRONOUN_STATEMENT in tripped
+    else:
+        assert out == head + sentence + " " + question
+        assert RULE_PRONOUN_STATEMENT not in tripped
+
+
+@pytest.mark.parametrize(
+    "path, level",
+    [(PATH_NEW_QUESTION, 0), (PATH_HINT, 1), (PATH_HINT, 2), (PATH_REPLY, 0), (PATH_REPLY, 2)],
+)
+def test_pronoun_statement_is_removed_on_every_path_below_hint_3(path, level):
+    out, tripped = _pronoun_guard(
+        "Potential difference is not current times resistance. " + _LIVE_PRONOUN + " What moves a charge?",
+        path=path,
+        level=level,
+    )
+    assert out == "Potential difference is not current times resistance. What moves a charge?"
+    assert RULE_PRONOUN_STATEMENT in tripped
+
+
+@pytest.mark.parametrize(
+    "path, level, reply, non_answer",
+    [
+        (PATH_HINT, 3, None, False),
+        (PATH_HINT, 4, None, False),
+        (PATH_REPLY, 3, "is it about batteries?", False),
+        (PATH_REPLY, 4, "no", True),
+    ],
+)
+def test_pronoun_statement_is_kept_at_hint_3_and_the_full_explanation(path, level, reply, non_answer):
+    text = "Potential difference is not current times resistance. " + _LIVE_PRONOUN + " What moves a charge?"
+    out, tripped = _pronoun_guard(text, path=path, level=level, reply=reply, non_answer=non_answer)
+    assert out == text
+    assert RULE_PRONOUN_STATEMENT not in tripped
+
+
+def test_pronoun_restatement_of_their_own_words_is_kept():
+    text = "Potential difference, yes. It is the work done per unit charge. What does it compare?"
+    out, tripped = _pronoun_guard(text, reply="it is the work done per unit charge")
+    assert out == text
+    assert tripped == []
+
+
+def test_pronoun_questions_are_never_judged():
+    text = "Potential difference is not current. Is it the work done per unit charge?"
+    assert _pronoun_guard(text) == (text, [])
+
+
+@pytest.mark.parametrize(
+    "question, expected",
+    [
+        ("Can you try to define it based on that idea?", "Can you try to define it?"),
+        ("Can you try to define it, based on that?", "Can you try to define it?"),
+        ("What would you say, using that idea?", "What would you say?"),
+        ("With that in mind, what would you say?", "What would you say?"),
+    ],
+)
+def test_back_reference_is_cut_from_the_question_after_a_removed_answer(question, expected):
+    out, tripped = _pronoun_guard(
+        "Potential difference is not current times resistance. " + _LIVE_PRONOUN + " " + question
+    )
+    assert out == "Potential difference is not current times resistance. " + expected
+    assert tripped == [RULE_PRONOUN_STATEMENT, RULE_BACK_REFERENCE]
+
+
+def test_back_reference_is_kept_when_nothing_was_removed():
+    text = "Think about lifting a box. Can you try to define it based on that idea?"
+    assert _pronoun_guard(text) == (text, [])

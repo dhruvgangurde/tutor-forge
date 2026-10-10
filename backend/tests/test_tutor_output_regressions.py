@@ -38,25 +38,26 @@ _COURSE_CHUNKS = [
 ]
 
 
-def _state(*, hint_level=0, reply=None, non_answer=False):
+def _state(*, hint_level=0, reply=None, non_answer=False, question=_PD, course_chunks=None):
+    texts = course_chunks if course_chunks is not None else _COURSE_CHUNKS
     chunks = [
         Chunk(text=t, source_file="physics.pdf", page_or_slide=40 + i, course_id=uuid.UUID(int=0))
-        for i, t in enumerate(_COURSE_CHUNKS)
+        for i, t in enumerate(texts)
     ]
     state = {
         "session_id": uuid.uuid4(),
-        "question": reply if reply is not None else _PD,
-        "prior_question": _PD if reply is not None else None,
+        "question": reply if reply is not None else question,
+        "prior_question": question if reply is not None else None,
         "tutor_last_message": "What do you think potential difference measures?" if reply else None,
-        "resolved_question": _PD,
+        "resolved_question": question,
         "retrieval_query_source": "prior_turn" if reply is not None else "message",
         "turn_kind": "reply" if reply is not None else "new_question",
         "is_non_answer": non_answer,
         "hint_level": hint_level,
         "retrieval_result": {
-            "query": _PD,
+            "query": question,
             "chunks": [asdict(c) for c in chunks],
-            "confidence_scores": [0.9, 0.85],
+            "confidence_scores": [0.9 - 0.05 * i for i in range(len(chunks))],
         },
         "pedagogy_trace": {},
     }
@@ -252,3 +253,29 @@ def test_yes_no_question_restating_the_course_after_no_is_dropped():
 def test_hint_with_a_yes_no_claim_question_is_unchanged():
     question = "Do you think potential difference is the work done per unit charge?"
     assert _run(question, hint=True, hint_level=0) == question  # escalates to Hint 1
+
+
+# ── Round 1e: answer leaks seen live at hint levels 0-2 ───────────────────────
+
+_PD_LIVE_COURSE = [
+    (
+        "Potential difference is the work done per unit charge in moving a charge between two "
+        "points. Work is required to move a charge against the force of attraction or repulsion "
+        "between charges."
+    ),
+]
+
+
+def test_pronoun_restatement_of_the_course_after_a_wrong_attempt_is_removed():
+    out = _run(
+        "That's not quite right. The potential difference is not the product of current and "
+        "resistance. It's the work or energy per unit charge utilized when charges are moved to "
+        "overcome the force of attraction or repulsion. Can you try to define it based on that idea?",
+        reply="is it current times resistance?",
+        hint_level=1,
+        course_chunks=_PD_LIVE_COURSE,
+    )
+    assert out == (
+        "That's not quite right. The potential difference is not the product of current and "
+        "resistance. Can you try to define it?"
+    )
