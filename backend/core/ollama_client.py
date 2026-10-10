@@ -273,6 +273,15 @@ class OllamaClient:
             description=f"Ollama embed ({self._embedding_model})",
         )
 
+    @property
+    def embedding_model_name(self) -> str:
+        """Recorded on new collections; see retrieval/service.py."""
+        return self._embedding_model
+
+    #: Not known before the first call (it depends on the pulled model), so new
+    #: collections are checked against a stored vector instead.
+    embedding_dimensions = None
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """
         Provider-neutral batch form. One request per text, exactly as before:

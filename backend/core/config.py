@@ -33,7 +33,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_pro_model: str = "gemini-2.5-pro"
     gemini_flash_model: str = "gemini-2.5-flash"
-    embedding_model: str = "text-embedding-004"
+    # text-embedding-004 is retired; gemini-embedding-001 returns 3072
+    # dimensions unless asked for fewer, so the size is set explicitly and used
+    # for indexing and querying alike. Existing 768-dimension collections stay
+    # the right size (but see retrieval/service.py: a different model is still
+    # refused, because its vectors are not comparable).
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
 
     # ── ChromaDB ──────────────────────────────────────────────────────────────
     # Path is relative to the working directory (backend/) when uvicorn is launched.

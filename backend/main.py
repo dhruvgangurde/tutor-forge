@@ -88,6 +88,16 @@ class GeminiProClient:
         """Enforces temperature=0 — required for all grading calls (FR-05.3)."""
         return self.generate(prompt, temperature=0.0)
 
+    @property
+    def embedding_model_name(self) -> str:
+        """Recorded on new collections; see retrieval/service.py."""
+        return settings.embedding_model
+
+    @property
+    def embedding_dimensions(self) -> int:
+        """One configured size for indexing and querying alike."""
+        return settings.embedding_dimensions
+
     def embed(self, text: str) -> list[float]:
         import google.generativeai as genai
 
@@ -97,6 +107,7 @@ class GeminiProClient:
                 model=settings.embedding_model,
                 content=text,
                 task_type="retrieval_document",
+                output_dimensionality=settings.embedding_dimensions,
                 request_options={"timeout": settings.gemini_timeout_seconds},
             )
             return result["embedding"]
@@ -131,6 +142,10 @@ class GeminiProClient:
                 model=settings.embedding_model,
                 content=texts,
                 task_type=task_type,
+                # The same size for chunks and queries: a query embedded at the
+                # model's default (3072 for gemini-embedding-001) cannot be
+                # compared with chunks indexed at 768.
+                output_dimensionality=settings.embedding_dimensions,
                 request_options={"timeout": settings.gemini_timeout_seconds},
             )
             vectors = result["embedding"]
