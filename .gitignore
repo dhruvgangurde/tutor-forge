@@ -48,7 +48,7 @@ frontend/coverage/
 *~
 
 # AI assistant / GUIDE-AI-SDP tooling (kept local, not published)
-CLAUDE.md
+
 CLAUDE.local.md
 .claude/
 .project-guide-rule-details/
