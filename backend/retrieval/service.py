@@ -275,11 +275,13 @@ class RetrievalService:
         result = RetrievalResult(query=query)
         collection_name = _collection_name(course_id)
 
+        # Counts and scores only: the query is what the student typed, and the
+        # chunks are course text, so neither belongs in the log.
         logger.info(
-            "[RETRIEVE-START] course_id=%s collection_name=%s query=%r top_k=%d",
+            "[RETRIEVE-START] course_id=%s collection_name=%s query_chars=%d top_k=%d",
             course_id,
             collection_name,
-            query,
+            len(query),
             top_k,
         )
 
@@ -307,9 +309,8 @@ class RetrievalService:
         query_embedding = self._gemini.embed_query(query)
         self._check_vector_size(collection, meta, collection_name, len(query_embedding))
         logger.info(
-            "[RETRIEVE-QUERY-EMBEDDED] course_id=%s query=%r embedding_dim=%d",
+            "[RETRIEVE-QUERY-EMBEDDED] course_id=%s embedding_dim=%d",
             course_id,
-            query,
             len(query_embedding),
         )
 
@@ -325,9 +326,8 @@ class RetrievalService:
         distances = response.get("distances", [[]])[0]
 
         logger.info(
-            "[RETRIEVE-RESPONSE] course_id=%s query=%r results=%d",
+            "[RETRIEVE-RESPONSE] course_id=%s results=%d",
             course_id,
-            query,
             len(docs),
         )
 
@@ -337,15 +337,11 @@ class RetrievalService:
             page_or_slide = meta.get("page_or_slide")
 
             logger.info(
-                "[RETRIEVE-RESULT-%d] rank=%d distance=%.4f confidence=%.4f "
-                "source=%s page=%s text_preview=%r",
+                "[RETRIEVE-RESULT-%d] rank=%d distance=%.4f confidence=%.4f",
                 idx,
                 idx,
                 dist,
                 confidence,
-                source_file,
-                page_or_slide,
-                doc[:150].replace("\n", " "),
             )
 
             chunk = Chunk(
@@ -358,9 +354,8 @@ class RetrievalService:
             result.confidence_scores.append(confidence)
 
         logger.info(
-            "[RETRIEVE-COMPLETE] course_id=%s query=%r top_score=%.4f chunks=%d",
+            "[RETRIEVE-COMPLETE] course_id=%s top_score=%.4f chunks=%d",
             course_id,
-            query,
             result.top_score if not result.is_empty() else 0.0,
             len(result.chunks),
         )

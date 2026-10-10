@@ -207,3 +207,27 @@ def test_empty_legacy_collection_is_not_refused(chroma):
     )
     service = RetrievalService(chroma_client=chroma, gemini_client=_Embedder())
     assert service.retrieve(course_id, "q").chunks == []
+
+
+# ── Logs carry counts and scores, never text ──────────────────────────────────
+
+
+def test_retrieve_logs_no_query_or_chunk_text(chroma, caplog):
+    secret_query = "my private question about zebra striping"
+    secret_chunk = "confidential course passage on quokka habitats"
+    service = RetrievalService(chroma_client=chroma, gemini_client=_Embedder())
+    course_id = uuid.uuid4()
+    service.create_course_collection(course_id)
+    service.add_chunks(
+        course_id,
+        [Chunk(text=secret_chunk, source_file="notes.pdf", page_or_slide=2, course_id=course_id, chunk_id="s0")],
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="retrieval.service"):
+        result = service.retrieve(course_id, secret_query, top_k=1)
+
+    assert len(result.chunks) == 1
+    text = " ".join(r.getMessage() for r in caplog.records).lower()
+    for fragment in ("zebra", "private question", "quokka", "confidential"):
+        assert fragment not in text
+    assert any("[RETRIEVE-COMPLETE]" in r.getMessage() and "chunks=1" in r.getMessage() for r in caplog.records)
