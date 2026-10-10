@@ -272,6 +272,7 @@ def generate_guiding_question_node(
     string "give me the answer" produces nonsense, and the retrieved context is
     about the prior topic anyway.
     """
+    from core.config import settings
     from retrieval.models import Chunk, RetrievalResult
 
     raw = state.get("retrieval_result") or {}
@@ -282,7 +283,9 @@ def generate_guiding_question_node(
         confidence_scores=raw.get("confidence_scores", []),
     )
 
-    context = retrieval_service.build_context_window(result, token_budget=3000)
+    context = retrieval_service.build_context_window(
+        result, token_budget=settings.tutor_context_token_budget
+    )
     citations = retrieval_service.build_citation_bundle(result)
 
     hint_level = state["hint_level"]

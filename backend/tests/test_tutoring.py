@@ -1685,3 +1685,30 @@ async def test_hint_after_an_off_topic_question_refuses_rather_than_falling_back
     assert gemini.generate.call_count == calls_before, "AC-02: no LLM call on a refusal"
     # The ladder does not advance on a refused turn.
     assert data["hint_level"] == 0
+
+
+# ── Config: the tutor's context budget comes from settings ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tutor_context_budget_comes_from_settings(client, student_token, ready_course_id):
+    """The retrieved-text budget was a literal 3000 in the node; it is config now."""
+    from core.config import Settings, settings
+
+    assert Settings().tutor_context_token_budget == 3000
+    retrieval = _make_mock_retrieval(grounded=True)
+    saved = settings.tutor_context_token_budget
+    settings.tutor_context_token_budget = 1234
+    app.dependency_overrides[get_retrieval_service] = lambda: retrieval
+    app.dependency_overrides[get_gemini_pro] = lambda: _make_mock_gemini_pro()
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        settings.tutor_context_token_budget = saved
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 200, resp.text
+    assert retrieval.build_context_window.call_args.kwargs["token_budget"] == 1234

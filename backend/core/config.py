@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     # Re-measure if the embedding model changes; the number is scale-specific.
     groundedness_threshold_ollama: float = 0.57
 
+    # ── Tutor ─────────────────────────────────────────────────────────────────
+    # How much retrieved course text one tutor turn may put in front of the
+    # model, in approximate tokens (RetrievalService.build_context_window uses
+    # 4 characters per token). Chunks are added best-first until it is spent.
+    tutor_context_token_budget: int = 3000
+
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
