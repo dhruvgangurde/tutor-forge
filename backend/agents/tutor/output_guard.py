@@ -74,6 +74,7 @@ RULE_UNUSED_NUMBER = "unused_number"
 RULE_FALLBACK = "fallback"
 RULE_ONE_QUESTION = "one_question"
 RULE_FRAGMENT = "fragment"
+RULE_NON_ANSWER_STATEMENT = "non_answer_statement"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -303,17 +304,21 @@ class _AnswerSignals:
     needed: int
     course_sentences: list[set[str]]   # non-topic words of course sentences on the topic
     reply_words: set[str]
+    all_course_sentences: list[set[str]]  # content words of every course sentence
 
 
 def _answer_signals(turn: TutorTurn, reply_words: set[str]) -> _AnswerSignals:
     topic = _content_words(turn.question)
     needed = min(2, len(topic))
     course_sentences = []
+    all_course_sentences = []
     for sentence in re.split(r"(?<=[.!?])\s+|\n+", turn.course_text or ""):
         words = _content_words(sentence)
+        if words:
+            all_course_sentences.append(words)
         if needed and len(words & topic) >= needed:
             course_sentences.append(words - topic)
-    return _AnswerSignals(topic, needed, course_sentences, reply_words)
+    return _AnswerSignals(topic, needed, course_sentences, reply_words, all_course_sentences)
 
 
 def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
@@ -329,6 +334,22 @@ def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
     if _DEFINING_RE.search(plain):
         return True
     return len(rest) >= 3 and any(_overlap(rest, course) >= 0.6 for course in signals.course_sentences)
+
+
+def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
+    """
+    After "no" or "I don't know" below Hint 3, the stricter test: any statement
+    that names the topic, or mostly repeats a course sentence, is telling them
+    something about the topic. "Potential difference is related to the work..."
+    passes the definition test above; it does not pass this one.
+    """
+    plain = _SUBORDINATE_RE.sub("", _plain(statement))
+    words = _content_words(plain)
+    if signals.needed and len(words & signals.topic) >= signals.needed:
+        return True
+    return len(words) >= 3 and any(
+        _overlap(words, course) >= 0.6 for course in signals.all_course_sentences
+    )
 
 
 # ── 3. A verdict after a non-answer ───────────────────────────────────────────
@@ -484,6 +505,16 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
             return _cut_leading_clause(s, lambda clause: _states_answer(clause, signals))
 
         run(RULE_STATES_ANSWER, no_answer)
+
+        # 2b. After a non-answer the tutor only asks a smaller question: no
+        # statement about the topic at all, however it is worded.
+        if turn.is_non_answer:
+            def only_ask(s: str) -> str | None:
+                if not _is_question(s):
+                    return None if _non_answer_statement(s, signals) else s
+                return _cut_leading_clause(s, lambda clause: _non_answer_statement(clause, signals))
+
+            run(RULE_NON_ANSWER_STATEMENT, only_ask)
 
     # 3. No verdict on a non-answer.
     if turn.is_non_answer:

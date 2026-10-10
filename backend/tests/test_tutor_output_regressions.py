@@ -14,6 +14,8 @@ import uuid
 from dataclasses import asdict
 from unittest.mock import MagicMock
 
+import pytest
+
 from agents.tutor.nodes import advance_hint_node, generate_guiding_question_node
 from core.context_phrasing import strip_context_references
 from retrieval.models import Chunk
@@ -163,3 +165,11 @@ def test_live_garbled_join_is_repaired_into_sentences():
     assert ".," not in out
     assert ", potential" not in out
     assert "potential difference. Potential difference is related to the work" in out
+
+
+@pytest.mark.parametrize("reply", ["no", "I don't know"])
+def test_no_course_statement_after_a_non_answer_at_level_0(reply):
+    out = _run(_LIVE_AFTER_NO, reply=reply, non_answer=True)
+    assert "related to the work" not in out
+    assert "not sure about the concept" not in out
+    assert out.startswith("Can you try to describe in your own words what potential difference means")

@@ -19,6 +19,7 @@ from agents.tutor.output_guard import (
     RULE_FALLBACK,
     RULE_FRAGMENT,
     RULE_INVENTED_REFERENCE,
+    RULE_NON_ANSWER_STATEMENT,
     RULE_ONE_QUESTION,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
@@ -536,3 +537,68 @@ def test_ordinary_punctuation_is_not_treated_as_debris(text):
 def test_a_variable_opening_an_orphan_keeps_its_case():
     out, _ = _guard("Look at the equation., x is the unknown here. What is x?", level=3)
     assert out == "Look at the equation. x is the unknown here. What is x?"
+
+
+# ── After a non-answer below Hint 3: ask, state nothing about the topic ───────
+
+_PARAPHRASE = (
+    "Potential difference is related to the work required to move charges against the "
+    "force of attraction or repulsion between them."
+)
+
+
+@pytest.mark.parametrize("level", [0, 1, 2])
+def test_topic_statement_after_a_non_answer_is_removed(level):
+    out, tripped = _guard(
+        _PARAPHRASE + " What do you think makes it hard to push two charges together?",
+        path=PATH_REPLY,
+        level=level,
+        reply="no",
+        non_answer=True,
+    )
+    assert out == "What do you think makes it hard to push two charges together?"
+    assert RULE_NON_ANSWER_STATEMENT in tripped
+
+
+def test_course_wording_without_the_topic_is_removed_after_a_non_answer():
+    out, tripped = _guard(
+        "The work done per unit charge in moving a charge matters here. What does it take to lift a box?",
+        path=PATH_REPLY,
+        reply="I don't know",
+        non_answer=True,
+    )
+    assert out == "What does it take to lift a box?"
+    assert tripped == [RULE_NON_ANSWER_STATEMENT]
+
+
+def test_topic_lead_in_to_a_question_is_cut_after_a_non_answer():
+    out, tripped = _guard(
+        "Since potential difference is related to work, what does it take to lift a box?",
+        path=PATH_REPLY,
+        reply="no",
+        non_answer=True,
+    )
+    assert out == "What does it take to lift a box?"
+    assert RULE_NON_ANSWER_STATEMENT in tripped
+
+
+def test_only_topic_statements_after_a_non_answer_fall_back():
+    out, tripped = _guard(_PARAPHRASE, path=PATH_REPLY, reply="no", non_answer=True)
+    assert out == GUARD_FALLBACK_NON_ANSWER
+    assert tripped == [RULE_NON_ANSWER_STATEMENT, RULE_FALLBACK]
+
+
+def test_scaffolding_without_the_topic_is_kept_after_a_non_answer():
+    text = "That's fine. Think about pushing a heavy box up a hill. What makes it hard?"
+    assert _guard(text, path=PATH_REPLY, reply="no", non_answer=True) == (text, [])
+
+
+def test_same_statement_after_a_real_attempt_keeps_the_current_rules():
+    text = _PARAPHRASE + " What do you think that work is done against?"
+    assert _guard(text, path=PATH_REPLY, reply="is it about energy?") == (text, [])
+
+
+@pytest.mark.parametrize("level", [3, 4])
+def test_hint_3_and_full_explanation_keep_topic_statements_after_a_non_answer(level):
+    text = _PARAPHRASE + " Can you see why that takes work?"
+    assert _guard(text, path=PATH_REPLY, level=level, reply="no", non_answer=True) == (text, [])
