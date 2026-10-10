@@ -279,3 +279,26 @@ def test_pronoun_restatement_of_the_course_after_a_wrong_attempt_is_removed():
         "That's not quite right. The potential difference is not the product of current and "
         "resistance. Can you try to define it?"
     )
+
+
+_SERIES_Q = "formula for equivalent resistance of resistors in series"
+_SERIES_COURSE = [
+    (
+        "For resistors in series, the equivalent resistance is the sum of the individual "
+        "resistances: R_T = R1 + R2 + R3. The same current flows through each resistor."
+    ),
+]
+
+
+def test_formula_in_a_hint_below_hint_3_is_removed():
+    # The live hint, verbatim up to "Take the next step:"; its elided ending is
+    # completed with a question so the test can check that it survives.
+    out = _run(
+        "So, if you have two resistors R1 and R2 in series, the equivalent resistance R_T is: "
+        "R_T = R1 + R2 Take the next step: what happens if you add a third resistor?",
+        hint=True,
+        hint_level=1,  # advance_hint_node escalates to Hint 2
+        question=_SERIES_Q,
+        course_chunks=_SERIES_COURSE,
+    )
+    assert out == "Take the next step: what happens if you add a third resistor?"

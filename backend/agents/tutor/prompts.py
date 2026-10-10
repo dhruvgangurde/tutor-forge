@@ -146,8 +146,8 @@ MAX_ANSWER_GUARD_LEVEL = 2
 #: Below Hint 3, on every path (a new question, a hint, or a reply).
 _ASK_DO_NOT_TELL = """\
 Ask, do not tell: do not state the definition or the answer to THE QUESTION,
-not even as a lead-in to your question. Do not use specific numbers from a
-worked example unless they used them first.
+not even as a lead-in to your question. Do not write the formula either. Do not
+use specific numbers from a worked example unless they used them first.
 """
 
 #: Every rung and every reply.

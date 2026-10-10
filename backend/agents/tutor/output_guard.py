@@ -79,6 +79,7 @@ RULE_SOURCE_REFERENCE = "source_reference"
 RULE_CLAIM_QUESTION = "claim_question"
 RULE_PRONOUN_STATEMENT = "pronoun_statement"
 RULE_BACK_REFERENCE = "back_reference"
+RULE_FORMULA = "formula"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -159,25 +160,47 @@ def _split_sentences(body: str) -> list[str]:
     tail = body[start:].strip()
     if tail:
         sentences.append(tail)
-    return sentences
+    return [part for sentence in sentences for part in _split_after_formula(sentence)]
+
+
+def _split_after_formula(sentence: str) -> list[str]:
+    """
+    "R_T = R1 + R2 Take the next step: ...?" has no full stop after the
+    formula, so it read as one long question. A formula followed directly by a
+    capitalised word ends its sentence.
+    """
+    parts = []
+    start = 0
+    for m in _FORMULA_BREAK_RE.finditer(sentence):
+        parts.append(sentence[start:m.end()].strip())
+        start = m.end()
+    parts.append(sentence[start:].strip())
+    return [p for p in parts if p]
 
 
 @dataclass
 class _Line:
     marker: str
     sentences: list[str] = field(default_factory=list)
+    in_code: bool = False  # inside a fenced code block, or a fence line itself
 
 
 def _parse(text: str) -> list[_Line | None]:
     """Lines of the reply; None stands for a blank line (a paragraph break)."""
     lines: list[_Line | None] = []
+    in_fence = False
     for raw in text.split("\n"):
         if not raw.strip():
             lines.append(None)
             continue
+        fence = raw.lstrip().startswith("```")
         m = _MARKER_RE.match(raw)
         marker = m.group(1) if m else ""
-        lines.append(_Line(marker=marker, sentences=_split_sentences(raw[len(marker):])))
+        line = _Line(marker=marker, sentences=_split_sentences(raw[len(marker):]))
+        line.in_code = in_fence or fence
+        if fence:
+            in_fence = not in_fence
+        lines.append(line)
     return lines
 
 
@@ -509,6 +532,136 @@ def _cut_reference_qualifier(sentence: str) -> str | None:
     return _capitalise(out)
 
 
+# ── 2d. Formulas (hint levels 0-2) ────────────────────────────────────────────
+#
+# "R_T = R1 + R2" is the answer to "what is the formula for resistors in
+# series?" just as much as a sentence is. A formula here is an =, ≈ or ∝ with
+# symbols on both sides and at least two distinct symbols, so "R1 = 2 Ω" (a
+# given) and "2 + 3 = 5" (arithmetic) are not formulas.
+
+_SUBSCRIPT_DIGITS = str.maketrans("₀₁₂₃₄₅₆₇₈₉", "0123456789")
+#: One term of a formula: a symbol (R, R1, R₁, R_T), a short capital product
+#: such as "IR", a number, or an operator. A letter followed by a lowercase
+#: letter is a word, not a symbol.
+_TERM = (
+    r"(?:[A-Z]{2,3}(?![A-Za-z])"
+    r"|[A-Za-z](?:_[A-Za-z0-9]+|[0-9]+|[₀-₉]+)?(?![a-z])"
+    r"|\d+(?:[.,]\d+)?"
+    r"|[()+\-−*/×·÷√^²³])"
+)
+_SIDE = r"(?:" + _TERM + r"[ \t]*)+"
+_FORMULA_RE = re.compile(r"(?<![A-Za-z0-9_])(" + _SIDE + r")(?:=|≈|∝)[ \t]*(" + _SIDE + r")")
+#: A formula followed straight away by a capitalised word: the sentence break.
+_FORMULA_BREAK_RE = re.compile(
+    r"(?:=|≈|∝)(?:[ \t]*" + _TERM + r")+(?=[ \t]+[A-Z][a-z])"
+)
+_SYMBOL_RE = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Z]{2,3}|[A-Za-z](?:_[A-Za-z0-9]+|[0-9]+|[₀-₉]+)?)"
+    r"(?![A-Za-z0-9_₀-₉])"
+)
+_CODE_SPAN_RE = re.compile(r"`[^`]*`")
+
+
+def _symbols(expr: str, split_products: bool = True) -> set[str]:
+    """Symbols in an expression, normalised: R_T -> rt, R₁ -> r1, "IR" -> i, r."""
+    out: set[str] = set()
+    for token in _SYMBOL_RE.findall(expr.translate(_SUBSCRIPT_DIGITS)):
+        if len(token) > 1 and token.isupper() and token.isalpha():
+            if split_products:
+                out.update(c.lower() for c in token)
+            continue
+        out.add(token.replace("_", "").lower())
+    return out
+
+
+def _formulas(text: str) -> list[tuple[set[str], set[str]]]:
+    """(all symbols, right-hand-side symbols) for each formula in ``text``; code is ignored."""
+    found = []
+    for m in _FORMULA_RE.finditer(_CODE_SPAN_RE.sub(" ", text).replace("*", " ")):
+        lhs, rhs = _symbols(m.group(1)), _symbols(m.group(2))
+        if lhs and rhs and len(lhs | rhs) >= 2:
+            found.append((lhs | rhs, rhs))
+    return found
+
+
+def _course_symbols(course_text: str) -> set[str]:
+    """Symbols the course uses: those in its formulas, plus symbol-like tokens anywhere."""
+    from_formulas = set().union(*(syms for syms, _ in _formulas(course_text)))
+    # Single symbols in running text; "a" is the article, and all-caps words
+    # such as "AC" are not split outside a formula.
+    loose = _symbols(course_text, split_products=False) - {"a"}
+    return from_formulas | loose
+
+
+def _gives_formula(
+    sentence: str,
+    intro: str | None,
+    signals: _AnswerSignals,
+    course_symbols: set[str],
+    student_symbols: set[str],
+) -> bool:
+    """
+    True for a formula from the course, or one in a sentence (or intro line)
+    about the topic -- unless the student wrote it themselves.
+    """
+    names_topic = any(
+        text and signals.needed and len(_content_words(text) & signals.topic) >= signals.needed
+        for text in (sentence, intro)
+    )
+    for syms, rhs in _formulas(sentence):
+        if syms <= student_symbols or (len(rhs) >= 2 and rhs <= student_symbols):
+            continue  # they wrote it
+        if len(syms & course_symbols) >= 2 or names_topic:
+            return True
+    return False
+
+
+def _drop_formulas(
+    lines: list[_Line | None], turn: TutorTurn, signals: _AnswerSignals, tripped: list[str]
+) -> None:
+    """
+    Remove each sentence that gives a formula away. A formula alone on its
+    line also takes the intro sentence ending in ":" on the line before it
+    ("the equivalent resistance R_T is:"), which would otherwise dangle.
+    Fenced code is never touched.
+    """
+    course_symbols = _course_symbols(turn.course_text)
+    student_symbols = _symbols(f"{turn.question} {turn.student_reply or ''}")
+    removed = cut_back = pending = False
+    previous_line: _Line | None = None
+    for line in lines:
+        if line is None:
+            continue
+        if line.in_code:
+            previous_line = line
+            continue
+        intro = None
+        if previous_line is not None and previous_line.sentences and not previous_line.in_code:
+            last = previous_line.sentences[-1]
+            if _plain(last).endswith(":"):
+                intro = last
+        alone = len(line.sentences) == 1
+        kept = []
+        for sentence in line.sentences:
+            if _gives_formula(sentence, intro if alone else None, signals, course_symbols, student_symbols):
+                removed = pending = True
+                continue
+            if pending and _is_question(sentence):
+                trimmed = _cut_back_reference(sentence)
+                cut_back = cut_back or trimmed != sentence
+                sentence = trimmed
+            pending = False
+            kept.append(sentence)
+        if alone and not kept and intro is not None:
+            previous_line.sentences.pop()
+        line.sentences = kept
+        previous_line = line
+    if removed:
+        tripped.append(RULE_FORMULA)
+    if cut_back:
+        tripped.append(RULE_BACK_REFERENCE)
+
+
 # ── Repairing joins ───────────────────────────────────────────────────────────
 #
 # A removal upstream (the context sanitiser) or here can leave debris where two
@@ -645,6 +798,9 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
             answer=True,
             with_previous=True,
         )
+
+        # 2d. No formula from the course, or about the topic, below Hint 3.
+        _drop_formulas(lines, turn, signals, tripped)
 
         # 2b. After a non-answer the tutor only asks a smaller question: no
         # statement about the topic at all, however it is worded.

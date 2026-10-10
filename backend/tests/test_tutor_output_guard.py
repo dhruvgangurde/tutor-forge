@@ -19,6 +19,7 @@ from agents.tutor.output_guard import (
     RULE_CLAIM_QUESTION,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
+    RULE_FORMULA,
     RULE_FRAGMENT,
     RULE_INVENTED_REFERENCE,
     RULE_NON_ANSWER_STATEMENT,
@@ -1061,3 +1062,213 @@ def test_back_reference_is_cut_from_the_question_after_a_removed_answer(question
 def test_back_reference_is_kept_when_nothing_was_removed():
     text = "Think about lifting a box. Can you try to define it based on that idea?"
     assert _pronoun_guard(text) == (text, [])
+
+
+# ── Formulas below Hint 3 ─────────────────────────────────────────────────────
+
+_SERIES_Q = "formula for equivalent resistance of resistors in series"
+_SERIES_COURSE = (
+    "For resistors in series, the equivalent resistance is the sum of the individual "
+    "resistances: R_T = R1 + R2 + R3."
+)
+_SERIES_COURSE_IN_WORDS = (
+    "For resistors in series, the equivalent resistance is the sum of the individual resistances."
+)
+_VOLT_COURSE = (
+    "Potential difference is the work done per unit charge. One volt is one joule per coulomb, "
+    "1 V = 1 J/C, and V = W/Q."
+)
+
+
+def _formula_guard(text, *, question=_SERIES_Q, course=_SERIES_COURSE, path=PATH_HINT, level=2,
+                   reply=None, non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=question,
+            course_text=course,
+            student_reply=reply,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+#: The prototype table from the round 1e proposal: (sentence, question, course, reply, trips).
+_FORMULA_TABLE = [
+    ("R_T = R1 + R2", _SERIES_Q, _SERIES_COURSE, None, True),
+    ("R_T = R₁ + R₂", _SERIES_Q, _SERIES_COURSE, None, True),
+    ("So the total is R_T = R1 + R2 for two resistors.", _SERIES_Q, _SERIES_COURSE, None, True),
+    ("If R1 = 2 Ω and R2 = 3 Ω, what is the total?", _SERIES_Q, _SERIES_COURSE, None, False),
+    ("Yes, R_T = R1 + R2.", _SERIES_Q, _SERIES_COURSE, "is it R1 + R2?", False),
+    ("Try `x = x + 1` in the loop.", "loops", _SERIES_COURSE, None, False),
+    ("1 V = 1 J/C.", _PD, _VOLT_COURSE, None, True),
+    ("V = W/Q.", _PD, _VOLT_COURSE, None, True),
+    ("Think of it like 2 + 3 = 5.", _PD, _VOLT_COURSE, None, False),
+    ("F = ma tells you about forces.", _PD, _VOLT_COURSE, None, False),
+    ("Here, a = b + c is just notation.", _PD, _VOLT_COURSE, None, False),
+]
+
+
+@pytest.mark.parametrize("sentence, question, course, reply, trips", _FORMULA_TABLE)
+def test_formula_table(sentence, question, course, reply, trips):
+    path = PATH_REPLY if reply else PATH_HINT
+    out, tripped = _formula_guard(sentence, question=question, course=course, path=path, reply=reply)
+    if trips:
+        assert sentence not in out
+        assert RULE_FORMULA in tripped
+    else:
+        # The table measured the formula rule alone; other rules may still act
+        # on the same sentence (see the code-span row).
+        assert RULE_FORMULA not in tripped
+
+
+@pytest.mark.parametrize(
+    "path, level, reply",
+    [(PATH_NEW_QUESTION, 0, None), (PATH_HINT, 1, None), (PATH_HINT, 2, None), (PATH_REPLY, 1, "no idea how")],
+)
+def test_formula_is_removed_on_every_path_below_hint_3(path, level, reply):
+    out, tripped = _formula_guard(
+        "Two resistors add up: R_T = R1 + R2. What happens with a third one?",
+        path=path,
+        level=level,
+        reply=reply,
+    )
+    assert out == "What happens with a third one?"
+    assert RULE_FORMULA in tripped
+
+
+@pytest.mark.parametrize(
+    "path, level, reply, non_answer",
+    [
+        (PATH_HINT, 3, None, False),
+        (PATH_HINT, 4, None, False),
+        (PATH_REPLY, 3, "is it the sum?", False),
+        (PATH_REPLY, 4, "no", True),
+    ],
+)
+def test_formula_is_kept_at_hint_3_and_the_full_explanation(path, level, reply, non_answer):
+    text = "Two resistors add up: R_T = R1 + R2. What happens with a third one?"
+    out, tripped = _formula_guard(text, path=path, level=level, reply=reply, non_answer=non_answer)
+    assert out == text
+    assert RULE_FORMULA not in tripped
+
+
+def test_formula_from_the_course_trips_without_naming_the_topic():
+    out, tripped = _formula_guard("Look: R_T = R1 + R2. What happens with a third one?")
+    assert out == "What happens with a third one?"
+    assert RULE_FORMULA in tripped
+
+
+def test_formula_about_the_topic_trips_when_the_course_writes_it_in_words():
+    # The topic is named only in the intro line; the course has no symbols.
+    out, tripped = _formula_guard(
+        "For resistors in series, the equivalent resistance is:\n\nR_T = R1 + R2\n\nWhat changes with three?",
+        course=_SERIES_COURSE_IN_WORDS,
+    )
+    assert out == "What changes with three?"
+    assert tripped == [RULE_FORMULA]
+
+
+def test_formula_sentence_about_the_topic_is_removed_when_the_course_writes_it_in_words():
+    # Named in its own sentence, the stated-answer rule already removes it.
+    out, tripped = _formula_guard(
+        "For resistors in series, the equivalent resistance is R_T = R1 + R2. What changes with three?",
+        course=_SERIES_COURSE_IN_WORDS,
+    )
+    assert out == "What changes with three?"
+    assert tripped == [RULE_STATES_ANSWER]
+
+
+def test_unrelated_formula_with_no_course_symbols_is_kept():
+    text = "Think of how x = y + z works in algebra. What changes with three?"
+    out, tripped = _formula_guard(text, course=_SERIES_COURSE_IN_WORDS)
+    assert out == text
+    assert RULE_FORMULA not in tripped
+
+
+@pytest.mark.parametrize("reply", ["is it R_T = R1 + R2?", "R1 + R2?"])
+def test_formula_they_wrote_is_kept(reply):
+    text = "Yes, R_T = R1 + R2. What happens with a third one?"
+    out, tripped = _formula_guard(text, path=PATH_REPLY, level=1, reply=reply)
+    assert out == text
+    assert RULE_FORMULA not in tripped
+
+
+def test_formula_on_its_own_line_takes_its_intro_line_with_it():
+    out, tripped = _formula_guard(
+        "So, if you have two resistors in series, the equivalent resistance R_T is:\n\n"
+        "R_T = R1 + R2\n\n"
+        "Take the next step: what happens if you add a third resistor?"
+    )
+    assert out == "Take the next step: what happens if you add a third resistor?"
+    assert RULE_FORMULA in tripped
+
+
+def test_formula_from_latex_is_removed_after_plain_math():
+    from agents.tutor.plain_math import to_plain_math
+
+    raw = (
+        "The equivalent resistance \\(R_T\\) is:\n\\[ R_T = R_1 + R_2 \\]\n"
+        "Take the next step: what happens if you add a third resistor?"
+    )
+    out, tripped = _formula_guard(to_plain_math(raw))
+    assert out == "Take the next step: what happens if you add a third resistor?"
+    assert RULE_FORMULA in tripped
+
+
+def test_formula_followed_by_a_capitalised_word_ends_its_sentence():
+    text = "The total is R_T = R1 + R2 Take the next step: what happens if you add a third resistor?"
+    out, _ = _formula_guard(text)
+    assert out == "Take the next step: what happens if you add a third resistor?"
+    # At Hint 3 the formula stays, and the text is left exactly as written.
+    assert _formula_guard(text, level=3) == (text, [])
+
+
+def test_code_is_never_treated_as_a_formula():
+    text = (
+        "Look at this loop:\n\n```python\ntotal = r1 + r2\nR_T = R1 + R2\n```\n\n"
+        "Use `R_T = R1 + R2` as a variable name. What does the loop add up?"
+    )
+    out, tripped = _formula_guard(text, level=1)
+    assert out == text
+    assert RULE_FORMULA not in tripped
+
+
+def test_capital_product_counts_as_two_symbols():
+    out, tripped = _formula_guard(
+        "Remember V = IR. What does each letter stand for?",
+        question="how do I find the current?",
+        course="Ohm's law: V = IR, where I is the current and R the resistance.",
+    )
+    assert out == "What does each letter stand for?"
+    assert RULE_FORMULA in tripped
+
+
+def test_back_reference_is_cut_after_a_removed_formula():
+    out, tripped = _formula_guard("Look: R_T = R1 + R2. What happens with a third one, using that idea?")
+    assert out == "What happens with a third one?"
+    assert tripped == [RULE_FORMULA, RULE_BACK_REFERENCE]
+
+
+def test_formula_rule_logs_only_rule_path_and_level(caplog):
+    with caplog.at_level(logging.INFO, logger="agents.tutor.output_guard"):
+        guard_tutor_reply(
+            "Look: R_T = R1 + R2. What happens with a third one?",
+            TutorTurn(path=PATH_HINT, hint_level=2, question=_SERIES_Q, course_text=_SERIES_COURSE),
+        )
+    assert [r.getMessage() for r in caplog.records] == [
+        "[TUTOR-GUARD] rule=formula path=hint hint_level=2"
+    ]
+
+
+def test_ask_do_not_tell_forbids_the_formula_below_hint_3_only():
+    from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+    for level in (0, 1, 2):
+        assert "Do not write the formula either" in HINT_LADDER[level]
+        assert "Do not write the formula either" in reply_instruction(False, level)
+    for level in (3, 4):
+        assert "Do not write the formula either" not in HINT_LADDER[level]
+        assert "Do not write the formula either" not in reply_instruction(True, level)
