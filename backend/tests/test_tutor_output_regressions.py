@@ -224,3 +224,11 @@ def test_tutor_logs_carry_no_reply_text(caplog):
     joined = " ".join(messages).lower()
     for fragment in ("student is thinking", "context here", "work done", "moves a charge"):
         assert fragment not in joined
+
+
+# ── Round 1d: a third live replay ─────────────────────────────────────────────
+
+
+def test_closing_based_on_the_description_is_removed():
+    out = _run("What do you think potential difference means based on the description?")
+    assert out == "What do you think potential difference means?"

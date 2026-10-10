@@ -712,3 +712,40 @@ def test_every_instruction_forbids_pointing_at_sources():
         for phrase in ('"the passage"', '"the text says"', '"the description of"', '"the definition given in"'):
             assert phrase in text
         assert 'do not end a question with "in this context"' in text
+
+
+# ── "the description" without "of" ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("What do you think it means based on the description?", "What do you think it means?"),
+        ("Based on the description, what do you think is needed?", "What do you think is needed?"),
+        ("What would you change, according to the description given?", "What would you change?"),
+        ("What is moving in the description above?", "What is moving?"),
+        ("Charges move from the description. Why?", "Charges move. Why?"),
+        ("What is compared, using the description provided?", "What is compared?"),
+    ],
+)
+def test_bare_description_qualifier_is_removed(raw, expected):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you write a description of a series circuit?",
+        "What would a good description of a series circuit include?",
+        "Your description is close. What would you add to your description?",
+        "Think about the description and the diagram together. What do you notice?",
+        "Give a short description in your own words. What did you include?",
+    ],
+)
+def test_ordinary_description_is_left_alone(text):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(text) == text
+    assert _guard(text, level=3) == (text, [])

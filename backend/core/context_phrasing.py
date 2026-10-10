@@ -178,6 +178,7 @@ _SOURCE = (
 
 #: "according to the passage, X" / "X, as described in the text" / "X in the
 #: reading." / "based on the description of <...>" (to the end of its clause) /
+#: "based on the description?" /
 #: a sentence-final "in this context" -> removed.
 _SOURCE_NOUN_QUALIFIER_RE = re.compile(
     r"\s*,?\s*(?:"
@@ -185,6 +186,10 @@ _SOURCE_NOUN_QUALIFIER_RE = re.compile(
     + r"|as\s+(?:stated|described|mentioned|explained|noted|shown|given|outlined)\s+in\s+" + _SOURCE
     + r"|in\s+" + _SOURCE + r"(?=\s*[,.?!])"
     + r"|(?:according\s+to|based\s+on)\s+the\s+description\s+of\b[^,.?!\n]*"
+    # "...means based on the description?": the bare form, only where it opens
+    # or closes a clause, so "write a description of..." is never touched.
+    + r"|(?:according\s+to|based\s+on|from|in|using|given)\s+the\s+description"
+    + r"(?:\s+(?:provided|given|above))?(?!\s+of\b)(?=\s*[,.?!])"
     + r"|in\s+this\s+context(?=\s*[?.])"
     + r")",
     re.IGNORECASE,
