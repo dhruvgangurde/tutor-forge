@@ -1851,10 +1851,11 @@ textarea.field-input { min-height: 0; line-height: 1.5; }
   border-radius: var(--radius-lg);
 }
 
-/* Keep a readable measure: message text stops at about 70 characters. */
+/* Keep a readable measure: 62ch (the width of 62 zeros) is about 70
+   characters of running text. */
 .chat-bubble > p,
 .chat-bubble > .markdown {
-  max-width: 70ch;
+  max-width: 62ch;
 }
 
 .chat-bubble.refusal {

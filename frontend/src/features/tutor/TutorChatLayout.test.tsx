@@ -67,8 +67,8 @@ describe('tutor chat: quiet focus ring on the log', () => {
 })
 
 describe('tutor chat: readable line length', () => {
-  it('caps message text at 70ch', () => {
-    expect(rule('.chat-bubble > p, .chat-bubble > .markdown')).toMatch(/max-width:\s*70ch/)
+  it('caps message text at 62ch (about 70 characters)', () => {
+    expect(rule('.chat-bubble > p, .chat-bubble > .markdown')).toMatch(/max-width:\s*62ch/)
   })
 
   it('renders message text as a direct child of the bubble, so the cap applies', () => {
