@@ -168,6 +168,36 @@ _SOURCE_QUALIFIER_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: The material by other names. "the text", "the reading", "the section" and
+#: "the material" are only removed in the narrating forms below, never on
+#: sight: in a literature course "the text" can be the novel itself.
+_SOURCE = (
+    r"(?:the|this)\s+(?:passages?|text|reading|section|excerpt|extract|materials?|notes|"
+    r"document|sources?)\b"
+)
+
+#: "according to the passage, X" / "X, as described in the text" / "X in the
+#: reading." / "based on the description of <...>" (to the end of its clause) /
+#: a sentence-final "in this context" -> removed.
+_SOURCE_NOUN_QUALIFIER_RE = re.compile(
+    r"\s*,?\s*(?:"
+    r"(?:according\s+to|based\s+on|as\s+per|per|from)\s+" + _SOURCE
+    + r"|as\s+(?:stated|described|mentioned|explained|noted|shown|given|outlined)\s+in\s+" + _SOURCE
+    + r"|in\s+" + _SOURCE + r"(?=\s*[,.?!])"
+    + r"|(?:according\s+to|based\s+on)\s+the\s+description\s+of\b[^,.?!\n]*"
+    + r"|in\s+this\s+context(?=\s*[?.])"
+    + r")",
+    re.IGNORECASE,
+)
+
+#: "the passage says that X" -> "X". The claim is kept. Not before how / why /
+#: what...: "the section explains how charges move" has no claim left to keep.
+_SOURCE_NOUN_SUBJECT_RE = re.compile(
+    r"\b" + _SOURCE + r"\s+(?:" + _NARRATING_VERB + r"|suggests|defines)\s+(?:that\s+)?"
+    r"(?!(?:how|why|what|when|where|which|whether|who)\b)",
+    re.IGNORECASE,
+)
+
 #: For the detector only: the tutor talking about the person it is talking to.
 _THIRD_PERSON_RE = re.compile(r"\bthe\s+(?:student|learner)(?:'s)?\b", re.IGNORECASE)
 
@@ -177,7 +207,12 @@ def strip_source_narration(text: str) -> str:
     if not text:
         return text
     out = text
-    for pattern in (_SOURCE_QUALIFIER_RE, _SOURCE_SUBJECT_RE):
+    for pattern in (
+        _SOURCE_QUALIFIER_RE,
+        _SOURCE_NOUN_QUALIFIER_RE,
+        _SOURCE_SUBJECT_RE,
+        _SOURCE_NOUN_SUBJECT_RE,
+    ):
         out = _remove_keeping_sentence_case(pattern, out)
     out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
     out = _WS_RE.sub(" ", out).strip()

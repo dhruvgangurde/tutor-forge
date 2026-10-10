@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from agents.tutor.nodes import advance_hint_node, generate_guiding_question_node
+from agents.tutor.prompts import GUARD_FALLBACK_NON_ANSWER, GUARD_FALLBACK_QUESTION
 from core.context_phrasing import strip_context_references
 from retrieval.models import Chunk
 from retrieval.service import RetrievalService
@@ -173,3 +174,31 @@ def test_no_course_statement_after_a_non_answer_at_level_0(reply):
     assert "related to the work" not in out
     assert "not sure about the concept" not in out
     assert out.startswith("Can you try to describe in your own words what potential difference means")
+
+
+def test_live_reply_after_no_ends_as_one_clean_question():
+    out = _run(_LIVE_AFTER_NO, reply="no", non_answer=True)
+    assert out == "Can you try to describe in your own words what potential difference means?"
+
+
+@pytest.mark.parametrize(
+    "state, expected",
+    [
+        ({}, GUARD_FALLBACK_QUESTION),
+        ({"reply": "no", "non_answer": True}, GUARD_FALLBACK_NON_ANSWER),
+    ],
+)
+def test_question_about_the_passage_is_dropped(state, expected):
+    out = _run(
+        "Can you recall the definition given in the passage about voltage or potential difference?",
+        **state,
+    )
+    assert out == expected
+
+
+def test_trailing_description_of_clause_is_cut():
+    out = _run(
+        "How would you explain what it takes to move a charge, based on the description of "
+        "overcoming the force of attraction or repulsion between charges?"
+    )
+    assert out == "How would you explain what it takes to move a charge?"

@@ -75,6 +75,7 @@ RULE_FALLBACK = "fallback"
 RULE_ONE_QUESTION = "one_question"
 RULE_FRAGMENT = "fragment"
 RULE_NON_ANSWER_STATEMENT = "non_answer_statement"
+RULE_SOURCE_REFERENCE = "source_reference"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -279,6 +280,24 @@ def _invented_reference(sentence: str, turn: TutorTurn, reply_words: set[str]) -
     attributed = _attributed_words(plain, m)
     # Kept only when what is attributed is what they actually wrote.
     return not (attributed and _overlap(attributed, reply_words) >= 0.5)
+
+
+# ── 1b. Pointing at sources they have never seen ──────────────────────────────
+
+#: Left over after strip_source_narration has removed the forms it can rewrite.
+#: A sentence still holding one of these cannot be repaired ("Can you recall the
+#: definition given in the passage...?"), so it is dropped. "the text", "the
+#: reading", "the section" and "the material" are not here on purpose: they are
+#: only removed in their narrating forms, because in a literature course "the
+#: text" can be the novel itself.
+_SOURCE_REFERENCE_RE = re.compile(
+    r"\b(?:the|this)\s+passages?\b"
+    r"|\bthe\s+(?:excerpt|extract)\b"
+    r"|\bthe\s+description\s+(?:of|given|in)\b"
+    r"|\bthe\s+(?:definition|explanation)\s+given\b"
+    r"|\bthe\s+provided\s+(?:text|materials?|information)\b",
+    re.IGNORECASE,
+)
 
 
 # ── 2. Stating the answer (hint levels 0-2 only) ──────────────────────────────
@@ -496,6 +515,9 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
+
+    # 1b. No pointing at passages they have never seen.
+    run(RULE_SOURCE_REFERENCE, lambda s: None if _SOURCE_REFERENCE_RE.search(_plain(s)) else s)
 
     # 2. Ask, do not tell -- below Hint 3 only.
     if signals is not None:

@@ -21,6 +21,7 @@ from agents.tutor.output_guard import (
     RULE_INVENTED_REFERENCE,
     RULE_NON_ANSWER_STATEMENT,
     RULE_ONE_QUESTION,
+    RULE_SOURCE_REFERENCE,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
     RULE_VERDICT_AFTER_NON_ANSWER,
@@ -602,3 +603,112 @@ def test_same_statement_after_a_real_attempt_keeps_the_current_rules():
 def test_hint_3_and_full_explanation_keep_topic_statements_after_a_non_answer(level):
     text = _PARAPHRASE + " Can you see why that takes work?"
     assert _guard(text, path=PATH_REPLY, level=level, reply="no", non_answer=True) == (text, [])
+
+
+# ── Narrating sources they have never seen ────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        # A: qualifiers removed, the rest of the sentence kept.
+        ("According to the passage, like charges repel. Why?", "Like charges repel. Why?"),
+        ("Based on the text, like charges repel. Why?", "Like charges repel. Why?"),
+        ("As per the section, like charges repel. Why?", "Like charges repel. Why?"),
+        ("Like charges repel, from the reading. Why?", "Like charges repel. Why?"),
+        ("Like charges repel, as described in the material. Why?", "Like charges repel. Why?"),
+        ("Like charges repel, as explained in this excerpt. Why?", "Like charges repel. Why?"),
+        ("Like charges repel in the passage. Why?", "Like charges repel. Why?"),
+        (
+            "How would you explain it, based on the description of moving charges between points?",
+            "How would you explain it?",
+        ),
+        (
+            "Based on the description of moving charges, what do you think is needed?",
+            "What do you think is needed?",
+        ),
+        ("What does work mean in this context?", "What does work mean?"),
+        ("Work matters in this context.", "Work matters."),
+        # B: the source as the subject; the claim is kept.
+        ("The passage says that like charges repel. Why?", "Like charges repel. Why?"),
+        ("Charges move. The text states that work is needed. Why?", "Charges move. Work is needed. Why?"),
+        ("This reading suggests like charges repel. Why?", "Like charges repel. Why?"),
+    ],
+)
+def test_source_narration_is_rewritten(raw, expected):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What does the text of the poem suggest about the speaker?",
+        "Have you finished the reading for this week?",
+        "Which section of a circuit carries the most current?",
+        "In this context, what does work mean?",
+        "What does charge mean in this context of circuits?",
+        "This section explains how charges move.",
+        "Look at the textbook.",
+    ],
+)
+def test_ordinary_uses_are_not_narration(text):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(text) == text
+
+
+@pytest.mark.parametrize(
+    "path, level, reply, non_answer",
+    [
+        (PATH_NEW_QUESTION, 0, None, False),
+        (PATH_HINT, 4, None, False),
+        (PATH_REPLY, 1, "is it energy?", False),
+        (PATH_REPLY, 0, "no", True),
+    ],
+)
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Think about what the passage describes.",
+        "Look again at this passage.",
+        "Recall the excerpt on charges.",
+        "Think about the description of moving charges.",
+        "Remember the definition given earlier.",
+        "Use the explanation given before.",
+        "Look at the provided text again.",
+    ],
+)
+def test_sentence_pointing_at_an_unseen_source_is_dropped(path, level, reply, non_answer, sentence):
+    out, tripped = _guard(
+        sentence + " What makes it hard to push two charges together?",
+        path=path,
+        level=level,
+        reply=reply,
+        non_answer=non_answer,
+    )
+    assert out == "What makes it hard to push two charges together?"
+    assert RULE_SOURCE_REFERENCE in tripped
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Think about the text of the poem. What does the speaker want?",
+        "Your reading for this week covers charges. What did you notice in the reading?",
+        "Think about the material a wire is made of. Why might that matter?",
+        "Look at the next section of the circuit. What do you notice?",
+    ],
+)
+def test_text_reading_section_and_material_are_not_dropped_on_sight(text):
+    assert _guard(text, level=3) == (text, [])
+
+
+def test_every_instruction_forbids_pointing_at_sources():
+    from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+    for text in [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True, 4)]:
+        for phrase in ('"the passage"', '"the text says"', '"the description of"', '"the definition given in"'):
+            assert phrase in text
+        assert 'do not end a question with "in this context"' in text

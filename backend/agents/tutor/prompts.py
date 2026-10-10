@@ -71,8 +71,11 @@ _GROUNDING_CLAUSE = (
     "NEVER mention \"the context\", \"the provided context\", \"the course "
     "context\" or \"the information provided\"; they have never seen your context "
     "block. Do not narrate where facts come from either: never write \"the course "
-    "material states\", \"the course mentions\", \"according to the course\" or "
-    "anything like it; the sources are already listed under your reply. Never "
+    "material states\", \"the course mentions\", \"according to the course\", "
+    "\"the passage\", \"the text says\", \"the description of\", \"the definition "
+    "given in\" or anything else that points at your sources, and do not end a "
+    "question with \"in this context\"; they have not seen your sources, which are "
+    "already listed under your reply. Never "
     "quote the material word for word, and never repeat a passage that is cut "
     "off; explain it in your own words."
 )
