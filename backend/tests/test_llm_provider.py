@@ -405,6 +405,30 @@ def test_ollama_threshold_is_a_distinct_setting_from_mock():
     assert s.groundedness_threshold_ollama != s.groundedness_threshold_mock
 
 
+def test_env_example_thresholds_match_the_config_defaults():
+    """
+    .env.example is what a new setup copies. It used to set the Ollama bar to
+    0.65 and call it an untuned placeholder long after core/config.py moved to
+    the measured 0.57, so a fresh .env silently undid the measurement.
+    """
+    from pathlib import Path
+
+    example = Path(__file__).resolve().parents[1] / ".env.example"
+    values = {}
+    for line in example.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.startswith("GROUNDEDNESS_THRESHOLD"):
+            values[key] = float(value)
+
+    fields = Settings.model_fields
+    assert values == {
+        "GROUNDEDNESS_THRESHOLD": fields["groundedness_threshold"].default,
+        "GROUNDEDNESS_THRESHOLD_MOCK": fields["groundedness_threshold_mock"].default,
+        "GROUNDEDNESS_THRESHOLD_OLLAMA": fields["groundedness_threshold_ollama"].default,
+    }
+    assert "UNTUNED PLACEHOLDER" not in example.read_text(encoding="utf-8")
+
+
 # ── Legacy env migration ──────────────────────────────────────────────────────
 
 def test_legacy_use_mock_gemini_is_reported(monkeypatch):
