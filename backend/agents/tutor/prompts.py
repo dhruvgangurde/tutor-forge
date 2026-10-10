@@ -129,13 +129,55 @@ Write it as a short conversational explanation in plain paragraphs, about 120 to
 "Conclusion" or "Next steps".
 """
 
+# ── Output rules ──────────────────────────────────────────────────────────────
+#
+# Each of these is also enforced after generation by agents/tutor/output_guard.py:
+# the live replay showed a small model ignoring them often enough that the
+# prompt alone is not an enforcement.
+
+#: Highest hint level at which the tutor must not state the answer. Hint 3 is
+#: the near-answer rung and level 4 the full explanation, so both may.
+MAX_ANSWER_GUARD_LEVEL = 2
+
+#: Below Hint 3, on every path (a new question, a hint, or a reply).
+_ASK_DO_NOT_TELL = """\
+Ask, do not tell: do not state the definition or the answer to THE QUESTION,
+not even as a lead-in to your question. Do not use specific numbers from a
+worked example unless they used them first.
+"""
+
+#: Every rung and every reply.
+_OUTPUT_RULES = """\
+Refer only to what they actually wrote. Never say "you mentioned", "as you
+said", "your earlier answer" or anything like it unless THEIR REPLY says it;
+when there is no reply, all they have done is ask THE QUESTION.
+The course passages may contain worked examples, figures, tables and page
+labels. Use them only to understand the idea, and never mention an example,
+figure, table or page number.
+"""
+
+#: Fixed replies used when the output guard has removed everything useful. No
+#: model call: a safe Socratic question that is true of any grounded topic.
+GUARD_FALLBACK_NON_ANSWER = (
+    "That's fine. Let's take a smaller step: what is one thing you already know about this topic?"
+)
+GUARD_FALLBACK_QUESTION = (
+    "Let's work through this together. What do you already know about this topic, in your own words?"
+)
+
+
+def _rung(level_text: str, level: int) -> str:
+    ask = "\n" + _ASK_DO_NOT_TELL if level <= MAX_ANSWER_GUARD_LEVEL else ""
+    return level_text + ask + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
+
+
 #: system_instruction per hint level. Levels outside 0..4 clamp to the ends.
 HINT_LADDER: dict[int, str] = {
-    0: _LEVEL_0 + "\n" + _GROUNDING_CLAUSE,
-    1: _LEVEL_1 + "\n" + _GROUNDING_CLAUSE,
-    2: _LEVEL_2 + "\n" + _GROUNDING_CLAUSE,
-    3: _LEVEL_3 + "\n" + _GROUNDING_CLAUSE,
-    4: _LEVEL_4 + "\n" + _GROUNDING_CLAUSE,
+    0: _rung(_LEVEL_0, 0),
+    1: _rung(_LEVEL_1, 1),
+    2: _rung(_LEVEL_2, 2),
+    3: _rung(_LEVEL_3, 3),
+    4: _rung(_LEVEL_4, 4),
 }
 
 
@@ -176,15 +218,22 @@ Keep it to 2-5 sentences.
 #: Added when the reply is a non-answer ("no", "I don't know").
 _NON_ANSWER_STEP = """\
 Their reply says they don't know or can't answer. Do not praise it, and do not
-repeat your last question. Break THE QUESTION into a smaller, simpler first step
-and ask about that step.
+repeat your last question. Give no verdict either: no "good", "on the right
+track", "not quite" or "close", because there is nothing to judge. Break THE
+QUESTION into a smaller, simpler first step and ask about that step.
 """
 
 
-def reply_instruction(non_answer: bool) -> str:
-    """System instruction for a reply or follow-up inside an open conversation."""
+def reply_instruction(non_answer: bool, hint_level: int = 0) -> str:
+    """
+    System instruction for a reply or follow-up inside an open conversation.
+
+    Below Hint 3 the reply must not tell them the answer either; from Hint 3 on
+    the ladder has already started giving it, so that rule is left out.
+    """
     step = "\n" + _NON_ANSWER_STEP if non_answer else ""
-    return _REPLY + step + "\n" + _GROUNDING_CLAUSE
+    ask = "\n" + _ASK_DO_NOT_TELL if hint_level <= MAX_ANSWER_GUARD_LEVEL else ""
+    return _REPLY + step + ask + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
 
 
 # ── Generation temperature ────────────────────────────────────────────────────

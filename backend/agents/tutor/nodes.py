@@ -50,6 +50,13 @@ import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+from agents.tutor.output_guard import (
+    PATH_HINT,
+    PATH_NEW_QUESTION,
+    PATH_REPLY,
+    TutorTurn,
+    guard_tutor_reply,
+)
 from agents.tutor.prompts import (
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
@@ -271,6 +278,7 @@ def generate_guiding_question_node(
     state: TutorState,
     retrieval_service: "RetrievalService",
     gemini_pro: "GeminiProClient",
+    is_hint: bool = False,
 ) -> TutorState:
     """
     Generate the tutor turn for this hint level, grounded in retrieved context.
@@ -327,7 +335,7 @@ def generate_guiding_question_node(
         parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
         prompt = "\n\n".join(parts)
-        system = reply_instruction(bool(state.get("is_non_answer")))
+        system = reply_instruction(bool(state.get("is_non_answer")), hint_level)
     else:
         # Labelled "The question", not "Student question": the label was
         # echoed back as "the student" in the reply.
@@ -373,6 +381,24 @@ def generate_guiding_question_node(
             response[:160],
         )
 
+    # The prompt rules on invented statements, stating the answer, verdicts
+    # after a non-answer and worked-example leakage are enforced here too.
+    if in_conversation:
+        path = PATH_REPLY
+    else:
+        path = PATH_HINT if is_hint else PATH_NEW_QUESTION
+    response = guard_tutor_reply(
+        response,
+        TutorTurn(
+            path=path,
+            hint_level=hint_level,
+            question=topic,
+            course_text="\n\n".join(c.text for c in chunks),
+            student_reply=state["question"] if in_conversation else None,
+            is_non_answer=bool(state.get("is_non_answer")),
+        ),
+    )
+
     return {
         **state,
         "response": response,
@@ -407,7 +433,9 @@ def advance_hint_node(
     """
     new_level = min(state["hint_level"] + 1, MAX_HINT_LEVEL)
     state_with_level = {**state, "hint_level": new_level}
-    return generate_guiding_question_node(state_with_level, retrieval_service, gemini_pro)
+    return generate_guiding_question_node(
+        state_with_level, retrieval_service, gemini_pro, is_hint=True
+    )
 
 
 # ── Node 6 ────────────────────────────────────────────────────────────────────
