@@ -232,3 +232,8 @@ def test_tutor_logs_carry_no_reply_text(caplog):
 def test_closing_based_on_the_description_is_removed():
     out = _run("What do you think potential difference means based on the description?")
     assert out == "What do you think potential difference means?"
+
+
+def test_course_material_qualifier_inside_a_question_is_removed():
+    out = _run("Do you remember the key idea from the course material about resistors in series?")
+    assert out == "Do you remember the key idea about resistors in series?"

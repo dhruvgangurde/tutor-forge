@@ -749,3 +749,60 @@ def test_ordinary_description_is_left_alone(text):
 
     assert strip_source_narration(text) == text
     assert _guard(text, level=3) == (text, [])
+
+
+# ── The course and its lectures, by name ──────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        # Inside, opening and closing a question: removed, the question kept.
+        (
+            "Do you remember the key idea from the course material about resistors in series?",
+            "Do you remember the key idea about resistors in series?",
+        ),
+        ("From the lecture notes, what do you remember about resistors?", "What do you remember about resistors?"),
+        ("What do you remember about resistors, from our course material?", "What do you remember about resistors?"),
+        ("What do you remember, according to the lecture?", "What do you remember?"),
+        ("Based on our course, what moves a charge?", "What moves a charge?"),
+        ("As per the course content, charges move. Why?", "Charges move. Why?"),
+        ("Charges move, as described in the lecture slides. Why?", "Charges move. Why?"),
+        ("Charges move in the course notes. Why?", "Charges move. Why?"),
+        # As the subject: the claim is kept.
+        ("Our course explains that like charges repel. Why?", "Like charges repel. Why?"),
+        ("The lecture slides say like charges repel. Why?", "Like charges repel. Why?"),
+        ("The passages show that work is needed. Why?", "Work is needed. Why?"),
+        ("As the lecture notes explain, charges move. Why?", "Charges move. Why?"),
+    ],
+)
+def test_course_and_lecture_narration_is_removed(raw, expected):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Of course, charges move. Why?",
+        "The river changes course from season to season. Why?",
+        "That isn't covered in the course.",
+        "This course doesn't cover that part.",
+        "Later in the course, you'll meet capacitors. What do you expect?",
+        "The course explains how charges move. Why?",
+        "Look at your course notes. What do you see?",
+    ],
+)
+def test_ordinary_mentions_of_the_course_are_left_alone(text):
+    from core.context_phrasing import strip_source_narration
+
+    assert strip_source_narration(text) == text
+
+
+def test_every_instruction_forbids_naming_the_course_material():
+    from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+    for text in [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True, 4)]:
+        for phrase in ('"from the course material"', '"in our course"', '"the lecture notes say"'):
+            assert phrase in text

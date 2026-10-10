@@ -145,25 +145,50 @@ def strip_context_references(text: str) -> str:
 # narration is noise. Kept out of strip_context_references on purpose: that one
 # also cleans assessment stems, which this change is not about.
 
-_COURSE = r"(?:the\s+|your\s+)?course(?:\s+materials?|\s+notes)?"
+#: The course, its material and its lectures, by name: "the course", "our
+#: course material", "the course notes", "the lecture slides", "your lecture
+#: notes".
+_COURSE_SUFFIX = r"(?:\s+(?:materials?|notes|content|slides|readings?))"
+_LECTURE = r"(?:the|your|our|this)\s+lectures?(?:\s+(?:notes|slides))?"
+#: The article is optional here, as before ("based on course notes").
+_COURSE = (
+    r"(?:(?:(?:the|your|our|this)\s+)?course" + _COURSE_SUFFIX + r"?|" + _LECTURE + r")\b"
+)
+#: With an article, for "from ...": "from course to course" is left alone.
+_COURSE_NAMED = (
+    r"(?:(?:the|your|our|this)\s+course" + _COURSE_SUFFIX + r"?|" + _LECTURE + r")\b"
+)
+#: Material only, for a closing "in ...": "covered in the course." is ordinary
+#: English, "as you saw in the course notes." is narration.
+_COURSE_MATERIAL = (
+    r"(?:(?:the|your|our|this)\s+course" + _COURSE_SUFFIX + r"|" + _LECTURE + r")\b"
+)
+#: Singular and plural: "the lecture slides say", "the passages show".
 _NARRATING_VERB = (
-    r"(?:states|says|mentions|notes|explains|describes|indicates|shows|"
-    r"tells\s+us|points\s+out)"
+    r"(?:states?|says|say|mentions?|notes?|explains?|describes?|indicates?|shows?|"
+    r"tells?\s+us|points?\s+out)"
 )
 
-#: "the course material states that X" -> "X". The claim is kept.
+#: "the course material states that X" -> "X". The claim is kept. Not before
+#: how / why / what...: "the lecture explains how charges move" keeps no claim.
 _SOURCE_SUBJECT_RE = re.compile(
-    r"\b" + _COURSE + r"\s+" + _NARRATING_VERB + r"\s+(?:that\s+)?",
+    r"\b" + _COURSE + r"\s+" + _NARRATING_VERB + r"\s+(?:that\s+)?"
+    r"(?!(?:how|why|what|when|where|which|whether|who)\b)",
     re.IGNORECASE,
 )
 
 #: "according to the course material, X" / "based on the course material, X" /
-#: "as the course mentions, X" / "as mentioned in the course material" -> removed.
+#: "as the course mentions, X" / "as mentioned in the course material" /
+#: "the key idea from the course material about..." / "X, as you saw in the
+#: lecture notes." -> removed.
 _SOURCE_QUALIFIER_RE = re.compile(
     r"\s*,?\s*(?:"
-    r"(?:according\s+to|based\s+on)\s+" + _COURSE
+    r"(?:according\s+to|based\s+on|as\s+per)\s+" + _COURSE
+    + r"|from\s+" + _COURSE_NAMED
     + r"|as\s+" + _COURSE + r"\s+" + _NARRATING_VERB
-    + r"|as\s+(?:stated|mentioned|described|explained|noted|shown)\s+in\s+" + _COURSE
+    + r"|as\s+(?:stated|mentioned|described|explained|noted|shown|given|outlined)\s+in\s+"
+    + _COURSE
+    + r"|in\s+" + _COURSE_MATERIAL + r"(?=\s*[,.?!])"
     + r")",
     re.IGNORECASE,
 )
