@@ -2348,4 +2348,4 @@ def test_tutor_output_is_cleaned_of_narration_and_third_person_is_logged(caplog)
 
     assert out["response"].startswith("Like charges repel. Given that")
     assert "course mentions" not in out["response"]
-    assert any("third person" in r.getMessage() for r in caplog.records)
+    assert any("rule=third_person_learner" in r.getMessage() for r in caplog.records)

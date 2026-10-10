@@ -358,15 +358,20 @@ def generate_guiding_question_node(
     # is sanitised too, on the same principle as the grading groundedness gate:
     # an instruction the model may ignore is not an enforcement. Simple LaTeX
     # is turned into plain text first, since the chat does not render maths.
+    if in_conversation:
+        path = PATH_REPLY
+    else:
+        path = PATH_HINT if is_hint else PATH_NEW_QUESTION
     cleaned = to_plain_math(raw_response)
     response = strip_source_narration(strip_context_references(cleaned))
+    # Both warnings below log only the rule, the path and the level, in the
+    # same form as the output guard: never the reply, which can carry what the
+    # student wrote, and never the session id.
     if refers_to_learner_in_third_person(response):
         # Not rewritten ("the student is considering" has no safe "you" form);
         # loud so the prompt can be tightened if it keeps happening.
         logger.warning(
-            "Tutor response refers to the learner in the third person (session %s): %r",
-            state.get("session_id"),
-            response[:160],
+            "[TUTOR-GUARD] rule=third_person_learner path=%s hint_level=%s", path, hint_level
         )
     if response != cleaned:
         logger.info(
@@ -378,18 +383,11 @@ def generate_guiding_question_node(
         # module does not handle yet. Loud so it can be added, not shipped
         # silently.
         logger.warning(
-            "Tutor response still mentions the context and was NOT sanitised "
-            "(session %s): %r",
-            state.get("session_id"),
-            response[:160],
+            "[TUTOR-GUARD] rule=unhandled_context_mention path=%s hint_level=%s", path, hint_level
         )
 
     # The prompt rules on invented statements, stating the answer, verdicts
     # after a non-answer and worked-example leakage are enforced here too.
-    if in_conversation:
-        path = PATH_REPLY
-    else:
-        path = PATH_HINT if is_hint else PATH_NEW_QUESTION
     response = guard_tutor_reply(
         response,
         TutorTurn(

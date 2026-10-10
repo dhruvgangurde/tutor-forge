@@ -10,6 +10,8 @@ so they exercise whatever post-processing the node applies, not a helper in
 isolation.
 """
 
+import logging
+import re
 import uuid
 from dataclasses import asdict
 from unittest.mock import MagicMock
@@ -202,3 +204,23 @@ def test_trailing_description_of_clause_is_cut():
         "overcoming the force of attraction or repulsion between charges?"
     )
     assert out == "How would you explain what it takes to move a charge?"
+
+
+def test_tutor_logs_carry_no_reply_text(caplog):
+    reply = (
+        "The student is thinking about the context here. Potential difference is the work "
+        "done per unit charge. What moves a charge?"
+    )
+    state = _state()
+    with caplog.at_level(logging.DEBUG, logger="agents.tutor"):
+        _run_state(reply, state)
+
+    messages = [r.getMessage() for r in caplog.records if r.name.startswith("agents.tutor")]
+    assert "[TUTOR-GUARD] rule=third_person_learner path=new_question hint_level=0" in messages
+    assert "[TUTOR-GUARD] rule=unhandled_context_mention path=new_question hint_level=0" in messages
+    for message in messages:
+        assert re.fullmatch(r"\[TUTOR-GUARD\] rule=\w+ path=\w+ hint_level=\d+", message), message
+        assert str(state["session_id"]) not in message
+    joined = " ".join(messages).lower()
+    for fragment in ("student is thinking", "context here", "work done", "moves a charge"):
+        assert fragment not in joined
