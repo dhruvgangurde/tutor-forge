@@ -23,10 +23,10 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -44,6 +44,20 @@ logger = logging.getLogger(__name__)
 #: fallback is meant to recover the topic of the conversation the student is
 #: currently in, not to resurrect one from much earlier in the session.
 _PRIOR_QUESTION_LOOKBACK = 10
+
+#: Tie-break for messages with the same timestamp: the student's message comes
+#: first. On Windows the Python clock ticks every 15.6 ms, so a turn's two rows
+#: could share a timestamp and came back in either order.
+_STUDENT_FIRST = case((TutoringMessage.role == "student", 0), else_=1)
+
+
+def _now() -> datetime:
+    """Wall-clock time, taken in Python when the row is created.
+
+    Never a server-side now(): that is the transaction's start time, so every
+    row written in one request would tie again.
+    """
+    return datetime.now(timezone.utc)
 
 
 async def _recent_student_messages(
@@ -131,11 +145,12 @@ async def send_chat_message(
 
     1. Resolves prior_question (last substantive student turn) for retrieval
        fallback, BEFORE this message is persisted.
-    2. Builds TutorState with hint_level=0 (fresh chat resets hints).
-    3. Invokes Tutor graph in 'chat' mode.
-    4. Persists student message and tutor response.
-    5. Resets session.current_hint_level to 0.
-    6. Returns final graph state.
+    2. Persists the student message at receipt (flushed, committed with the reply).
+    3. Builds TutorState with hint_level=0 (fresh chat resets hints).
+    4. Invokes Tutor graph in 'chat' mode.
+    5. Persists the tutor response.
+    6. Resets session.current_hint_level to 0.
+    7. Returns final graph state.
     """
     from agents.tutor.graph import build_tutor_graph
     from agents.tutor.state import TutorState
@@ -145,6 +160,22 @@ async def send_chat_message(
     prior_question = _first_substantive(
         await _recent_student_messages(session.id, db)
     )
+
+    # Persist the student's message at receipt, stamped now. It used to be
+    # written after the reply, in the same flush, so it carried the reply's
+    # time. Flushed, not committed: if generation fails the request rolls back
+    # and no unanswered message is left behind.
+    student_msg = TutoringMessage(
+        session_id=session.id,
+        role="student",
+        content=question,
+        citations=None,
+        hint_level=0,
+        is_refusal=False,
+        created_at=_now(),
+    )
+    db.add(student_msg)
+    await db.flush()
 
     # Build initial state — all keys must be present
     initial_state: TutorState = {
@@ -173,17 +204,6 @@ async def send_chat_message(
     )
     final_state = await graph.ainvoke(initial_state)
 
-    # Persist student message
-    student_msg = TutoringMessage(
-        session_id=session.id,
-        role="student",
-        content=question,
-        citations=None,
-        hint_level=0,
-        is_refusal=False,
-    )
-    db.add(student_msg)
-
     # Persist tutor response. A grounded turn that declined to hand over the
     # answer (FR-03.3) is also a refusal from the UI's point of view -- it is
     # styled as one and carries no tutoring content -- so is_refusal is driven
@@ -196,6 +216,7 @@ async def send_chat_message(
         citations=json.dumps(final_state.get("citations", [])),
         hint_level=0,
         is_refusal=is_refusal,
+        created_at=_now(),
     )
     db.add(tutor_msg)
 
@@ -285,6 +306,7 @@ async def request_hint(
         citations=json.dumps(final_state.get("citations", [])),
         hint_level=final_state.get("hint_level", session.current_hint_level),
         is_refusal=bool(final_state.get("pedagogy_trace", {}).get("refused", False)),
+        created_at=_now(),
     )
     db.add(hint_msg)
 
@@ -306,11 +328,11 @@ async def get_messages(
     session_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[TutoringMessage]:
-    """Fetch all messages for a session in chronological order."""
+    """Fetch all messages for a session in chronological order, student first on a tie."""
     result = await db.execute(
         select(TutoringMessage)
         .where(TutoringMessage.session_id == session_id)
-        .order_by(TutoringMessage.created_at.asc())
+        .order_by(TutoringMessage.created_at.asc(), _STUDENT_FIRST)
     )
     return list(result.scalars().all())
 

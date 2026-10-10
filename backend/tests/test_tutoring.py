@@ -1712,3 +1712,97 @@ async def test_tutor_context_budget_comes_from_settings(client, student_token, r
 
     assert resp.status_code == 200, resp.text
     assert retrieval.build_context_window.call_args.kwargs["token_budget"] == 1234
+
+
+# ── Message order and timestamps (fix round: tutor conversation) ──────────────
+
+
+@pytest.mark.asyncio
+async def test_messages_sharing_a_timestamp_list_the_student_first(client, student_token, ready_course_id):
+    """
+    A turn's two rows used to share one timestamp (Windows clock: 15.6 ms), and
+    ordering by created_at alone returned them in either order, so a reply could
+    display above the message it answered.
+    """
+    from db.models import TutoringMessage
+
+    session_id = await _new_session(client, student_token, ready_course_id)
+    tie = datetime(2026, 10, 8, 21, 33, 31, tzinfo=timezone.utc)
+    async with _TestSessionFactory() as db:
+        # Inserted reply-first, so insertion order cannot rescue the result.
+        db.add(TutoringMessage(session_id=uuid.UUID(session_id), role="tutor", content="reply", created_at=tie))
+        db.add(TutoringMessage(session_id=uuid.UUID(session_id), role="student", content="no", created_at=tie))
+        await db.commit()
+
+    resp = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert resp.status_code == 200
+    assert [(m["role"], m["content"]) for m in resp.json()] == [("student", "no"), ("tutor", "reply")]
+
+
+@pytest.mark.asyncio
+async def test_student_message_is_stamped_when_it_arrives_not_with_the_reply(
+    client, student_token, ready_course_id
+):
+    """The student's row carried the reply's time; it must carry its own."""
+    import time
+
+    from sqlalchemy import select
+
+    from db.models import TutoringMessage
+
+    gemini = _make_mock_gemini_pro()
+
+    def _slow_reply(*args, **kwargs):
+        time.sleep(0.08)  # generation takes a while; the student's time must not move
+        return "What do you think a difference in potential means?"
+
+    gemini.generate.side_effect = _slow_reply
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+    assert resp.status_code == 200, resp.text
+
+    async with _TestSessionFactory() as db:
+        rows = (
+            await db.execute(select(TutoringMessage).where(TutoringMessage.session_id == uuid.UUID(session_id)))
+        ).scalars().all()
+    by_role = {m.role: m for m in rows}
+    gap = (by_role["tutor"].created_at - by_role["student"].created_at).total_seconds()
+    assert gap >= 0.05, f"student stamped {gap:.3f}s before the reply; expected the generation time"
+
+
+@pytest.mark.asyncio
+async def test_failed_generation_leaves_no_unanswered_student_message(
+    client, student_token, ready_course_id
+):
+    """Saving at receipt must not strand a message when the reply fails."""
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.side_effect = RuntimeError("model unavailable")
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        try:
+            resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+            assert resp.status_code >= 500
+        except RuntimeError:
+            pass  # the test transport may re-raise instead of returning the 500
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert messages.json() == []
