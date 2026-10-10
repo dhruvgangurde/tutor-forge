@@ -57,6 +57,7 @@ from agents.tutor.output_guard import (
     TutorTurn,
     guard_tutor_reply,
 )
+from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
@@ -355,8 +356,10 @@ def generate_guiding_question_node(
     # that instruction is exactly what was already failing — a student was shown
     # "the course context provided does not directly mention...". So the output
     # is sanitised too, on the same principle as the grading groundedness gate:
-    # an instruction the model may ignore is not an enforcement.
-    response = strip_source_narration(strip_context_references(raw_response))
+    # an instruction the model may ignore is not an enforcement. Simple LaTeX
+    # is turned into plain text first, since the chat does not render maths.
+    cleaned = to_plain_math(raw_response)
+    response = strip_source_narration(strip_context_references(cleaned))
     if refers_to_learner_in_third_person(response):
         # Not rewritten ("the student is considering" has no safe "you" form);
         # loud so the prompt can be tightened if it keeps happening.
@@ -365,7 +368,7 @@ def generate_guiding_question_node(
             state.get("session_id"),
             response[:160],
         )
-    if response != raw_response:
+    if response != cleaned:
         logger.info(
             "Stripped context framing or source narration from tutor response (session %s).",
             state.get("session_id"),

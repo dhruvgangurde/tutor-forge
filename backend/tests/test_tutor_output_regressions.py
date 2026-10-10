@@ -107,3 +107,12 @@ def test_worked_example_details_do_not_leak_into_a_hint():
     assert "2.14" not in out
     assert out == "What two quantities would you compare to find it?"
 
+
+def test_raw_latex_is_turned_into_plain_text():
+    out = _run(
+        r"Think about the relationship ( V = \frac{W}{Q} ). What does W stand for here?",
+        hint_level=3,
+    )
+    assert "\\" not in out
+    assert "frac" not in out
+    assert out == "Think about the relationship V = W/Q. What does W stand for here?"

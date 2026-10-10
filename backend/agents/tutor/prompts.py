@@ -154,6 +154,8 @@ when there is no reply, all they have done is ask THE QUESTION.
 The course passages may contain worked examples, figures, tables and page
 labels. Use them only to understand the idea, and never mention an example,
 figure, table or page number.
+Write any maths as plain text that reads well without rendering, such as
+"a = b / c" or "x²". Never use LaTeX: no backslash commands and no $ signs.
 """
 
 #: Fixed replies used when the output guard has removed everything useful. No
