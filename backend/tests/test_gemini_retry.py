@@ -432,3 +432,29 @@ def test_non_capacity_errors_still_propagate_unchanged(scripted):
     with pytest.raises(gexc.InternalServerError):
         client.generate("hello")
     assert _ScriptedModel.calls == 4
+
+
+def test_retry_logs_keep_only_the_first_line_of_the_provider_message(caplog):
+    import logging
+
+    sleep, _ = _recorder()
+    message = (
+        "429 You exceeded your current quota.\n"
+        "  * Quota exceeded for metric: embed_content_free_tier_requests, limit: 100\n"
+        "  Learn more: https://ai.google.dev/gemini-api/docs/rate-limits"
+    )
+
+    def fn():
+        raise _Boom(message)
+
+    with caplog.at_level(logging.WARNING, logger="core.retry"), pytest.raises(_Boom):
+        call_with_retry(
+            fn, attempts=2, base_delay=0.0, max_delay=0.0, retry_on=(_Boom,), sleep=sleep,
+            description="Gemini embed",
+        )
+
+    logged = [r.getMessage() for r in caplog.records]
+    assert len(logged) == 2  # one retry warning, one give-up error
+    for line in logged:
+        assert line.endswith("429 You exceeded your current quota.")
+        assert "https://" not in line and "metric" not in line

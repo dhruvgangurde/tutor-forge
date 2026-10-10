@@ -20,6 +20,15 @@ from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
+
+def _first_line(exc: BaseException) -> str:
+    """
+    The first line of an error, for a log line. Provider errors run on with
+    quota details and documentation links; the first line says what happened.
+    """
+    text = str(exc).strip()
+    return text.splitlines()[0][:300] if text else type(exc).__name__
+
 T = TypeVar("T")
 
 
@@ -72,11 +81,13 @@ def call_with_retry(
             if attempts_for is not None:
                 limit = min(attempts, attempts_for(exc) or attempts)
             if stop_if is not None and stop_if(exc):
-                logger.error("%s failed and will not be retried: %s", description, exc)
+                logger.error(
+                    "%s failed and will not be retried: %s", description, _first_line(exc)
+                )
                 raise
             if attempt >= limit:
                 logger.error(
-                    "%s failed after %d attempt(s): %s", description, attempt, exc
+                    "%s failed after %d attempt(s): %s", description, attempt, _first_line(exc)
                 )
                 raise
             backoff = min(max_delay, base_delay * (2 ** (attempt - 1)))
@@ -93,7 +104,7 @@ def call_with_retry(
                     limit,
                     delay,
                     max_total_wait,
-                    exc,
+                    _first_line(exc),
                 )
                 raise
             waited += delay
@@ -103,7 +114,7 @@ def call_with_retry(
                 attempt,
                 attempts,
                 delay,
-                exc,
+                _first_line(exc),
             )
             sleep(delay)
 
