@@ -40,7 +40,7 @@ from core.logging import RequestIdMiddleware, configure_logging
 from core.ratelimit import RateLimitMiddleware
 from core.gemini_calls import call_gemini
 from core.security_headers import SecurityHeadersMiddleware
-from core.throttle import EMBED, GENERATE, throttle
+from core.throttle import EMBED, GENERATE, embedding_batch_limit, throttle
 
 
 # ── Gemini client wrappers ────────────────────────────────────────────────────
@@ -120,10 +120,12 @@ class GeminiProClient:
         """
         Embed course chunks for indexing, ``embedding_batch_size`` per request.
 
-        One request per batch, each paced and retried on its own. The API
-        accepts at most 100 texts per request, so a larger setting is capped.
+        One request per batch, each paced and retried on its own. On the free
+        tier every text counts as a request, so pacing weighs a batch by its
+        texts, and a batch is never larger than the per-minute allowance (nor
+        than the API's 100).
         """
-        size = max(1, min(settings.embedding_batch_size, _EMBED_BATCH_LIMIT))
+        size = embedding_batch_limit(_EMBED_BATCH_LIMIT)
         vectors: list[list[float]] = []
         for start in range(0, len(texts), size):
             vectors.extend(self._embed_batch(texts[start:start + size], "retrieval_document"))
@@ -137,7 +139,8 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> list[list[float]]:
-            throttle(EMBED, settings.embedding_model)  # one request per batch
+            # Weighed by texts: each one counts against the per-minute quota.
+            throttle(EMBED, settings.embedding_model, weight=len(texts))
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=texts,

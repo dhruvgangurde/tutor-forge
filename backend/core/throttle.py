@@ -12,7 +12,9 @@ with AIServiceBusy ("The AI service is busy"), which the caller turns into a
 plain message.
 
 Limits come from settings: ``gemini_generate_rpm`` per generation model and
-``gemini_embed_rpm`` per embedding model. Two clients configured with the same
+``gemini_embed_rpm`` per embedding model. A generation call takes one slot; an
+embedding batch takes one per text, because the free tier counts each text as
+a request (a 100-text batch used the whole minute and the next batch got a 429). Two clients configured with the same
 model share one window, because the quota is per model. A limit of 0 turns
 pacing off.
 
@@ -59,25 +61,45 @@ class SlidingWindowLimiter:
         self.window = window
         self._clock = clock
         self._sleep = sleep
-        self._calls: deque[float] = deque()
+        self._calls: deque[tuple[float, int]] = deque()  # (time, weight)
         self._lock = threading.Lock()
 
-    def acquire(self, max_wait: float, description: str = "AI request") -> None:
-        """Take a slot, waiting for one if needed; AIServiceBusy if that would take too long."""
+    def acquire(self, max_wait: float, description: str = "AI request", weight: int = 1) -> None:
+        """
+        Take ``weight`` slots, waiting for them if needed; AIServiceBusy if that
+        would take longer than ``max_wait``.
+
+        The weight is what the provider counts: one for a generation call, the
+        number of texts for an embedding batch (each text is a request on the
+        free tier). A taken slot is kept for the whole window even if the
+        request then fails, because the provider counts rejected requests too.
+        """
+        if weight > self.max_calls:
+            raise ValueError(
+                f"a request of weight {weight} can never fit a limit of {self.max_calls}"
+            )
         waited = 0.0
         while True:
             with self._lock:
                 now = self._clock()
-                while self._calls and now - self._calls[0] >= self.window:
+                while self._calls and now - self._calls[0][0] >= self.window:
                     self._calls.popleft()
-                if len(self._calls) < self.max_calls:
-                    self._calls.append(now)
+                used = sum(w for _, w in self._calls)
+                if used + weight <= self.max_calls:
+                    self._calls.append((now, weight))
                     return
-                wait = self._calls[0] + self.window - now
+                # Wait until enough of the oldest requests leave the window.
+                needed = used + weight - self.max_calls
+                freed = 0
+                for started, w in self._calls:
+                    freed += w
+                    if freed >= needed:
+                        wait = started + self.window - now
+                        break
             if waited + wait > max_wait:
                 raise AIServiceBusy(
                     f"{description}: rate limit of {self.max_calls} per "
-                    f"{self.window:.0f}s reached; the next slot is {wait:.0f}s away"
+                    f"{self.window:.0f}s reached; room for {weight} is {wait:.0f}s away"
                 )
             self._sleep(wait)
             waited += wait
@@ -98,14 +120,39 @@ def _limiter(key: str, per_minute: int) -> SlidingWindowLimiter:
         return limiter
 
 
-def throttle(kind: str, model: str) -> None:
-    """Wait for a request slot for ``model``; ``kind`` is GENERATE or EMBED."""
+def throttle(kind: str, model: str, weight: int = 1, max_wait: float | None = None) -> None:
+    """
+    Wait for request slots for ``model``; ``kind`` is GENERATE or EMBED.
+
+    ``weight`` is 1 for a generation call and the number of texts for an
+    embedding batch. ``max_wait`` defaults to the interactive limit
+    (``gemini_max_wait_seconds``); background work passes a longer one.
+    """
     per_minute = settings.gemini_generate_rpm if kind == GENERATE else settings.gemini_embed_rpm
     if per_minute <= 0:
         return
     _limiter(f"{kind}:{model}", per_minute).acquire(
-        settings.gemini_max_wait_seconds, description=f"Gemini {kind} ({model})"
+        settings.gemini_max_wait_seconds if max_wait is None else max_wait,
+        description=f"Gemini {kind} ({model})",
+        weight=weight,
     )
+
+
+def embedding_batch_limit(api_limit: int) -> int:
+    """
+    Texts per embedding request: the configured batch size, never more than the
+    API accepts, and never more than the per-minute allowance (a batch heavier
+    than the whole allowance could never be sent without a 429).
+    """
+    size = min(settings.embedding_batch_size, api_limit)
+    if settings.gemini_embed_rpm > 0:
+        size = min(size, settings.gemini_embed_rpm)
+    return max(1, size)
+
+
+#: The pacing window, in seconds; also how long a rate-limited call with no
+#: usable retry hint waits before trying again (core/gemini_calls.py).
+WINDOW_SECONDS = 60.0
 
 
 def reset() -> None:
