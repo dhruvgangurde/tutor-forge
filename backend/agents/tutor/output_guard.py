@@ -76,6 +76,7 @@ RULE_ONE_QUESTION = "one_question"
 RULE_FRAGMENT = "fragment"
 RULE_NON_ANSWER_STATEMENT = "non_answer_statement"
 RULE_SOURCE_REFERENCE = "source_reference"
+RULE_CLAIM_QUESTION = "claim_question"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -371,6 +372,44 @@ def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
     )
 
 
+# ── 2c. A yes/no question that carries the answer ─────────────────────────────
+#
+# "Do you think potential difference is related to the work or energy required
+# to move charges between two points?" is a question in form and the answer in
+# substance. The claim inside it is judged like a statement.
+
+_YES_NO_RE = re.compile(
+    r"^(?:(?:so|and|then|now|well|okay|ok)\b[,\s]*)?"
+    r"(?:do|does|did|is|are|was|were|can|could|would|will|should|has|have)\s+(.*?)\?\s*$",
+    re.IGNORECASE,
+)
+#: After "do you" and the like, only a verb of thinking introduces a claim:
+#: "Can you describe..." and "Have you ever..." are requests, not claims.
+_THINKING_RE = re.compile(
+    r"^you\s+(?:think|know|remember|recall|agree|believe|suppose|feel|see|reckon)\s+"
+    r"(?:that\s+)?(.*)$",
+    re.IGNORECASE,
+)
+_OPEN_CLAUSE_RE = re.compile(r"^(?:what|why|how|when|where|which|who|whom|whose|if|whether)\b", re.IGNORECASE)
+
+
+def _embedded_claim(question: str) -> str | None:
+    """The claim a yes/no question asks them to agree with, or None if it has none."""
+    m = _YES_NO_RE.match(_plain(question))
+    if not m:
+        return None
+    rest = m.group(1).strip()
+    if re.match(r"you\b", rest, re.IGNORECASE):
+        thinking = _THINKING_RE.match(rest)
+        if not thinking:
+            return None
+        rest = thinking.group(1).strip()
+    # "Do you know what potential difference measures?" asks, it does not claim.
+    if not rest or _OPEN_CLAUSE_RE.match(rest):
+        return None
+    return rest
+
+
 # ── 3. A verdict after a non-answer ───────────────────────────────────────────
 
 _VERDICT_RE = re.compile(
@@ -537,6 +576,22 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 return _cut_leading_clause(s, lambda clause: _non_answer_statement(clause, signals))
 
             run(RULE_NON_ANSWER_STATEMENT, only_ask)
+
+        # 2c. A yes/no question whose claim gives the answer away: after a
+        # non-answer below Hint 3 judged as strictly as a statement, and on the
+        # opening question of a new ladder by the milder definition test. Hints
+        # are left alone: a hint is meant to nudge.
+        claim_test = None
+        if turn.is_non_answer:
+            claim_test = _non_answer_statement
+        elif turn.path == PATH_NEW_QUESTION and turn.hint_level == 0:
+            claim_test = _states_answer
+        if claim_test is not None:
+            def no_claim(s: str) -> str | None:
+                claim = _embedded_claim(s) if _is_question(s) else None
+                return None if claim and claim_test(claim, signals) else s
+
+            run(RULE_CLAIM_QUESTION, no_claim)
 
     # 3. No verdict on a non-answer.
     if turn.is_non_answer:

@@ -237,3 +237,18 @@ def test_closing_based_on_the_description_is_removed():
 def test_course_material_qualifier_inside_a_question_is_removed():
     out = _run("Do you remember the key idea from the course material about resistors in series?")
     assert out == "Do you remember the key idea about resistors in series?"
+
+
+def test_yes_no_question_restating_the_course_after_no_is_dropped():
+    out = _run(
+        "Do you think potential difference is related to the work or energy required to move "
+        "charges between two points?",
+        reply="no",
+        non_answer=True,
+    )
+    assert out == GUARD_FALLBACK_NON_ANSWER
+
+
+def test_hint_with_a_yes_no_claim_question_is_unchanged():
+    question = "Do you think potential difference is the work done per unit charge?"
+    assert _run(question, hint=True, hint_level=0) == question  # escalates to Hint 1

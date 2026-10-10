@@ -15,6 +15,7 @@ from agents.tutor.output_guard import (
     PATH_HINT,
     PATH_NEW_QUESTION,
     PATH_REPLY,
+    RULE_CLAIM_QUESTION,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
     RULE_FRAGMENT,
@@ -806,3 +807,136 @@ def test_every_instruction_forbids_naming_the_course_material():
     for text in [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True, 4)]:
         for phrase in ('"from the course material"', '"in our course"', '"the lecture notes say"'):
             assert phrase in text
+
+
+# ── A yes/no question that carries the answer ─────────────────────────────────
+
+#: The course text the item 3 prototype table was measured against.
+_CLAIM_COURSE = (
+    "Potential difference is the work done per unit charge in moving a charge between two "
+    "points. It is measured in volts. Work is required to move a charge against the force of "
+    "attraction or repulsion between charges."
+)
+
+
+def _claim_guard(text, *, first_turn=False, path=None, level=0, reply=None, non_answer=None):
+    if first_turn:
+        path, reply, non_answer = PATH_NEW_QUESTION, None, False
+    elif path is None:
+        path, reply, non_answer = PATH_REPLY, "no", True
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PD,
+            course_text=_CLAIM_COURSE,
+            student_reply=reply,
+            is_non_answer=bool(non_answer),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Do you think potential difference is related to the work needed to move charges?",
+        "Does potential difference measure the work needed per charge?",
+        "Is potential difference the work done per unit charge?",
+        "Are potential differences measured between two points?",
+        "Can you remember that potential difference is the work done per charge?",
+        "Do you know that potential difference is the work done per charge?",
+        "Did you recall that potential difference compares two points?",
+        "Would you agree that potential difference is measured in volts?",
+        "So, do you believe potential difference depends on the work done?",
+    ],
+)
+def test_each_yes_no_form_with_a_claim_is_dropped_after_a_non_answer(question):
+    out, tripped = _claim_guard(question + " What does it take to lift a box?")
+    assert out == "What does it take to lift a box?"
+    assert RULE_CLAIM_QUESTION in tripped
+
+
+def test_live_claim_question_after_no_falls_back():
+    out, tripped = _claim_guard(
+        "Do you think potential difference is related to the work or energy required to move "
+        "charges between two points?"
+    )
+    assert out == GUARD_FALLBACK_NON_ANSWER
+    assert tripped == [RULE_CLAIM_QUESTION, RULE_FALLBACK]
+
+
+#: The prototype table from the item 3 proposal: (question, trips after "no", trips on a first turn).
+_CLAIM_TABLE = [
+    (
+        (
+            "Do you think potential difference is related to the work or energy required to "
+            "move charges between two points?"
+        ),
+        True,
+        False,
+    ),
+    ("Is potential difference the work done per unit charge?", True, True),
+    ("Does potential difference measure the work needed per charge?", True, True),
+    ("Do you think potential difference is the work done per unit charge?", True, True),
+    ("Do you think potential difference has something to do with energy?", True, False),
+    ("Do you know what potential difference measures?", False, False),
+    ("Can you describe potential difference in your own words?", False, False),
+    ("Have you ever pushed two magnets together?", False, False),
+    ("Do you think it takes effort to push two like charges together?", False, False),
+    ("What do you think potential difference measures?", False, False),
+]
+
+
+@pytest.mark.parametrize("question, after_no, _first", _CLAIM_TABLE)
+def test_claim_table_after_a_non_answer(question, after_no, _first):
+    out, tripped = _claim_guard(question)
+    if after_no:
+        assert out == GUARD_FALLBACK_NON_ANSWER
+        assert RULE_CLAIM_QUESTION in tripped
+    else:
+        assert out == question
+        assert tripped == []
+
+
+@pytest.mark.parametrize("question, _after_no, first_turn", _CLAIM_TABLE)
+def test_claim_table_on_a_first_turn(question, _after_no, first_turn):
+    out, tripped = _claim_guard(question, first_turn=True)
+    if first_turn:
+        assert out == GUARD_FALLBACK_QUESTION
+        assert RULE_CLAIM_QUESTION in tripped
+    else:
+        assert out == question
+        assert tripped == []
+
+
+@pytest.mark.parametrize("level", [1, 2, 3, 4])
+def test_hints_keep_claim_questions(level):
+    question = "Do you think potential difference is the work done per unit charge?"
+    assert _claim_guard(question, path=PATH_HINT, level=level, non_answer=False) == (question, [])
+
+
+@pytest.mark.parametrize(
+    "path, level, reply, non_answer",
+    [
+        (PATH_REPLY, 0, "is it energy?", False),   # a real attempt
+        (PATH_REPLY, 2, "maybe work?", False),
+        (PATH_REPLY, 3, "no", True),               # Hint 3 after "no"
+        (PATH_REPLY, 4, "no", True),               # full explanation after "no"
+    ],
+)
+def test_claim_questions_are_kept_outside_the_rule(path, level, reply, non_answer):
+    question = "Do you think potential difference is the work done per unit charge?"
+    out, tripped = _claim_guard(question, path=path, level=level, reply=reply, non_answer=non_answer)
+    assert (out, tripped) == (question, [])
+
+
+def test_claim_rule_logs_only_rule_path_and_level(caplog):
+    with caplog.at_level(logging.INFO, logger="agents.tutor.output_guard"):
+        guard_tutor_reply(
+            "Is potential difference the work done per unit charge? What does it take to lift a box?",
+            TutorTurn(path=PATH_NEW_QUESTION, hint_level=0, question=_PD, course_text=_CLAIM_COURSE),
+        )
+    assert [r.getMessage() for r in caplog.records] == [
+        "[TUTOR-GUARD] rule=claim_question path=new_question hint_level=0"
+    ]
