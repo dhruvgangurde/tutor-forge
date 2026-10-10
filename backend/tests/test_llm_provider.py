@@ -468,3 +468,27 @@ def test_production_rejects_lingering_legacy_env_var(monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         assert_safe_production_config(s)
     assert "USE_MOCK_GEMINI" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        "embedding_model",
+        "embedding_dimensions",
+        "embedding_batch_size",
+        "gemini_generate_rpm",
+        "gemini_embed_rpm",
+        "gemini_max_wait_seconds",
+    ],
+)
+def test_gemini_settings_are_in_env_example_with_their_defaults(setting):
+    """A new setting is documented where a new setup copies its .env from."""
+    from pathlib import Path
+
+    example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(encoding="utf-8")
+    values = dict(
+        line.split("=", 1) for line in example.splitlines() if "=" in line and not line.startswith("#")
+    )
+    default = Settings.model_fields[setting].default
+    assert setting.upper() in values
+    assert values[setting.upper()].strip() == str(default)

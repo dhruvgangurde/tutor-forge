@@ -140,7 +140,12 @@ npm run dev                # → http://localhost:5173
 | `GEMINI_API_KEY`          | —                         | Gemini API key (required for real LLM calls)                                                                                              |
 | `GEMINI_PRO_MODEL`        | `gemini-2.5-pro`         | Gemini Pro model name                                                                                                                     |
 | `GEMINI_FLASH_MODEL`      | `gemini-2.5-flash`       | Gemini Flash model name                                                                                                                   |
-| `EMBEDDING_MODEL`         | `text-embedding-004`     | Embedding model name                                                                                                                      |
+| `EMBEDDING_MODEL`         | `gemini-embedding-001`   | Embedding model name                                                                                                                      |
+| `EMBEDDING_DIMENSIONS`    | `768`                    | Embedding size, sent for indexing and querying alike and recorded on each course collection; changing it means uploading courses again |
+| `EMBEDDING_BATCH_SIZE`    | `100`                    | Course chunks per embedding request (API maximum 100)                                                                                   |
+| `GEMINI_GENERATE_RPM`     | `5`                      | Client-side pacing per generation model, requests per minute (0 = off); safe for the free tier                                          |
+| `GEMINI_EMBED_RPM`        | `90`                     | Client-side pacing per embedding model, requests per minute (0 = off)                                                                   |
+| `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one Gemini call (429 retries or a pacing slot) before the user sees "The AI service is busy"                           |
 | `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                                            |
 | `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                                        |
 | `CORS_ALLOWED_ORIGINS`    | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)                                                                                    |
