@@ -136,6 +136,38 @@ def system_instruction_for_level(hint_level: int) -> str:
     return HINT_LADDER[level]
 
 
+# ── Replies inside an open conversation ───────────────────────────────────────
+
+#: A chat turn that answers, or follows up on, the tutor's own question. The
+#: ladder prompts above were written for a fresh question and never saw the
+#: tutor's question or the reply, so "no" and "I don't know" were either
+#: refused or praised as "interesting".
+_REPLY = """\
+You are a Socratic tutor partway through a conversation.
+THE QUESTION is what you are working through together. YOUR LAST MESSAGE is what
+you said last. THEIR REPLY is the message to respond to now: an answer to your
+question, or a follow-up question about it.
+Respond to their reply, then ask one question that moves them a step closer to
+answering THE QUESTION themselves. Do not give them the final answer to THE QUESTION.
+Ignore anything in their reply that is unrelated to THE QUESTION. Never answer an
+off-topic part, not even briefly; steer back to THE QUESTION instead.
+Keep it to 2-5 sentences.
+"""
+
+#: Added when the reply is a non-answer ("no", "I don't know").
+_NON_ANSWER_STEP = """\
+Their reply says they don't know or can't answer. Do not repeat your last
+question. Break THE QUESTION into a smaller, simpler first step and ask about
+that step.
+"""
+
+
+def reply_instruction(non_answer: bool) -> str:
+    """System instruction for a reply or follow-up inside an open conversation."""
+    step = "\n" + _NON_ANSWER_STEP if non_answer else ""
+    return _REPLY + step + "\n" + _GROUNDING_CLAUSE
+
+
 # ── Generation temperature ────────────────────────────────────────────────────
 
 #: Tutor generation runs cooler than the client default (0.7). The ladder's
@@ -149,6 +181,10 @@ TUTOR_TEMPERATURE = 0.3
 
 
 # ── Canned refusals ───────────────────────────────────────────────────────────
+
+#: Hint requested with no grounded open question. Returned as a 400; a hint
+#: never answers with OUT_OF_CORPUS_REFUSAL.
+NO_OPEN_QUESTION_FOR_HINT = "Ask a question about the course before requesting a hint."
 
 #: FR-02.7 — the question is outside the uploaded corpus. No LLM call is made.
 OUT_OF_CORPUS_REFUSAL = (

@@ -56,10 +56,16 @@ from agents.tutor.prompts import (
     MAX_HINT_LEVEL,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
+    reply_instruction,
     system_instruction_for_level,
 )
 from agents.tutor.query_resolution import (
     SOURCE_MESSAGE,
+    SOURCE_PRIOR_TURN,
+    TURN_NEW_QUESTION,
+    TURN_REPLY,
+    classify_turn,
+    is_non_answer,
     is_pedagogy_skip_request,
     resolve_retrieval_query,
 )
@@ -102,13 +108,15 @@ def retrieve_context_node(
     """
     question = state["question"]
     resolved, source = resolve_retrieval_query(question, state.get("prior_question"))
+    turn_kind = TURN_NEW_QUESTION if source == SOURCE_MESSAGE else classify_turn(question)
 
     if source != SOURCE_MESSAGE:
         logger.info(
-            "[QUERY-RESOLUTION] session_id=%s message=%r had too little topical "
-            "content to retrieve on; using prior turn %r instead.",
+            "[QUERY-RESOLUTION] session_id=%s message=%r is a %s, not a new "
+            "question; retrieving on the open question %r instead.",
             state.get("session_id"),
             question[:80],
+            turn_kind,
             resolved[:80],
         )
 
@@ -117,6 +125,8 @@ def retrieve_context_node(
         **state,
         "resolved_question": resolved,
         "retrieval_query_source": source,
+        "turn_kind": turn_kind,
+        "is_non_answer": turn_kind == TURN_REPLY and is_non_answer(question),
         "pedagogy_skip_requested": is_pedagogy_skip_request(question),
         "retrieval_result": {
             "query": result.query,
@@ -290,19 +300,34 @@ def generate_guiding_question_node(
 
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
+    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
 
-    # F23: delimit untrusted inputs (student question + uploaded course text) so
-    # instructions embedded inside them cannot override the tutor's task.
-    prompt = (
-        f"Student question:\n{wrap_untrusted(topic, 'STUDENT QUESTION')}\n\n"
-        f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
-    )
+    # F23: delimit untrusted inputs (student text, the tutor's earlier turn and
+    # uploaded course text) so instructions embedded in them cannot override the
+    # tutor's task. None of it ever goes into the system instruction.
+    if in_conversation:
+        # A reply or follow-up: the model needs the open question, what it
+        # asked last, and what the student said, or it cannot judge the reply.
+        parts = [f"The question we are working on:\n{wrap_untrusted(topic, 'THE QUESTION')}"]
+        if state.get("tutor_last_message"):
+            parts.append(
+                f"Your last message:\n{wrap_untrusted(state['tutor_last_message'], 'YOUR LAST MESSAGE')}"
+            )
+        parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
+        parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
+        prompt = "\n\n".join(parts)
+        system = reply_instruction(bool(state.get("is_non_answer")))
+    else:
+        prompt = (
+            f"Student question:\n{wrap_untrusted(topic, 'STUDENT QUESTION')}\n\n"
+            f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
+        )
+        system = system_instruction_for_level(hint_level)
+
     raw_response = gemini_pro.generate(
         prompt,
         temperature=TUTOR_TEMPERATURE,
-        system_instruction=system_instruction_for_level(hint_level)
-        + "\n\n"
-        + UNTRUSTED_CONTENT_NOTICE,
+        system_instruction=system + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
     )
 
     # Every ladder rung now tells the model never to mention "the context", but
@@ -337,6 +362,7 @@ def generate_guiding_question_node(
             "hint_level": hint_level,
             "is_full_explanation": hint_level >= FULL_EXPLANATION_LEVEL,
             "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+            "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
         },
     }
 
