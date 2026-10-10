@@ -40,6 +40,7 @@ from core.logging import RequestIdMiddleware, configure_logging
 from core.ratelimit import RateLimitMiddleware
 from core.gemini_calls import call_gemini
 from core.security_headers import SecurityHeadersMiddleware
+from core.throttle import EMBED, GENERATE, throttle
 
 
 # ── Gemini client wrappers ────────────────────────────────────────────────────
@@ -63,6 +64,7 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> str:
+            throttle(GENERATE, self._model_name)  # every attempt is a request
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,
@@ -86,6 +88,7 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> list[float]:
+            throttle(EMBED, settings.embedding_model)
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=text,
@@ -117,6 +120,7 @@ class GeminiFlashClient:
         import google.generativeai as genai
 
         def _call() -> str:
+            throttle(GENERATE, self._model_name)  # every attempt is a request
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,

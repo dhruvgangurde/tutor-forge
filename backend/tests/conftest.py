@@ -47,6 +47,21 @@ def disable_rate_limiting():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def disable_gemini_pacing():
+    """
+    Turn client-side Gemini pacing (core/throttle.py) off for the suite, for
+    the same reason as rate limiting above: tests that build real Gemini
+    clients against a fake SDK would otherwise share one-minute windows and
+    wait in real time. tests/test_throttle.py re-enables it with a fake clock.
+    """
+    original = (settings.gemini_generate_rpm, settings.gemini_embed_rpm)
+    settings.gemini_generate_rpm = 0
+    settings.gemini_embed_rpm = 0
+    yield
+    settings.gemini_generate_rpm, settings.gemini_embed_rpm = original
+
+
+@pytest.fixture(scope="session", autouse=True)
 def pin_mock_provider():
     """
     Pin the suite to LLM_PROVIDER=mock regardless of the developer's .env.

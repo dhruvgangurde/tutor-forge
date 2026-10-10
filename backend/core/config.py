@@ -131,10 +131,14 @@ class Settings(BaseSettings):
     gemini_retry_base_delay: float = 0.5     # seconds; first backoff
     gemini_retry_max_delay: float = 8.0      # seconds; backoff ceiling
     gemini_timeout_seconds: float = 30.0     # per-request deadline
-    # Longest total wait for one Gemini call, across its retries (honouring the
-    # retry delay a 429 asks for) and, later, waiting for a rate-limit slot.
+    # Longest wait for one Gemini call: across its retries (honouring the retry
+    # delay a 429 asks for), and separately while waiting for a rate-limit slot.
     # Past it the call fails with "The AI service is busy" instead of hanging.
     gemini_max_wait_seconds: float = 60.0
+    # Client-side pacing (core/throttle.py), per model, in requests per minute.
+    # Defaults are safe for the free tier; 0 turns pacing off.
+    gemini_generate_rpm: int = 5
+    gemini_embed_rpm: int = 90
 
     # ── Background job recovery (F4-minimal) ──────────────────────────────────
     # A job left in an in-flight state (assessment "generating", ingestion
