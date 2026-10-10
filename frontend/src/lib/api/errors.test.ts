@@ -100,3 +100,26 @@ describe('isNotFoundError', () => {
     expect(isNotFoundError(new Error('x'))).toBe(false)
   })
 })
+
+describe('getErrorMessage: AI service busy (503 ai_busy)', () => {
+  it('says the AI service is busy in plain words', () => {
+    const err = apiError(503, {
+      error: 'ai_busy',
+      detail: 'The AI service is busy. Please try again in a minute.',
+    })
+    expect(getErrorMessage(err)).toBe('The AI service is busy. Please try again in a minute.')
+  })
+
+  it('never shows provider text even if a detail carried it', () => {
+    const err = apiError(503, {
+      error: 'ai_busy',
+      detail: '429 Resource has been exhausted (quota GenerateRequestsPerMinute), retry in 20s',
+    })
+    expect(getErrorMessage(err)).toBe('The AI service is busy. Please try again in a minute.')
+  })
+
+  it('keeps other 503s on the general server message', () => {
+    const err = apiError(503, { error: 'internal_error', detail: 'upstream unavailable' })
+    expect(getErrorMessage(err)).toBe('Something went wrong on our side. Please try again in a moment.')
+  })
+})

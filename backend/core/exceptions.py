@@ -128,6 +128,20 @@ def register_exception_handlers(app: FastAPI) -> None:
             headers=_correlation_headers(rid),
         )
 
+    @app.exception_handler(AIServiceBusy)
+    async def ai_busy_handler(request: Request, exc: AIServiceBusy) -> JSONResponse:
+        # 503 with fixed wording: the provider's own text (quota names, retry
+        # delays) stays in the log, never in the response.
+        with bind_request_id(request) as rid:
+            logger.warning(
+                "AI service busy on %s %s: %s", request.method, request.url.path, exc.reason
+            )
+        return JSONResponse(
+            status_code=503,
+            content={"error": "ai_busy", "detail": AI_BUSY_MESSAGE},
+            headers=_correlation_headers(rid),
+        )
+
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
         request: Request, exc: RequestValidationError

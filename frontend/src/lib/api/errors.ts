@@ -22,6 +22,8 @@ const NOT_FOUND_MESSAGE = 'This page could not be found. Check the link and try 
 const INVALID_INPUT_MESSAGE = 'Some of the details entered are not valid. Please check them and try again.'
 const NETWORK_MESSAGE = 'Could not reach the server. Check your connection and try again.'
 const SERVER_MESSAGE = 'Something went wrong on our side. Please try again in a moment.'
+/** A 503 the backend marks ai_busy: the AI provider is rate-limiting. Fixed wording, never its detail. */
+const AI_BUSY_MESSAGE = 'The AI service is busy. Please try again in a minute.'
 
 function fieldErrors(data: unknown): FieldError[] {
   const errors = (data as { errors?: unknown } | undefined)?.errors
@@ -78,6 +80,7 @@ export function getErrorMessage(
     const response = error.response
     if (!response) return NETWORK_MESSAGE
     if (response.status === 422) return validationMessage(fieldErrors(response.data))
+    if (response.status === 503 && response.data?.error === 'ai_busy') return AI_BUSY_MESSAGE
     if (response.status >= 500) return SERVER_MESSAGE
     const detail = response.data?.detail
     if (typeof detail === 'string' && detail.length > 0) return detail

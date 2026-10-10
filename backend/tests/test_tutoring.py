@@ -1820,6 +1820,62 @@ async def test_failed_generation_leaves_no_unanswered_student_message(
     assert messages.json() == []
 
 
+@pytest.mark.asyncio
+async def test_busy_ai_on_chat_is_a_plain_503_and_saves_nothing(client, student_token, ready_course_id):
+    """A rate-limited provider must not show its own text or strand the message."""
+    from core.exceptions import AI_BUSY_MESSAGE, AIServiceBusy
+
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.side_effect = AIServiceBusy(
+        "Gemini Pro generate (gemini-flash-lite-latest): rate limited; the server asked to wait 20s"
+    )
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "ai_busy", "detail": AI_BUSY_MESSAGE}
+    assert "rate limited" not in resp.text and "gemini" not in resp.text.lower()
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert messages.json() == []
+
+
+@pytest.mark.asyncio
+async def test_busy_ai_on_hint_is_a_plain_503_and_keeps_the_ladder(client, student_token, ready_course_id):
+    from core.exceptions import AI_BUSY_MESSAGE, AIServiceBusy
+
+    gemini = _make_mock_gemini_pro()
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        assert (await _chat(client, student_token, session_id, "What is the Socratic method?")).status_code == 200
+        gemini.generate.side_effect = AIServiceBusy("Gemini Pro generate: daily quota reached")
+        resp = await _hint(client, student_token, session_id)
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "ai_busy", "detail": AI_BUSY_MESSAGE}
+    assert "quota" not in resp.text
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert [m["hint_level"] for m in messages.json()] == [0, 0]  # no hint was saved
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Replies judged in the conversation; hints anchored to the learning question
 #
