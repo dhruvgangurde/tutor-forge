@@ -369,3 +369,18 @@ async def test_ingestion_graph_end_to_end(seeded):
     retrieval.add_chunks.assert_called_once()
     course = (await db.execute(select(Course).where(Course.id == course_id))).scalar_one()
     assert course.status == "ready"
+
+
+async def test_persist_logs_carry_no_outline_names(seeded, caplog):
+    """Chapter and concept names are course text: the logs keep ids and counts."""
+    import logging
+
+    db, course_id, job_id = seeded
+    marker = "quokkamarker"
+    outline = json.loads(json.dumps(HIERARCHY).replace('"Chapter 1"', f'"{marker} chapter"')
+                         .replace('"A"', f'"{marker} A"').replace('"B"', f'"{marker} B"'))
+    with caplog.at_level(logging.DEBUG, logger="agents.ingestion"):
+        out = await persist_to_db_node(_state(course_id=course_id, job_id=job_id, hierarchy=outline), db)
+
+    assert out["status"] != "failed"
+    assert marker not in " ".join(r.getMessage() for r in caplog.records).lower()

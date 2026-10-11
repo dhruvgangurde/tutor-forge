@@ -124,13 +124,14 @@ def retrieve_context_node(
     turn_kind = TURN_NEW_QUESTION if source == SOURCE_MESSAGE else classify_turn(question)
 
     if source != SOURCE_MESSAGE:
+        # Lengths only: both texts are what the student typed.
         logger.info(
-            "[QUERY-RESOLUTION] session_id=%s message=%r is a %s, not a new "
-            "question; retrieving on the open question %r instead.",
+            "[QUERY-RESOLUTION] session_id=%s message_chars=%d is a %s, not a new "
+            "question; retrieving on the open question (%d chars) instead.",
             state.get("session_id"),
-            question[:80],
+            len(question),
             turn_kind,
-            resolved[:80],
+            len(resolved),
         )
 
     result = retrieval_service.retrieve(state["course_id"], resolved)
@@ -184,11 +185,11 @@ def check_groundedness_node(
     grounded = retrieval_service.is_grounded(result, threshold=threshold)
 
     logger.info(
-        "[GROUNDEDNESS-DECISION] session_id=%s course_id=%s query=%r "
+        "[GROUNDEDNESS-DECISION] session_id=%s course_id=%s query_chars=%d "
         "query_source=%s top_score=%.4f threshold=%.2f threshold_source=%s grounded=%s",
         state.get("session_id"),
         state.get("course_id"),
-        (state.get("resolved_question") or state["question"])[:120],
+        len(state.get("resolved_question") or state["question"]),
         state.get("retrieval_query_source", SOURCE_MESSAGE),
         top_score,
         threshold,
