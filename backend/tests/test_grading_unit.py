@@ -924,7 +924,7 @@ class TestGradingGroundednessGate:
         called = {}
 
         class _Model:
-            def generate_deterministic(self, prompt):
+            def generate_deterministic(self, prompt, system_instruction=""):
                 called["prompt"] = prompt
                 return payload
 

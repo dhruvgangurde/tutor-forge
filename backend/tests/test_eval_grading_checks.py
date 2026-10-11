@@ -82,7 +82,7 @@ def test_dataset_is_synthetic_and_ids_are_unique():
 class _FakeLiveModel:
     """Stands in for the configured provider: scores by answer length, ignores instructions."""
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         body = prompt.split("<<UNTRUSTED STUDENT RESPONSE>>")[1].split("<<END UNTRUSTED STUDENT RESPONSE>>")[0]
         rubric = json.loads(prompt.split("## Rubric Criteria\n")[1].split("\n\nEach criterion")[0])
         good = "low - 1" in body

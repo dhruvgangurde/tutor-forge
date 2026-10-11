@@ -51,7 +51,7 @@ class RecordedGrader:
     def generate(self, *args, **kwargs):
         raise AssertionError("grading must call generate_deterministic(), not generate()")
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         self.prompts.append(prompt)
         if self.answer.get("obedient_model"):
             scores = [
@@ -118,9 +118,9 @@ def _short_answer_row(answer: dict, data: dict, live_model) -> dict:
                 self.prompts = []
                 prompts.append(self.prompts)
 
-            def generate_deterministic(self, prompt):
+            def generate_deterministic(self, prompt, system_instruction=""):
                 self.prompts.append(prompt)
-                return live_model.generate_deterministic(prompt)
+                return live_model.generate_deterministic(prompt, system_instruction=system_instruction)
 
         outs, models = _grade_twice(response, evidence, _Recording)
     else:

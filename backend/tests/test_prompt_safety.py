@@ -102,7 +102,7 @@ def test_grading_wraps_student_answer_and_prepends_notice():
 
     captured: dict = {}
 
-    def _gen_det(prompt):
+    def _gen_det(prompt, system_instruction=""):
         captured["prompt"] = prompt
         return (
             '{"criterion_scores": [{"criterion_id": "c1", "score": 3.0, '

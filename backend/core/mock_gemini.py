@@ -454,9 +454,9 @@ class MockGeminiProClient:
             ],
         }
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         """Deterministic generation (used for grading)."""
-        return self.generate(prompt, temperature=0.0)
+        return self.generate(prompt, temperature=0.0, system_instruction=system_instruction)
 
     def embed(self, text: str) -> list[float]:
         """Deterministic bag-of-words mock embedding — see _token_hash_embed."""
@@ -496,9 +496,9 @@ class MockGeminiFlashClient:
             "questions": []
         })
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         """Deterministic generation."""
-        return self.generate(prompt, temperature=0.0)
+        return self.generate(prompt, temperature=0.0, system_instruction=system_instruction)
 
     def embed(self, text: str) -> list[float]:
         """Deterministic bag-of-words mock embedding — see _token_hash_embed."""

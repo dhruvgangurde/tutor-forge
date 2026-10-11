@@ -45,6 +45,7 @@ from sqlalchemy.orm import selectinload
 
 from agents.grading.prompts import (
     GRADE_SHORT_ANSWER_PROMPT,
+    GRADING_SYSTEM_INSTRUCTION,
     MCQ_GRADING_METHOD,
     NUMERIC_GRADING_METHOD,
 )
@@ -665,9 +666,9 @@ def grade_responses_node(
         student_response = resp.get("answer_text") or "(no response provided)"
 
         # F23: delimit the untrusted student answer and uploaded course evidence,
-        # and prepend the data-boundary notice (grading uses generate_deterministic,
-        # which has no system-instruction channel). The rubric is trusted authority
-        # and is left un-wrapped. Scores are still clamped to [0, max_points] below.
+        # and prepend the data-boundary notice. The grading rules go in the system
+        # instruction. The rubric is trusted authority and is left un-wrapped.
+        # Scores are still clamped to [0, max_points] below.
         prompt = UNTRUSTED_CONTENT_NOTICE + "\n\n" + GRADE_SHORT_ANSWER_PROMPT.format(
             stem=resp["stem"],
             student_response=wrap_untrusted(student_response, "STUDENT RESPONSE"),
@@ -677,7 +678,7 @@ def grade_responses_node(
 
         t0 = time.perf_counter()
         try:
-            raw = gemini_pro.generate_deterministic(prompt)
+            raw = gemini_pro.generate_deterministic(prompt, system_instruction=GRADING_SYSTEM_INSTRUCTION)
         except Exception as exc:
             logger.exception(
                 "Gemini Pro grading call failed for question %s",
