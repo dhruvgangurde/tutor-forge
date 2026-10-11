@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 
-
 # ── Unit: wrap_untrusted ──────────────────────────────────────────────────────
 
 def test_wraps_text_in_labelled_markers():
@@ -136,7 +135,7 @@ def test_grading_wraps_student_answer_and_prepends_notice():
     # persistence state is exercised elsewhere (test_grading_unit).
     try:
         grade_responses_node(state, gemini)
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - only the prompt sent is asserted on
         pass
 
     assert captured["prompt"].startswith("SECURITY NOTICE")       # notice prepended
