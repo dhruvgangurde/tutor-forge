@@ -90,7 +90,7 @@
       "mode": "hint", "question": "PART", "hint_level": 1,
       "previous": "What variable is initialized before the loop starts to mark the boundary of that region?",
       "model_output": "To keep track of the elements smaller than the pivot, the function maintains a boundary index that starts at one position before the low index. When you scan through the array with a loop variable and find an element that is less than or equal to the pivot, what action do you take with that boundary index before swapping elements?",
-      "known_gap": "The guard sees only the passages that clear the groundedness bar. Here the sentence stating the condition ('When arr[j] <= pivot') scores below the mock bar, so the lead-in clause 'find an element that is less than or equal to the pivot' shares too few words with what the guard sees. With the real course passages (Phase B calibration) it was cut."
+      "gate": true
     },
     {
       "id": "T3-live-repeat", "case": "T3", "source": "live",

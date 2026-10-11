@@ -304,6 +304,9 @@ def generate_guiding_question_node(
     raw = state.get("retrieval_result") or {}
     chunks = [Chunk(**c) for c in raw.get("chunks", [])]
     scores = raw.get("confidence_scores", [])
+    # The guard checks against every retrieved passage: a claim from one below
+    # the bar is still the course's answer.
+    retrieved = chunks
 
     # Only passages that clear the groundedness bar on their own reach the
     # model and the citations. All five retrieved chunks used to go in, so a
@@ -406,7 +409,7 @@ def generate_guiding_question_node(
             path=path,
             hint_level=hint_level,
             question=topic,
-            course_text="\n\n".join(c.text for c in chunks),
+            course_text="\n\n".join(c.text for c in retrieved),
             student_reply=state["question"] if in_conversation else None,
             is_non_answer=bool(state.get("is_non_answer")),
             definition_allowed=definition,

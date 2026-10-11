@@ -435,3 +435,22 @@ def test_hint_2_instruction_says_where_to_look_not_what_they_will_find():
     assert "STOP short of stating its value, rule or result" in hint_2
     assert "say where to look, not what\nthey will find" in hint_2
     assert "walk through one worked step" not in hint_2  # the old wording invited the live leak
+
+
+def test_the_guard_checks_passages_below_the_groundedness_bar_too():
+    # Only the first passage clears the bar and reaches the model; the claim is
+    # in the second. The guard used to see only the first, so it let it through.
+    state = _state(
+        question=_PARTITION_Q,
+        course_chunks=[
+            "Quick sort sorts an array by partitioning it around a pivot.",
+            "The boundary index starts one position before the low index.",
+        ],
+    )
+    state["retrieval_result"]["confidence_scores"] = [0.9, 0.0]
+    out = _run_state(
+        "The function keeps a boundary index starting one position before the low index. "
+        "What do you think happens next?",
+        state,
+    )
+    assert out == "What do you think happens next?"

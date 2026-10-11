@@ -608,7 +608,12 @@ def test_scaffolding_without_the_topic_is_kept_after_a_non_answer():
 
 def test_same_statement_after_a_real_attempt_keeps_the_current_rules():
     text = _PARAPHRASE + " What do you think that work is done against?"
-    assert _guard(text, path=PATH_REPLY, reply="is it about energy?") == (text, [])
+    out, tripped = _guard(text, path=PATH_REPLY, reply="is it about energy?")
+    assert RULE_NON_ANSWER_STATEMENT not in tripped  # the stricter non-answer rule does not apply
+    # It is the definition in other words, so course_claim removes it below Hint 3
+    # ("charge" is in half the passage sentences: not background).
+    assert out == "What do you think the work is done against?"
+    assert RULE_COURSE_CLAIM in tripped
 
 
 @pytest.mark.parametrize("level", [3, 4])
@@ -1712,6 +1717,19 @@ def test_words_common_to_most_passages_are_background():
 
     # The same last sentence alone has no background, so the shared words count.
     _out, tripped = _course_claim_guard(statement, course=course.rsplit(". ", 1)[1])
+    assert RULE_COURSE_CLAIM in tripped
+
+
+def test_a_word_in_exactly_half_the_passages_is_not_background():
+    # "pivot" is in 2 of 4 sentences: not most of them, so it still counts and
+    # "less than or equal to the pivot" is the condition in arr[j] <= pivot.
+    course = (
+        "The index i starts at low - 1. When arr[j] <= pivot, i is incremented. "
+        "The pivot is the last element. The array is split into two halves."
+    )
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    out, tripped = _course_claim_guard(statement, course=course)
+    assert out == _FOLLOW_UP.strip()
     assert RULE_COURSE_CLAIM in tripped
 
 

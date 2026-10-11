@@ -252,7 +252,7 @@ class TutorGuardThresholds:
     # Of those, at least this many must be words the student did not write:
     # their own words count toward a claim, but cannot make one on their own.
     claim_min_new_shared_words: int = 2
-    # Words in at least this share of the passage sentences are background
+    # Words in more than this share of the passage sentences are background
     # ("pivot" in a sorting course), counted only with this many sentences.
     claim_background_share: float = 0.5
     claim_min_sentences_for_background: int = 4

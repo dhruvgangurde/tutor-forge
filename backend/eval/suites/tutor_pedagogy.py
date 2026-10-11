@@ -177,13 +177,9 @@ def _refused(final: dict) -> bool:
 
 
 def _guard_passages(final: dict) -> str:
-    """The passages the guard compared the reply with: those that cleared the bar (agents/tutor/nodes.py)."""
-    from core.config import settings
-
+    """The passages the guard compared the reply with: every retrieved one (agents/tutor/nodes.py)."""
     raw = final.get("retrieval_result") or {}
-    pairs = list(zip(raw.get("chunks", []), raw.get("confidence_scores", []), strict=False))
-    relevant = [c["text"] for c, s in pairs if s >= settings.active_groundedness_threshold]
-    return "\n\n".join(relevant or [c["text"] for c, _ in pairs])
+    return "\n\n".join(c["text"] for c in raw.get("chunks", []))
 
 
 def _rate(n: int, d: int) -> float | None:
@@ -250,8 +246,8 @@ async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID) -
         "refused": _refused(final),
         "raw_leak": raw_leak,
         "leak": final_leak,
-        # A leaked fact the guard could not have recognised: it is in no passage
-        # that cleared the groundedness bar, which is all the guard is given.
+        # A leaked fact the guard could not have recognised: it is in no
+        # retrieved passage, which is all the guard is given.
         "leak_outside_guard_passages": sorted(set(final_leak) - facts_in(_guard_passages(final), facts)),
         "fallback": is_fallback(shown),
         "rules": rules,

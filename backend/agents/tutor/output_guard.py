@@ -464,7 +464,7 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
     if len(units) >= TUTOR_GUARD.claim_min_sentences_for_background:
         counts = Counter(w for u in units for w in u)
         share = TUTOR_GUARD.claim_background_share
-        background = {w for w, n in counts.items() if n / len(units) >= share}
+        background = {w for w, n in counts.items() if n / len(units) > share}
     student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
     ignore = _claim_words(turn.question) | background
     return _ClaimSignals([u - ignore for u in units], ignore, student - ignore)
