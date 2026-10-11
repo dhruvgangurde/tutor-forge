@@ -21,14 +21,13 @@ import uuid
 
 import pytest
 
-
 # ── Helpers imported inline to avoid core.database engine creation ────────────
 
 def _nodes():
     from agents.grading.nodes import (
-        _strip_json_fences,
         _clamp,
         _safe_float,
+        _strip_json_fences,
         grade_responses_node,
     )
     return _strip_json_fences, _clamp, _safe_float, grade_responses_node
@@ -453,18 +452,21 @@ class TestGradingSchemas:
 
     def test_override_request_requires_reason(self):
         from pydantic import ValidationError
+
         from grading.schemas import OverrideRequest
         with pytest.raises(ValidationError):
             OverrideRequest(final_score=5.0)  # missing reason
 
     def test_override_request_blank_reason_rejected(self):
         from pydantic import ValidationError
+
         from grading.schemas import OverrideRequest
         with pytest.raises(ValidationError):
             OverrideRequest(final_score=5.0, reason="   ")
 
     def test_override_request_negative_score_rejected(self):
         from pydantic import ValidationError
+
         from grading.schemas import OverrideRequest
         with pytest.raises(ValidationError):
             OverrideRequest(final_score=-1.0, reason="Reason here.")
@@ -494,6 +496,7 @@ class TestGradingSchemas:
 
     def test_criterion_grade_negative_score_rejected(self):
         from pydantic import ValidationError
+
         from grading.schemas import CriterionGrade
         with pytest.raises(ValidationError):
             CriterionGrade(
@@ -505,6 +508,7 @@ class TestGradingSchemas:
 
     def test_evidence_citation_confidence_clamped(self):
         from pydantic import ValidationError
+
         from grading.schemas import EvidenceCitation
         with pytest.raises(ValidationError):
             EvidenceCitation(text="text", source_file="f.pdf", confidence=1.5)
@@ -540,7 +544,7 @@ class TestSanitiseGradingError:
 class TestGradingStateShape:
     """Confirm all expected keys are declared in GradingState."""
 
-    REQUIRED_KEYS = {
+    REQUIRED_KEYS = frozenset({
         "submission_id",
         "course_id",
         "responses",
@@ -555,7 +559,7 @@ class TestGradingStateShape:
         "error",
         # Per-response groundedness gate decision (BUG-AUDIT Critical #2).
         "evidence_grounded",
-    }
+    })
 
     def test_all_required_keys_present(self):
         from agents.grading.state import GradingState
