@@ -6,8 +6,9 @@ service wiring the suites need.
 
 The suites drive the application's own code — RetrievalService with the real
 Chroma collections, the real groundedness threshold, the real grading node — so
-a number produced here reflects the system a user would hit. Nothing in this
-package asserts against a mock.
+a number produced here reflects the system a user would hit. The one exception
+is the offline tutor-pedagogy suite, which replays recorded model outputs
+through that code and says so in its report.
 """
 
 from __future__ import annotations

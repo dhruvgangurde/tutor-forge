@@ -1,12 +1,12 @@
 """
 eval/report.py
 ---------------
-Render suite results to a committed, reviewable artifact.
+Render suite results to a reviewable report.
 
 Two files per run in eval/results/: a Markdown report a human reads and a JSON
-file a later run can diff against. The point of committing them is that "zero
-leakage" stops being a claim in a brief and becomes a number with a date, a
-provider, and a probe set attached to it.
+file a later run can diff against. They are not committed (eval/results/ is
+gitignored); a dated summary of measured numbers goes in the docs instead, so
+"zero leakage" is a number with a date, a provider and a probe set attached.
 """
 
 from __future__ import annotations

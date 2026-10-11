@@ -1,8 +1,9 @@
 # TutorForge evaluation suite
 
 Measures the acceptance criteria in `docs/PROJECT-BRIEF.md` §6 against the real
-system. Every number in `results/` came from executing the actual agents — no
-suite here asserts on a mock.
+system. Every number in a report came from executing the actual agents, with
+one stated exception: the offline `tutor-pedagogy` suite replays recorded model
+outputs (see below).
 
 ## Why pytest and not promptfoo
 
@@ -32,7 +33,7 @@ eval/
   suites/        one module per acceptance criterion
   runner.py      CLI: executes suites, writes a report
   report.py      renders results to Markdown + JSON
-  results/       committed output — this is the reviewable artifact
+  results/       generated reports, not committed (gitignored)
 ```
 
 ## Running
@@ -46,10 +47,32 @@ python -m eval.runner --suite groundedness        # no LLM needed; retrieval onl
 python -m eval.runner --suite grading-variance
 python -m eval.runner --suite paraphrase-bias
 python -m eval.runner --suite distractor-quality
+python -m eval.runner --suite tutor-pedagogy       # offline: no LLM, no .env needed
 python -m eval.runner --all
 ```
 
 Results are written to `eval/results/eval-report-<UTC date>.md` and `.json`.
+That folder is gitignored (`backend/eval/results/` in the root `.gitignore`), so
+reports are not committed; measured numbers go in a short dated summary in the
+docs instead.
+
+## tutor-pedagogy (offline)
+
+Findings T1-T6 and G1 from live testing on Gemini, as recorded cases
+(`datasets/tutor_pedagogy.json`): the live tutor replies and quiz questions,
+a synthetic sorting lab guide as the course, golden facts per question, and
+scripted conversations. It replays the recorded model outputs through the real
+tutor graph, tutoring service (in-memory SQLite), output guard and question
+validator, with real retrieval over an in-memory Chroma collection using the
+mock provider's embeddings and bar. So it measures the deterministic layers,
+not the model, and its refusal numbers are on the mock embedder's scale.
+
+It reports leakage at hint levels 0-2, on-topic refusals, repeated questions,
+fallbacks on non-leaking replies, the definition sentence kept or removed, and
+MC key support. Live (Gemini) numbers are reported as not measured. It runs in
+pytest (`tests/test_eval_tutor_pedagogy.py`) as a regression gate: fixed live
+failures must stay fixed, and any leak, repeat or mismatch it finds must be a
+documented `known_gap` in the dataset.
 
 ## What is NOT measured here, and why
 
