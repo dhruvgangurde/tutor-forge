@@ -114,3 +114,58 @@ def test_stem_and_option_warnings_carry_positions_and_counts_only(caplog):
     for message in messages:
         assert _MARK not in message, message
         assert "chlorophyll" not in message and "According" not in message, message
+
+
+# ── Retrieval, groundedness and refusal: the topic and the chunk text ─────────
+
+
+def _retrieval_state(topic):
+    return {**_state(), "config": {"topic": topic, "difficulty": "mixed", "count": 2}, "retrieval_cache": {}}
+
+
+def _chunk_retrieval():
+    from retrieval.models import Chunk, RetrievalResult
+
+    svc = MagicMock()
+    svc.retrieve.return_value = RetrievalResult(
+        query="photosynthesis",
+        chunks=[Chunk(text=f"Course text {_MARK} about light.", source_file="chapter1.pdf",
+                      page_or_slide=5, course_id=uuid.UUID(int=0))],
+        confidence_scores=[0.9],
+    )
+    svc.is_grounded.return_value = False
+    return svc
+
+
+def test_retrieval_and_groundedness_log_the_topic_length_and_no_chunk_text(caplog):
+    from agents.assessment.nodes import check_groundedness_node, refuse_node, retrieve_concepts_node
+
+    topic = f"Photosynthesis {_MARK}"
+    svc = _chunk_retrieval()
+    with caplog.at_level(logging.DEBUG, logger="agents.assessment"):
+        state = retrieve_concepts_node(_retrieval_state(topic), retrieval_service=svc)
+        state = check_groundedness_node(state, retrieval_service=svc)
+        refuse_node(state)
+
+    messages = _messages(caplog)
+    assert any(m.startswith("[RETRIEVAL-START]") and f"topic_chars={len(topic)}" in m for m in messages)
+    assert any(m.startswith("[RETRIEVAL-CHUNK-1]") and "text_chars=" in m for m in messages)
+    assert any(m.startswith("[GROUNDEDNESS-DECISION]") and f"topic_chars={len(topic)}" in m for m in messages)
+    assert any(m.startswith("Assessment generation refused") for m in messages)
+    for message in messages:
+        assert _MARK not in message, message
+        assert "Photosynthesis" not in message, message
+
+
+def test_a_retrieval_failure_logs_the_topic_length_only(caplog):
+    from agents.assessment.nodes import retrieve_concepts_node
+
+    svc = MagicMock()
+    svc.retrieve.side_effect = RuntimeError("Chroma down")
+    with caplog.at_level(logging.DEBUG, logger="agents.assessment"):
+        result = retrieve_concepts_node(_retrieval_state(f"Photosynthesis {_MARK}"), retrieval_service=svc)
+
+    assert result["status"] == "failed"
+    messages = _messages(caplog)
+    assert any(m.startswith("[RETRIEVAL-ERROR]") for m in messages)
+    assert all(_MARK not in m for m in messages)

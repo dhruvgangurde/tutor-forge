@@ -711,9 +711,11 @@ def grade_responses_node(
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             logger.error(
-                "JSON parse error in grading response for question %s (first 400 chars): %r — %s",
+                # Length only: the response is the model's scores and feedback
+                # on a student's answer.
+                "JSON parse error in grading response for question %s (%d chars): %s",
                 resp["question_id"],
-                cleaned[:400],
+                len(cleaned),
                 exc,
             )
             error_criteria = [

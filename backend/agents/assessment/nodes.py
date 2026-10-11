@@ -391,10 +391,10 @@ def retrieve_concepts_node(
     assessment_id = state.get("assessment_id", "unknown")
 
     logger.info(
-        "[RETRIEVAL-START] assessment_id=%s course_id=%s topic=%r",
+        "[RETRIEVAL-START] assessment_id=%s course_id=%s topic_chars=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
     )
 
     t0 = time.perf_counter()
@@ -402,15 +402,15 @@ def retrieve_concepts_node(
         result = retrieval_service.retrieve(course_id, topic, top_k=8)
     except Exception as exc:
         logger.exception(
-            "ChromaDB retrieval failed for course_id=%s topic=%r",
+            "ChromaDB retrieval failed for course_id=%s topic_chars=%d",
             course_id,
-            topic,
+            len(topic),
         )
         logger.error(
-            "[RETRIEVAL-ERROR] assessment_id=%s course_id=%s topic=%r exception=%s",
+            "[RETRIEVAL-ERROR] assessment_id=%s course_id=%s topic_chars=%d exception=%s",
             assessment_id,
             course_id,
-            topic,
+            len(topic),
             exc,
         )
         return _failed_state(state, f"Retrieval failed: {exc}")
@@ -420,31 +420,32 @@ def retrieve_concepts_node(
     top_score = result.top_score if not result.is_empty() else 0.0
 
     logger.info(
-        "Retrieved %d chunks for course_id=%s topic=%r in %dms (top_score=%.3f)",
+        "Retrieved %d chunks for course_id=%s topic_chars=%d in %dms (top_score=%.3f)",
         chunk_count,
         course_id,
-        topic,
+        len(topic),
         elapsed_ms,
         top_score,
     )
 
-    # DIAGNOSTIC LOGGING: Print all retrieved chunks with scores
+    # Scores and sizes only: the topic is what the teacher typed and the chunks
+    # are course text, so neither is logged.
     logger.info(
-        "[RETRIEVAL-RESULTS] assessment_id=%s course_id=%s topic=%r chunk_count=%d",
+        "[RETRIEVAL-RESULTS] assessment_id=%s course_id=%s topic_chars=%d chunk_count=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         chunk_count,
     )
     for idx, (chunk, score) in enumerate(zip(result.chunks, result.confidence_scores), 1):
         logger.info(
-            "[RETRIEVAL-CHUNK-%d] rank=%d confidence=%.4f source=%s page=%s text_preview=%r",
+            "[RETRIEVAL-CHUNK-%d] rank=%d confidence=%.4f source=%s page=%s text_chars=%d",
             idx,
             idx,
             score,
             chunk.source_file,
             chunk.page_or_slide,
-            chunk.text[:150].replace("\n", " "),
+            len(chunk.text),
         )
 
     # Serialise RetrievalResult for downstream nodes.
@@ -495,17 +496,17 @@ def check_groundedness_node(
 
     course_id = state["course_id"]
     assessment_id = state.get("assessment_id", "unknown")
-    topic = state["config"].get("topic", "unknown")
+    topic = state["config"].get("topic", "") or ""
 
     cache = state.get("retrieval_cache") or {}
     raw_chunks = cache.get("chunks", [])
     confidence_scores = cache.get("confidence_scores", [])
 
     logger.info(
-        "[GROUNDEDNESS-START] assessment_id=%s course_id=%s topic=%r cache_chunks=%d",
+        "[GROUNDEDNESS-START] assessment_id=%s course_id=%s topic_chars=%d cache_chunks=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         len(raw_chunks),
     )
 
@@ -540,11 +541,11 @@ def check_groundedness_node(
     grounded = retrieval_service.is_grounded(result, threshold=threshold)
 
     logger.info(
-        "[GROUNDEDNESS-DECISION] assessment_id=%s course_id=%s topic=%r "
+        "[GROUNDEDNESS-DECISION] assessment_id=%s course_id=%s topic_chars=%d "
         "top_score=%.4f threshold=%.2f threshold_source=%s grounded=%s",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         top_score,
         threshold,
         threshold_source,
@@ -577,9 +578,9 @@ def refuse_node(state: AssessmentState) -> AssessmentState:
     Routes to END via graph edge.
     """
     logger.warning(
-        "Assessment generation refused (not grounded) for course_id=%s topic=%r",
+        "Assessment generation refused (not grounded) for course_id=%s topic_chars=%d",
         state["course_id"],
-        state["config"].get("topic", ""),
+        len(state["config"].get("topic", "") or ""),
     )
     return _failed_state(state, _REFUSAL_MESSAGE)
 

@@ -192,9 +192,9 @@ async def archive_course(course: Course, db: AsyncSession) -> Course:
         course.archived_at = datetime.now(UTC)
         await db.commit()
         logger.info(
-            "Course archived: course_id=%s name=%r — history preserved.",
+            "Course archived: course_id=%s name_chars=%d — history preserved.",
             course.id,
-            course.name,
+            len(course.name or ""),
         )
     return course
 
@@ -204,7 +204,7 @@ async def restore_course(course: Course, db: AsyncSession) -> Course:
     if course.archived_at is not None:
         course.archived_at = None
         await db.commit()
-        logger.info("Course restored: course_id=%s name=%r", course.id, course.name)
+        logger.info("Course restored: course_id=%s name_chars=%d", course.id, len(course.name or ""))
     return course
 
 
@@ -244,7 +244,7 @@ async def hard_delete_course(
     await db.execute(sa_delete(Course).where(Course.id == course_id))
     await db.commit()
     logger.warning(
-        "Course HARD DELETED: course_id=%s name=%r (had no student submissions).",
+        "Course HARD DELETED: course_id=%s name_chars=%d (had no student submissions).",
         course_id,
-        name,
+        len(name or ""),
     )

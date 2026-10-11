@@ -82,7 +82,7 @@ class MockGeminiProClient:
         Attempts to detect topic from prompt and return appropriate hierarchy.
         Falls back to generic hierarchy if detection fails.
         """
-        logger.debug("[MOCK] generate() called with prompt (first 200 chars): %r", prompt[:200])
+        logger.debug("[MOCK] generate() called with a prompt of %d chars", len(prompt))
 
         # Detect course topic from prompt content
         hierarchy = self._detect_and_generate_hierarchy(prompt)
