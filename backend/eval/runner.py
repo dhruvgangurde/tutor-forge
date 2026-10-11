@@ -7,6 +7,7 @@ CLI entry point for the evaluation suites.
     python -m eval.runner --suite groundedness --suite observability
     python -m eval.runner --suite acceptance-proxy --limit 25
     python -m eval.runner --suite tutor-pedagogy   # offline, no LLM call
+    python -m eval.runner --suite grading-checks   # offline; add --live for the real model
 
 Every suite is independent and failure-isolated: one suite raising does not
 prevent the others from running or the report from being written, because a
@@ -26,6 +27,7 @@ from eval.report import write
 SUITES = {
     "assessment-correctness": "eval.suites.assessment_correctness",
     "groundedness": "eval.suites.groundedness",
+    "grading-checks": "eval.suites.grading_checks",
     "grading-variance": "eval.suites.grading_variance",
     "paraphrase-bias": "eval.suites.paraphrase_bias",
     "distractor-quality": "eval.suites.distractor_quality",
@@ -37,7 +39,9 @@ SUITES = {
 logger = logging.getLogger("eval")
 
 
-async def _run_suite(name: str, module_path: str, limit: int | None, runs: int) -> SuiteResult:
+async def _run_suite(
+    name: str, module_path: str, limit: int | None, runs: int, live: bool = False
+) -> SuiteResult:
     import importlib
 
     module = importlib.import_module(module_path)
@@ -50,15 +54,17 @@ async def _run_suite(name: str, module_path: str, limit: int | None, runs: int) 
         kwargs["limit"] = limit
     if name == "grading-variance":
         kwargs["runs"] = runs
+    if name == "grading-checks":
+        kwargs["live"] = live
     return await module.run(**kwargs)
 
 
-async def main_async(selected: list[str], limit: int | None, runs: int) -> int:
+async def main_async(selected: list[str], limit: int | None, runs: int, live: bool = False) -> int:
     results: list[SuiteResult] = []
     for name in selected:
         print(f"\n=== running suite: {name} ===", flush=True)
         try:
-            result = await _run_suite(name, SUITES[name], limit, runs)
+            result = await _run_suite(name, SUITES[name], limit, runs, live)
         except Exception as exc:  # one suite must not sink the run
             logger.exception("Suite %s raised", name)
             result = SuiteResult(
@@ -91,6 +97,10 @@ def main() -> int:
     parser.add_argument(
         "--runs", type=int, default=10, help="Repeat count for grading-variance (default 10)."
     )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="grading-checks only: grade with the configured model instead of recorded outputs.",
+    )
     args = parser.parse_args()
 
     if not args.all and not args.suite:
@@ -98,7 +108,7 @@ def main() -> int:
 
     selected = sorted(SUITES) if args.all else args.suite
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-    return asyncio.run(main_async(selected, args.limit, args.runs))
+    return asyncio.run(main_async(selected, args.limit, args.runs, args.live))
 
 
 if __name__ == "__main__":
