@@ -57,7 +57,7 @@ from agents.tutor.prompts import (
     GUARD_FALLBACK_QUESTION,
     MAX_ANSWER_GUARD_LEVEL,
 )
-from agents.tutor.query_resolution import topical_words
+from agents.tutor.query_resolution import definition_head, topical_words
 from core.config import TUTOR_GUARD
 
 logger = logging.getLogger(__name__)
@@ -362,6 +362,7 @@ class _AnswerSignals:
     course_sentences: list[set[str]]   # non-topic words of course sentences on the topic
     reply_words: set[str]
     all_course_sentences: list[set[str]]  # content words of every course sentence
+    term: set[str] = field(default_factory=set)  # head of a "what is X?" question's term
 
     @property
     def course_words(self) -> set[str]:
@@ -379,13 +380,18 @@ def _answer_signals(turn: TutorTurn, reply_words: set[str]) -> _AnswerSignals:
             all_course_sentences.append(words)
         if needed and len(words & topic) >= needed:
             course_sentences.append(words - topic)
-    return _AnswerSignals(topic, needed, course_sentences, reply_words, all_course_sentences)
+    term = _content_words(definition_head(turn.question) or "")
+    return _AnswerSignals(topic, needed, course_sentences, reply_words, all_course_sentences, term)
 
 
 def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
     """A statement that tells them what the question asks, in definition form or in the course's own words."""
     plain = _SUBORDINATE_RE.sub("", _plain(statement))
     words = _content_words(plain)
+    # "What is the pivot in quick sort?" is answered by "The pivot is ...", which
+    # names only the term, not two of the question's words.
+    if signals.term and signals.term <= words and _DEFINING_RE.search(plain):
+        return not (words - signals.topic and _overlap(words - signals.topic, signals.reply_words) >= 0.6)
     if not signals.needed or len(words & signals.topic) < signals.needed:
         return False
     rest = words - signals.topic

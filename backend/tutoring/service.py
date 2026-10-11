@@ -38,6 +38,7 @@ from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
 from agents.tutor.query_resolution import (
     TURN_NEW_QUESTION,
     classify_turn,
+    definition_head,
     definition_term,
     topical_words,
 )
@@ -139,8 +140,7 @@ def _words(text: str) -> set[str]:
 
 def _is_graded_question(question: str, term: str, stem: str) -> bool:
     # "pivot in quick sort" is asked about as "the pivot": match on the head.
-    head = re.split(r"\s+(?:in|of|for|within|during)\s+", term, maxsplit=1)[0]
-    asked, term_words, quiz = _words(question), _words(head), _words(stem)
+    asked, term_words, quiz = _words(question), _words(definition_head(question) or term), _words(stem)
     if not asked or not quiz:
         return False
     shared = len(asked & quiz)

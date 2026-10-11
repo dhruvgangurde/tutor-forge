@@ -309,6 +309,12 @@ def definition_term(text: str) -> str | None:
     return term
 
 
+def definition_head(text: str) -> str | None:
+    """The head of a definition question's term: "pivot in quick sort" is asked about as "pivot"."""
+    term = definition_term(text)
+    return re.split(r"\s+(?:in|of|for|within|during)\s+", term, maxsplit=1)[0] if term else None
+
+
 #: Replies that say "I can't answer that" rather than attempting an answer.
 #: Matched on the normalised message, exactly or as a prefix.
 _NON_ANSWER_EXACT = frozenset({

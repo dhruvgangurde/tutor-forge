@@ -181,6 +181,64 @@ def test_the_flag_counts_only_on_the_opening_turn(path, level, reply):
     assert tripped
 
 
+# A question that names more than the term: the definition names only "pivot".
+_PIVOT_Q = "what is the pivot in quick sort?"
+_PIVOT_COURSE = (
+    "Quick sort picks the last element of the array as the pivot. "
+    "The array is partitioned around the pivot so smaller elements come before it."
+)
+_PIVOT_DEFINITION = "The pivot is the element the array is partitioned around."
+_PIVOT_FOLLOW_UP = "Where do you think the smaller elements end up?"
+
+
+def _pivot_guard(text, *, allowed, path=PATH_NEW_QUESTION, level=0, reply=None):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PIVOT_Q,
+            course_text=_PIVOT_COURSE,
+            student_reply=reply,
+            definition_allowed=allowed,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "allowed, path, level",
+    [
+        (False, PATH_NEW_QUESTION, 0),  # graded quiz question: the service did not allow it
+        (True, PATH_HINT, 1),            # a hint never gives the definition
+        (True, PATH_HINT, 2),
+    ],
+)
+def test_a_definition_is_removed_when_not_allowed_even_if_the_question_names_more(allowed, path, level):
+    out, tripped = _pivot_guard(_PIVOT_DEFINITION + " " + _PIVOT_FOLLOW_UP, allowed=allowed, path=path, level=level)
+    assert out == _PIVOT_FOLLOW_UP
+    assert RULE_STATES_ANSWER in tripped
+
+
+def test_a_definition_not_from_the_course_is_removed_even_if_the_question_names_more():
+    ungrounded = "The pivot is a referee who decides which team each player joins."
+    out, tripped = _pivot_guard(ungrounded + " " + _PIVOT_FOLLOW_UP, allowed=True)
+    assert out == _PIVOT_FOLLOW_UP
+    assert RULE_STATES_ANSWER in tripped
+
+
+def test_an_allowed_grounded_definition_naming_only_the_term_is_kept():
+    text = _PIVOT_DEFINITION + " " + _PIVOT_FOLLOW_UP
+    assert _pivot_guard(text, allowed=True) == (text, [])
+
+
+def test_confirming_their_own_definition_is_not_giving_it_away():
+    _out, tripped = _pivot_guard(
+        "Yes, the pivot is the element the array is partitioned around. " + _PIVOT_FOLLOW_UP,
+        allowed=False, path=PATH_REPLY, level=1, reply="the element the array is partitioned around",
+    )
+    assert RULE_STATES_ANSWER not in tripped
+
+
 # ── The node ──────────────────────────────────────────────────────────────────
 
 
