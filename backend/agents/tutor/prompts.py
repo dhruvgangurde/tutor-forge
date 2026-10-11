@@ -189,14 +189,40 @@ HINT_LADDER: dict[int, str] = {
 }
 
 
-def system_instruction_for_level(hint_level: int) -> str:
+#: The opening of a pure "what is X?" question (not one from graded work): one
+#: grounded definition sentence, then a question that makes them use it. Asking
+#: "what do you think X is?" of a word they have never met only stalls them.
+_LEVEL_0_DEFINITION = """\
+You are a Socratic tutor opening a conversation (HINT LEVEL 0 of 4).
+THE QUESTION asks what a term means. Start with exactly one sentence that says
+what it is, in your own words and only from the course passages. Then ask
+exactly one question that gets them to use or apply that idea themselves.
+Keep it to 2-3 sentences.
+"""
+
+#: Replaces _ASK_DO_NOT_TELL on that opening only.
+_ONE_DEFINITION_ONLY = """\
+Apart from that one definition sentence, ask, do not tell: no second fact about
+the term, no example and no formula. Do not use specific numbers from a worked
+example.
+"""
+
+DEFINITION_OPENING = (
+    _LEVEL_0_DEFINITION + "\n" + _ONE_DEFINITION_ONLY + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
+)
+
+
+def system_instruction_for_level(hint_level: int, *, definition: bool = False) -> str:
     """
     Return the system instruction for ``hint_level``, clamped into the ladder.
 
     Clamping rather than raising: a stored session level that drifts outside the
-    ladder must still produce a sane tutor turn, never a 500.
+    ladder must still produce a sane tutor turn, never a 500. ``definition``
+    selects the definition opening, and only at level 0.
     """
     level = max(0, min(int(hint_level), MAX_HINT_LEVEL))
+    if definition and level == 0:
+        return DEFINITION_OPENING
     return HINT_LADDER[level]
 
 

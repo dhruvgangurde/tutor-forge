@@ -322,6 +322,11 @@ def generate_guiding_question_node(
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
     in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
+    # A pure "what is X?" opening (the service has ruled out graded work) gets
+    # one definition sentence; hints and replies keep the normal ladder.
+    definition = (
+        bool(state.get("definition_allowed")) and not in_conversation and not is_hint and hint_level == 0
+    )
 
     # F23: delimit untrusted inputs (student text, the tutor's earlier turn and
     # uploaded course text) so instructions embedded in them cannot override the
@@ -345,7 +350,7 @@ def generate_guiding_question_node(
             f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}\n\n"
             f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
         )
-        system = system_instruction_for_level(hint_level)
+        system = system_instruction_for_level(hint_level, definition=definition)
 
     raw_response = gemini_pro.generate(
         prompt,
@@ -398,6 +403,7 @@ def generate_guiding_question_node(
             course_text="\n\n".join(c.text for c in chunks),
             student_reply=state["question"] if in_conversation else None,
             is_non_answer=bool(state.get("is_non_answer")),
+            definition_allowed=definition,
         ),
     )
 

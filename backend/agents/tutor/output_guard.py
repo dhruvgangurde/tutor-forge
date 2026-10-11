@@ -86,6 +86,7 @@ RULE_FORMULA = "formula"
 RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
 RULE_VERDICT_REASON = "verdict_reason"
 RULE_COURSE_CLAIM = "course_claim"
+RULE_DEFINITION_EXTRA = "definition_extra"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -102,6 +103,7 @@ class TutorTurn:
     course_text: str               # the retrieved passages the model was given
     student_reply: str | None = None  # THEIR REPLY, on the reply path only
     is_non_answer: bool = False    # their reply was "no", "I don't know"...
+    definition_allowed: bool = False  # a pure "what is X?" opening, not graded work
 
 
 # ── Words ─────────────────────────────────────────────────────────────────────
@@ -459,6 +461,29 @@ def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
     if len(words) < _CLAIM_MIN_SHARED:
         return False
     return any(len(words & unit) >= _CLAIM_MIN_SHARED for unit in claims.units)
+
+
+# ── 2f. One definition sentence on a "what is X?" opening ────────────────────
+#
+# A pure "what is X?" question that is not from graded work opens with one
+# definition sentence. Only the first sentence of the reply, only when it is a
+# statement, and only when most of its words are in the retrieved passages:
+# a definition from general knowledge stays under the answer rules.
+
+_DEFINITION_GROUNDED_SHARE = 0.6
+
+
+def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
+    if not (turn.definition_allowed and turn.path == PATH_NEW_QUESTION and turn.hint_level == 0):
+        return None
+    first = next((s for line in lines if line is not None for s in line.sentences), None)
+    if not first or _is_question(first):
+        return None
+    words = _claim_words(_plain(first)) - _claim_words(turn.question)
+    if not words:
+        return None
+    grounded = len(words & _claim_words(turn.course_text)) / len(words)
+    return first if grounded >= _DEFINITION_GROUNDED_SHARE else None
 
 
 def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
@@ -911,6 +936,24 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     # untouched opening the fallback may keep.
     original = _sentences(lines)
 
+    # 2f. The one definition sentence a "what is X?" opening may give is spared
+    # by the answer rules; any later one is not.
+    definition = _definition_sentence(lines, turn)
+
+    def spare_definition(fix):
+        if definition is None:
+            return fix
+        spared = False
+
+        def fix_others(s, *previous):
+            nonlocal spared
+            if not spared and s == definition:
+                spared = True
+                return s
+            return fix(s, *previous)
+
+        return fix_others
+
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
 
@@ -924,13 +967,15 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 return None if _states_answer(s, signals) else s
             return _cut_leading_clause(s, lambda clause: _states_answer(clause, signals))
 
-        run(RULE_STATES_ANSWER, no_answer, answer=True)
+        run(RULE_STATES_ANSWER, spare_definition(no_answer), answer=True)
 
         # 2a. The same answer behind a pronoun: "It's the work or energy per
         # unit charge..." right after a sentence about the topic.
         run(
             RULE_PRONOUN_STATEMENT,
-            lambda s, previous: None if _pronoun_states_answer(s, previous, signals) else s,
+            spare_definition(
+                lambda s, previous: None if _pronoun_states_answer(s, previous, signals) else s
+            ),
             answer=True,
             with_previous=True,
         )
@@ -1008,7 +1053,16 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 and _states_course_claim(clause, claims),
             )
 
-        run(RULE_COURSE_CLAIM, no_claim_statement, answer=True)
+        run(RULE_COURSE_CLAIM, spare_definition(no_claim_statement), answer=True)
+
+    # 2f. A definition opening is the one sentence and a question: any other
+    # statement, however short ("It is measured in volts."), is a second fact.
+    if definition is not None:
+        run(
+            RULE_DEFINITION_EXTRA,
+            spare_definition(lambda s: s if _is_question(s) else None),
+            answer=True,
+        )
 
     # Repair any join the removals above left, then judge what is left.
     text, dropped = _tidy(_render(lines))

@@ -258,6 +258,56 @@ def classify_turn(text: str) -> str:
     return TURN_NEW_QUESTION
 
 
+# ── "What is X?" ──────────────────────────────────────────────────────────────
+#
+# A pure request for what a term means ("what is a pivot?", "define recursion")
+# gets one grounded definition sentence before the guiding question: asking
+# "what do you think a pivot is?" to someone who has never met the word only
+# stalls them. Anything that asks for a fact about the term instead ("what is
+# the time complexity of merge sort?") is not a definition question and keeps
+# the ask-do-not-tell opening.
+
+_DEFINITION_RE = re.compile(
+    r"^(?:please\s+)?(?:(?:can|could)\s+you\s+)?(?:"
+    r"what(?:'s|\s+is|\s+are)\s+(?:meant\s+by\s+|the\s+(?:definition|meaning)\s+of\s+)?(?P<what>.+?)"
+    r"|define\s+(?P<define>.+?)"
+    r"|what\s+(?:does|do)\s+(?P<mean>.+?)\s+mean"
+    r")\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
+_ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
+
+#: Words that turn "what is the X" into a question about a fact or a result.
+_NOT_A_TERM_RE = re.compile(
+    r"\b(?:complexity|value|values|result|results|output|outputs|answer|answers|sum|total|"
+    r"number|count|maximum|minimum|max|min|best|worst|average|advantages?|disadvantages?|"
+    r"purpose|role|reason|cost|between|happens?|if|when|after|before|steps?|order|why|how)\b",
+    re.IGNORECASE,
+)
+_MAX_TERM_WORDS = 5
+
+
+def definition_term(text: str) -> str | None:
+    """
+    The term a pure "what is X / define X / what does X mean" question asks
+    about, or None for any other message.
+    """
+    plain = " ".join((text or "").replace("’", "'").split())
+    match = _DEFINITION_RE.match(plain)
+    if not match:
+        return None
+    term = _ARTICLE_RE.sub("", next(g for g in match.groups() if g)).strip()
+    if (
+        not term
+        or len(term.split()) > _MAX_TERM_WORDS
+        or re.search(r"\d|[=<>+*/()\[\]]", term)
+        or _NOT_A_TERM_RE.search(term)
+        or not topical_words(term)
+    ):
+        return None
+    return term
+
+
 #: Replies that say "I can't answer that" rather than attempting an answer.
 #: Matched on the normalised message, exactly or as a prefix.
 _NON_ANSWER_EXACT = frozenset({

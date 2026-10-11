@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -34,8 +35,13 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
-from agents.tutor.query_resolution import TURN_NEW_QUESTION, classify_turn
-from db.models import Course, TutoringMessage, TutoringSession
+from agents.tutor.query_resolution import (
+    TURN_NEW_QUESTION,
+    classify_turn,
+    definition_term,
+    topical_words,
+)
+from db.models import Assessment, Course, Question, TutoringMessage, TutoringSession
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
@@ -117,6 +123,48 @@ async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringM
     return result.scalar_one_or_none()
 
 
+# A "what is X?" question gets one definition sentence (agents/tutor/prompts.py),
+# but not when it is a question from graded work: a published quiz question in
+# this course that it repeats, or one that asks what the same term means.
+_SAME_QUESTION_ASKED = 0.8   # share of their words found in the quiz question
+_SAME_QUESTION_STEM = 0.6    # share of the quiz question's words they used
+_ASKS_MEANING_RE = re.compile(
+    r"\b(?:defin\w*|describes?|meaning|means|refers?\s+to|is\s+called|known\s+as)\b", re.IGNORECASE
+)
+
+
+def _words(text: str) -> set[str]:
+    return {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in topical_words(text)}
+
+
+def _is_graded_question(question: str, term: str, stem: str) -> bool:
+    # "pivot in quick sort" is asked about as "the pivot": match on the head.
+    head = re.split(r"\s+(?:in|of|for|within|during)\s+", term, maxsplit=1)[0]
+    asked, term_words, quiz = _words(question), _words(head), _words(stem)
+    if not asked or not quiz:
+        return False
+    shared = len(asked & quiz)
+    if shared / len(asked) >= _SAME_QUESTION_ASKED and shared / len(quiz) >= _SAME_QUESTION_STEM:
+        return True
+    asks_meaning = definition_term(stem) is not None or bool(_ASKS_MEANING_RE.search(stem))
+    return asks_meaning and term_words <= quiz
+
+
+async def _definition_allowed(course_id: uuid.UUID, question: str, db: AsyncSession) -> bool:
+    """True for a pure "what is X?" question that is not from graded work in this course."""
+    term = definition_term(question)
+    if term is None:
+        return False
+    stems = (
+        await db.execute(
+            select(Question.stem)
+            .join(Assessment, Question.assessment_id == Assessment.id)
+            .where(Assessment.course_id == course_id, Assessment.status == "published")
+        )
+    ).scalars().all()
+    return not any(_is_graded_question(question, term, stem) for stem in stems)
+
+
 async def create_session(
     course_id: uuid.UUID,
     student_id: uuid.UUID,
@@ -186,6 +234,7 @@ async def send_chat_message(
     open_question = await _open_question(session, db)
     is_new_question = open_question is None or classify_turn(question) == TURN_NEW_QUESTION
     last_tutor = None if is_new_question else await _last_tutor_turn(session.id, db)
+    definition_allowed = is_new_question and await _definition_allowed(session.course_id, question, db)
 
     # Persist the student's message at receipt, stamped now. It used to be
     # written after the reply, in the same flush, so it carried the reply's
@@ -218,6 +267,7 @@ async def send_chat_message(
         "is_grounded": False,
         # A new question starts a fresh ladder; a reply stays on the current rung.
         "hint_level": 0 if is_new_question else session.current_hint_level,
+        "definition_allowed": definition_allowed,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
