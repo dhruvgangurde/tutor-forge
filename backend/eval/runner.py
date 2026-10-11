@@ -6,6 +6,7 @@ CLI entry point for the evaluation suites.
     python -m eval.runner --all
     python -m eval.runner --suite groundedness --suite observability
     python -m eval.runner --suite acceptance-proxy --limit 25
+    python -m eval.runner --suite tutor-pedagogy   # offline, no LLM call
 
 Every suite is independent and failure-isolated: one suite raising does not
 prevent the others from running or the report from being written, because a
@@ -30,6 +31,7 @@ SUITES = {
     "distractor-quality": "eval.suites.distractor_quality",
     "acceptance-proxy": "eval.suites.acceptance_proxy",
     "observability": "eval.suites.observability",
+    "tutor-pedagogy": "eval.suites.tutor_pedagogy",
 }
 
 logger = logging.getLogger("eval")
@@ -57,7 +59,7 @@ async def main_async(selected: list[str], limit: int | None, runs: int) -> int:
         print(f"\n=== running suite: {name} ===", flush=True)
         try:
             result = await _run_suite(name, SUITES[name], limit, runs)
-        except Exception as exc:  # noqa: BLE001 - one suite must not sink the run
+        except Exception as exc:  # one suite must not sink the run
             logger.exception("Suite %s raised", name)
             result = SuiteResult(
                 name=name,
