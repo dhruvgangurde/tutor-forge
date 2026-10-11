@@ -53,6 +53,8 @@ from __future__ import annotations
 
 import re
 
+from core.config import TUTOR_GUARD
+
 # ── Low-content detection ─────────────────────────────────────────────────────
 
 #: Words that carry no retrievable topic on their own: function words, plus the
@@ -284,7 +286,6 @@ _NOT_A_TERM_RE = re.compile(
     r"purpose|role|reason|cost|between|happens?|if|when|after|before|steps?|order|why|how)\b",
     re.IGNORECASE,
 )
-_MAX_TERM_WORDS = 5
 
 
 def definition_term(text: str) -> str | None:
@@ -299,7 +300,7 @@ def definition_term(text: str) -> str | None:
     term = _ARTICLE_RE.sub("", next(g for g in match.groups() if g)).strip()
     if (
         not term
-        or len(term.split()) > _MAX_TERM_WORDS
+        or len(term.split()) > TUTOR_GUARD.definition_max_term_words
         or re.search(r"\d|[=<>+*/()\[\]]", term)
         or _NOT_A_TERM_RE.search(term)
         or not topical_words(term)

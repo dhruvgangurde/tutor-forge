@@ -41,6 +41,7 @@ from agents.tutor.query_resolution import (
     definition_term,
     topical_words,
 )
+from core.config import TUTOR_GUARD
 from db.models import Assessment, Course, Question, TutoringMessage, TutoringSession
 
 if TYPE_CHECKING:
@@ -126,8 +127,7 @@ async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringM
 # A "what is X?" question gets one definition sentence (agents/tutor/prompts.py),
 # but not when it is a question from graded work: a published quiz question in
 # this course that it repeats, or one that asks what the same term means.
-_SAME_QUESTION_ASKED = 0.8   # share of their words found in the quiz question
-_SAME_QUESTION_STEM = 0.6    # share of the quiz question's words they used
+# The word shares that make it the same question are in core/config.py.
 _ASKS_MEANING_RE = re.compile(
     r"\b(?:defin\w*|describes?|meaning|means|refers?\s+to|is\s+called|known\s+as)\b", re.IGNORECASE
 )
@@ -144,7 +144,10 @@ def _is_graded_question(question: str, term: str, stem: str) -> bool:
     if not asked or not quiz:
         return False
     shared = len(asked & quiz)
-    if shared / len(asked) >= _SAME_QUESTION_ASKED and shared / len(quiz) >= _SAME_QUESTION_STEM:
+    if (
+        shared / len(asked) >= TUTOR_GUARD.graded_question_asked_share
+        and shared / len(quiz) >= TUTOR_GUARD.graded_question_stem_share
+    ):
         return True
     asks_meaning = definition_term(stem) is not None or bool(_ASKS_MEANING_RE.search(stem))
     return asks_meaning and term_words <= quiz

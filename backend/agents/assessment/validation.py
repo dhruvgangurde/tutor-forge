@@ -27,6 +27,7 @@ import math
 import re
 
 from agents.tutor.query_resolution import topical_words
+from core.config import QUESTION_CHECKS
 
 REASON_UNSUPPORTED_KEY = "unsupported_key"
 REASON_VAGUE_SUPERLATIVE = "vague_superlative"
@@ -40,20 +41,18 @@ HIGHER_ORDER_LEVELS = frozenset({"apply", "analyze", "evaluate", "create"})
 #: worked out from them, so it need not appear word for word.
 _RECALL_LEVELS = frozenset({"remember", "understand"})
 
-#: A recall key is supported when this share of its words is in one passage
-#: sentence, and every number in it appears in the passages.
-_KEY_SUPPORT_SHARE = 0.6
-#: A wrong option restates the key when it has the same content words AND is
-#: at least this similar character by character (difflib ratio): "If low ==
-#: high" next to "If low >= high". Either test alone is wrong: "The first
-#: element" is 0.8 similar to "The last element", and "Swap, then increment i"
-#: has the same words as "Increment i, then swap"; both are good distractors.
-_RESTATES_KEY_RATIO = 0.8
-#: Shorter keys ("O(n)") differ from good distractors ("O(n^2)") by too few
-#: characters for a ratio to mean anything.
-_RESTATES_KEY_MIN_CHARS = 10
-#: Quizzes shorter than this are not held to a Bloom share.
-MIN_QUESTIONS_FOR_SHARE = 5
+# The thresholds below are in core/config.py (QUESTION_CHECKS).
+#
+# A recall key is supported when most of its words are in one passage
+# sentence, and every number in it appears in the passages.
+#
+# A wrong option restates the key when it has the same content words AND is
+# nearly the same character by character (difflib ratio): "If low == high"
+# next to "If low >= high". Either test alone is wrong: "The first element"
+# is 0.8 similar to "The last element", and "Swap, then increment i" has the
+# same words as "Increment i, then swap"; both are good distractors. Short
+# keys ("O(n)") differ from good distractors ("O(n^2)") by too few
+# characters for a ratio to mean anything, so they are not compared.
 
 _LETTERS = "ABCD"
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
@@ -114,15 +113,15 @@ def _key_supported(key: str, evidence: list[str]) -> bool:
     if not words:
         return True  # nothing but numbers or symbols, already checked
     best = max((len(words & _words(s)) / len(words) for s in evidence), default=0.0)
-    return best >= _KEY_SUPPORT_SHARE
+    return best >= QUESTION_CHECKS.key_support_share
 
 
 def _restates(option: str, key: str) -> bool:
     a = " ".join(option.lower().split()).strip(" .")
     b = " ".join(key.lower().split()).strip(" .")
-    if len(b) < _RESTATES_KEY_MIN_CHARS or _words(a) != _words(b):
+    if len(b) < QUESTION_CHECKS.restates_key_min_chars or _words(a) != _words(b):
         return False
-    return difflib.SequenceMatcher(None, a, b).ratio() >= _RESTATES_KEY_RATIO
+    return difflib.SequenceMatcher(None, a, b).ratio() >= QUESTION_CHECKS.restates_key_ratio
 
 
 def question_problems(question: dict, evidence: list[str]) -> list[str]:
@@ -154,7 +153,7 @@ def question_problems(question: dict, evidence: list[str]) -> list[str]:
 
 def higher_order_needed(blooms: list[str], min_share: float) -> int:
     """How many more apply-or-higher questions the quiz needs to meet ``min_share``."""
-    if len(blooms) < MIN_QUESTIONS_FOR_SHARE:
+    if len(blooms) < QUESTION_CHECKS.min_questions_for_share:
         return 0
     have = sum(1 for b in blooms if b in HIGHER_ORDER_LEVELS)
     return max(0, math.ceil(min_share * len(blooms) - 1e-9) - have)

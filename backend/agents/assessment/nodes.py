@@ -50,7 +50,6 @@ from agents.assessment.prompts import (
 from agents.assessment.state import AssessmentState
 from agents.assessment.validation import (
     HIGHER_ORDER_LEVELS,
-    MIN_QUESTIONS_FOR_SHARE,
     REASON_NOT_HIGHER_ORDER,
     REASON_TEXT,
     evidence_sentences,
@@ -233,9 +232,10 @@ def _build_bloom_distribution(config: dict) -> str:
 
 def _higher_order_rule(config: dict) -> str:
     """Rule 16 of the generation prompt: only without a teacher's Bloom mix, for 5+ questions."""
-    from core.config import settings
+    from core.config import QUESTION_CHECKS, settings
 
-    if config.get("bloom_mix") or int(config.get("count") or 0) < MIN_QUESTIONS_FOR_SHARE:
+    short = int(config.get("count") or 0) < QUESTION_CHECKS.min_questions_for_share
+    if config.get("bloom_mix") or short:
         return ""
     return HIGHER_ORDER_RULE.format(percent=round(settings.assessment_min_higher_order_share * 100))
 

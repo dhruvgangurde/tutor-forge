@@ -58,6 +58,7 @@ from agents.tutor.prompts import (
     MAX_ANSWER_GUARD_LEVEL,
 )
 from agents.tutor.query_resolution import topical_words
+from core.config import TUTOR_GUARD
 
 logger = logging.getLogger(__name__)
 
@@ -401,23 +402,19 @@ def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
 # specific index is maintained starting just before the low boundary." names no
 # definition and no pronoun, so the rules above let it through, yet it is the
 # course's answer in other words. A statement (or the lead-in of a question) is
-# a course claim when it shares at least _CLAIM_MIN_SHARED words with a single
-# sentence of the retrieved passages, after setting aside the question's own
-# words, the student's own words and words common to most passages.
+# a course claim when it shares at least claim_min_shared_words (core/config.py)
+# words with a single sentence of the retrieved passages, after setting aside
+# the question's own words, the student's own words and words common to most
+# passages.
 #
 # Course text often states the claim in code ("int i = low - 1", "arr[j] <=
 # pivot") while the tutor says it in words ("one position before low", "less
 # than or equal to"), so common code symbols are read as words on both sides.
 
-_CLAIM_MIN_SHARED = 3
 #: A question's first clause that itself asks ("What variable is set up before
 #: the loop, and how...?") is the question, not a lead-in; cutting it would
 #: leave "how does its value change?" with nothing for "its" to refer to.
 _ASKS_RE = re.compile(r"^(?:what|why|how|which|who|whom|whose|where)\b", re.IGNORECASE)
-#: Words in at least this share of the passages' sentences are background
-#: ("pivot", "array" in a sorting course), not part of any one claim.
-_BACKGROUND_SHARE = 0.5
-_MIN_UNITS_FOR_BACKGROUND = 4
 
 _CODE_AS_WORDS = (
     (re.compile(r"<="), " less equal "),
@@ -450,9 +447,12 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
     units = [_claim_words(s) for s in re.split(r"(?<=[.!?])\s+|\n+", turn.course_text or "")]
     units = [u for u in units if u]
     background: set[str] = set()
-    if len(units) >= _MIN_UNITS_FOR_BACKGROUND:
+    # Words in most passage sentences are background ("pivot", "array" in a
+    # sorting course), not part of any one claim.
+    if len(units) >= TUTOR_GUARD.claim_min_sentences_for_background:
         counts = Counter(w for u in units for w in u)
-        background = {w for w, n in counts.items() if n / len(units) >= _BACKGROUND_SHARE}
+        share = TUTOR_GUARD.claim_background_share
+        background = {w for w, n in counts.items() if n / len(units) >= share}
     student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
     ignore = _claim_words(turn.question) | student | background
     return _ClaimSignals([u - ignore for u in units], ignore)
@@ -460,9 +460,10 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
 
 def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
     words = _claim_words(_SUBORDINATE_RE.sub("", _plain(text))) - claims.ignore
-    if len(words) < _CLAIM_MIN_SHARED:
+    least = TUTOR_GUARD.claim_min_shared_words
+    if len(words) < least:
         return False
-    return any(len(words & unit) >= _CLAIM_MIN_SHARED for unit in claims.units)
+    return any(len(words & unit) >= least for unit in claims.units)
 
 
 # ── 2f. One definition sentence on a "what is X?" opening ────────────────────
@@ -471,8 +472,6 @@ def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
 # definition sentence. Only the first sentence of the reply, only when it is a
 # statement, and only when most of its words are in the retrieved passages:
 # a definition from general knowledge stays under the answer rules.
-
-_DEFINITION_GROUNDED_SHARE = 0.6
 
 
 def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
@@ -485,7 +484,7 @@ def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
     if not words:
         return None
     grounded = len(words & _claim_words(turn.course_text)) / len(words)
-    return first if grounded >= _DEFINITION_GROUNDED_SHARE else None
+    return first if grounded >= TUTOR_GUARD.definition_grounded_share else None
 
 
 # ── 5. No repeated question ───────────────────────────────────────────────────
@@ -497,21 +496,20 @@ def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
 # same question again. The open question's own words are left out: every
 # question about the topic shares them. Only near-repeats are caught.
 
-_REPEAT_OVERLAP = 0.6
-_REPEAT_MIN_WORDS = 3
-
 
 def _previous_questions(turn: TutorTurn, topic: set[str]) -> list[set[str]]:
     sentences = re.split(r"(?<=[.!?])\s+|\n+", turn.previous_tutor_message or "")
     words = [_content_words(_plain(s)) - topic for s in sentences if _is_question(s)]
-    return [w for w in words if len(w) >= _REPEAT_MIN_WORDS]
+    return [w for w in words if len(w) >= TUTOR_GUARD.repeat_min_words]
 
 
 def _repeats_question(question: str, previous: list[set[str]], topic: set[str]) -> bool:
     words = _content_words(_plain(question)) - topic
-    if len(words) < _REPEAT_MIN_WORDS:
+    if len(words) < TUTOR_GUARD.repeat_min_words:
         return False
-    return any(len(words & p) / min(len(words), len(p)) >= _REPEAT_OVERLAP for p in previous)
+    return any(
+        len(words & p) / min(len(words), len(p)) >= TUTOR_GUARD.repeat_overlap for p in previous
+    )
 
 
 def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
