@@ -94,7 +94,7 @@ def test_stem_and_option_warnings_carry_positions_and_counts_only(caplog):
                 "stem": f"According to the context, which process {_MARK} makes sugar?",
                 "options": [f"A. Photosynthesis {_MARK}", "B. Respiration", f"C. {leaked_answer}", "D. Digestion"],
                 "correct_answer": "A",
-                "bloom_level": "understand",
+                "bloom_level": "apply",  # a recall key must appear in the passages
                 "difficulty": "easy",
             },
         ]

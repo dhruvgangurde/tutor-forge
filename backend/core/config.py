@@ -106,6 +106,12 @@ class Settings(BaseSettings):
     # 4 characters per token). Chunks are added best-first until it is spent.
     tutor_context_token_budget: int = 3000
 
+    # ── Assessment generation ─────────────────────────────────────────────────
+    # Smallest share of apply-or-higher Bloom levels in a generated quiz of 5 or
+    # more questions, when the teacher gave no Bloom mix of their own. Short
+    # quizzes and a teacher's own mix are left as they are.
+    assessment_min_higher_order_share: float = 0.4
+
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""

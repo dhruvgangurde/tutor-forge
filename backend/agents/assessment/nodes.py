@@ -43,9 +43,20 @@ from sqlalchemy import select
 from agents.assessment.prompts import (
     ASSESSMENT_SYSTEM_INSTRUCTION,
     GENERATE_QUESTIONS_PROMPT,
+    HIGHER_ORDER_RULE,
     IMPROVE_DISTRACTORS_PROMPT,
+    REGENERATE_QUESTION_PROMPT,
 )
 from agents.assessment.state import AssessmentState
+from agents.assessment.validation import (
+    HIGHER_ORDER_LEVELS,
+    MIN_QUESTIONS_FOR_SHARE,
+    REASON_NOT_HIGHER_ORDER,
+    REASON_TEXT,
+    evidence_sentences,
+    higher_order_needed,
+    question_problems,
+)
 from core.context_phrasing import strip_context_references
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from progress.tagging import load_course_concepts, tag_question_at_generation
@@ -85,6 +96,11 @@ _DEFAULT_TYPE_MIX: dict[str, int] = {
 # Maximum MCQs to run through the distractor improvement pass.
 # Each pass = one additional LLM call, so cap to control latency.
 _MAX_DISTRACTOR_IMPROVEMENTS = 3
+
+#: The existing failure text when no question comes back, reused when every
+#: question fails validation twice.
+_NO_QUESTIONS_ERROR = "LLM returned an empty question list."
+_VALID_TYPES = frozenset({"mcq", "short_answer", "numeric"})
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -213,6 +229,130 @@ def _build_bloom_distribution(config: dict) -> str:
         if level in _VALID_BLOOM and cnt > 0
     ]
     return "\n".join(lines) if lines else "  - mixed Bloom levels"
+
+
+def _higher_order_rule(config: dict) -> str:
+    """Rule 16 of the generation prompt: only without a teacher's Bloom mix, for 5+ questions."""
+    from core.config import settings
+
+    if config.get("bloom_mix") or int(config.get("count") or 0) < MIN_QUESTIONS_FOR_SHARE:
+        return ""
+    return HIGHER_ORDER_RULE.format(percent=round(settings.assessment_min_higher_order_share * 100))
+
+
+def _with_plain_options(question: dict) -> dict:
+    """The question as the student will see it: option labels removed."""
+    options = question.get("options")
+    if not isinstance(options, list):
+        return question
+    return {**question, "options": [_strip_option_prefix(o) for o in options]}
+
+
+def _regenerate_question(
+    question: dict,
+    problems: list[str],
+    *,
+    bloom: str,
+    config: dict,
+    context: str,
+    other_stems: list[str],
+    gemini_flash,
+) -> dict | None:
+    """One more model call for one slot. None when it fails or returns no usable question."""
+    q_type = question.get("question_type")
+    q_type = q_type if q_type in _VALID_TYPES else "mcq"
+    prompt = REGENERATE_QUESTION_PROMPT.format(
+        context=wrap_untrusted(context, "COURSE CONTEXT"),
+        topic=config.get("topic", ""),
+        question_type=q_type,
+        bloom_level=bloom,
+        difficulty=_normalize_difficulty(question.get("difficulty", "")),
+        reasons="\n".join(f"- {REASON_TEXT[p]}" for p in problems),
+        other_questions=wrap_untrusted(
+            "\n".join(f"- {stem}" for stem in other_stems) or "- (none)", "EXISTING QUESTIONS"
+        ),
+    )
+    try:
+        raw = gemini_flash.generate(
+            prompt,
+            temperature=0.4,
+            system_instruction=ASSESSMENT_SYSTEM_INSTRUCTION + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
+        )
+        new = json.loads(_strip_json_fences(raw)).get("question")
+    except Exception:  # noqa: BLE001 - a failed regeneration drops the slot; the quiz stands
+        logger.warning("Question regeneration failed; the slot is dropped.")
+        return None
+    if not isinstance(new, dict) or new.get("question_type") != q_type or not new.get("stem"):
+        return None
+    return new
+
+
+def _validate_and_repair(
+    question_list: list[dict],
+    *,
+    config: dict,
+    context: str,
+    evidence: list[str],
+    gemini_flash,
+) -> list[dict]:
+    """
+    Check every question (agents/assessment/validation.py). A failing one is
+    regenerated once and dropped if it still fails, so a quiz may come back
+    shorter than requested; the teacher reviews every draft, and the draft
+    reports the actual question count. Then, without a teacher's Bloom mix, a
+    quiz of 5+ questions short of the apply-or-higher share has that many
+    recall questions regenerated at apply or analyze level; a replacement that
+    fails keeps the original question.
+    """
+    from core.config import settings
+
+    def stems_except(skip: dict) -> list[str]:
+        return [str(q.get("stem", "")) for q in question_list if q is not skip]
+
+    kept: list[dict] = []
+    regenerated = dropped = 0
+    for q in question_list:
+        problems = question_problems(_with_plain_options(q), evidence)
+        if not problems:
+            kept.append(q)
+            continue
+        regenerated += 1
+        bloom = _normalize_bloom(q.get("bloom_level", ""))
+        new = _regenerate_question(
+            q, problems, bloom=bloom, config=config, context=context,
+            other_stems=stems_except(q), gemini_flash=gemini_flash,
+        )
+        if new is not None and not question_problems(_with_plain_options(new), evidence):
+            kept.append(new)
+        else:
+            dropped += 1
+
+    raised = needed = 0
+    if not config.get("bloom_mix"):
+        blooms = [_normalize_bloom(q.get("bloom_level", "")) for q in kept]
+        needed = higher_order_needed(blooms, settings.assessment_min_higher_order_share)
+        recall = [i for i, b in enumerate(blooms) if b not in HIGHER_ORDER_LEVELS][-needed:] if needed else []
+        for n, i in enumerate(recall):
+            target = "apply" if n % 2 == 0 else "analyze"
+            new = _regenerate_question(
+                kept[i], [REASON_NOT_HIGHER_ORDER], bloom=target, config=config,
+                context=context, other_stems=stems_except(kept[i]), gemini_flash=gemini_flash,
+            )
+            if (
+                new is not None
+                and _normalize_bloom(new.get("bloom_level", "")) in HIGHER_ORDER_LEVELS
+                and not question_problems(_with_plain_options(new), evidence)
+            ):
+                kept[i] = new
+                raised += 1
+
+    # Counts only, never question text.
+    logger.info(
+        "[ASSESSMENT-VALIDATION] checked=%d regenerated=%d dropped=%d kept=%d "
+        "higher_order_needed=%d higher_order_added=%d",
+        len(question_list), regenerated, dropped, len(kept), needed, raised,
+    )
+    return kept
 
 
 def _failed_state(state: AssessmentState, error: str) -> AssessmentState:
@@ -501,6 +641,7 @@ def generate_questions_node(
         count=config.get("count", 10),
         type_distribution=_build_type_distribution(config),
         bloom_distribution=_build_bloom_distribution(config),
+        higher_order_rule=_higher_order_rule(config),
     )
 
     t0 = time.perf_counter()
@@ -530,7 +671,7 @@ def generate_questions_node(
 
     question_list: list[dict] = parsed.get("questions", [])
     if not question_list:
-        return _failed_state(state, "LLM returned an empty question list.")
+        return _failed_state(state, _NO_QUESTIONS_ERROR)
 
     # ── Optional distractor improvement pass (capped) ─────────────────────────
     mcq_improved = 0
@@ -568,6 +709,17 @@ def generate_questions_node(
                         mcq_improved += 1
             except Exception:  # noqa: BLE001, S110 - non-fatal: the original options stand
                 pass
+
+    # ── Validate: regenerate a failing question once, then drop it ─────────────
+    question_list = _validate_and_repair(
+        question_list,
+        config=config,
+        context=context,
+        evidence=evidence_sentences([c.text for c in chunks]),
+        gemini_flash=gemini_flash,
+    )
+    if not question_list:
+        return _failed_state(state, _NO_QUESTIONS_ERROR)
 
     # ── Normalise and extract state arrays ────────────────────────────────────
     questions_out: list[dict] = []
