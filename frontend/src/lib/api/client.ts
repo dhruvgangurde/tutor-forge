@@ -49,11 +49,26 @@ export function isExpiredSession(status: number | undefined, url: string | undef
   return !SIGN_IN_PAGES.includes(window.location.pathname)
 }
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /**
+     * Handle a 401 on this request in the page instead of clearing the session
+     * and reloading to /login. Only the quiz submit sets it: the reload threw
+     * away every answer, and the take page lets the student sign in again
+     * without leaving it (AssessmentTakePage, SignInAgainDialog).
+     */
+    skipSessionRedirect?: boolean
+  }
+}
+
 // On 401 from an expired session: clear credentials and redirect to /login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (isExpiredSession(error.response?.status, error.config?.url)) {
+    if (
+      !error.config?.skipSessionRedirect &&
+      isExpiredSession(error.response?.status, error.config?.url)
+    ) {
       localStorage.removeItem('tf_access_token')
       localStorage.removeItem('tf_user')
       window.location.href = '/login'

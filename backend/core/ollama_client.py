@@ -29,7 +29,7 @@ the mocks in core/mock_gemini.py exactly, so RetrievalService and every agent
 node consume it without a single call-site change:
 
     generate(prompt, temperature=0.7, system_instruction="") -> str
-    generate_deterministic(prompt)                           -> str   (temperature=0)
+    generate_deterministic(prompt, system_instruction="")    -> str   (temperature=0)
     embed(text)                                              -> list[float]
 
 `system_instruction` maps to Ollama's top-level `system` field, which is the
@@ -228,7 +228,7 @@ class OllamaClient:
             description=f"Ollama generate ({self._model_name})",
         )
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         """
         Enforces temperature=0 — required for all grading calls (FR-05.3).
 
@@ -238,7 +238,7 @@ class OllamaClient:
         docstring); that is a recorded limitation of the dev provider, and it is
         why Ollama must never produce a reported grading-variance number.
         """
-        return self.generate(prompt, temperature=0.0)
+        return self.generate(prompt, temperature=0.0, system_instruction=system_instruction)
 
     # ── Embeddings ────────────────────────────────────────────────────────────
 

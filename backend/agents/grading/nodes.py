@@ -37,9 +37,7 @@ Design constraints honoured
 
 import json
 import logging
-import math
 import time
-import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -51,8 +49,8 @@ from agents.grading.prompts import (
     MCQ_GRADING_METHOD,
     NUMERIC_GRADING_METHOD,
 )
-from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from agents.grading.state import GradingState
+from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from grading.numeric import parse_numeric_answer, within_tolerance
 
 
@@ -66,6 +64,7 @@ def _count(n: int) -> str:
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
+
     from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -153,7 +152,7 @@ async def load_submission_node(state: GradingState, db) -> GradingState:
 
     This node is async because it queries the DB.
     """
-    from db.models import Submission, SubmissionResponse, Question, RubricCriterion
+    from db.models import Question, Submission, SubmissionResponse
 
     submission_id = state["submission_id"]
 
@@ -172,14 +171,13 @@ async def load_submission_node(state: GradingState, db) -> GradingState:
     if not submission:
         return _failed_state(state, f"Submission {submission_id} not found.")
 
+    # Allow re-grading of already-graded submissions (idempotent retry)
     if submission.status not in ("pending_grading", "graded"):
-        # Allow re-grading of already-graded submissions (idempotent retry)
-        if submission.status != "graded":
-            return _failed_state(
-                state,
-                f"Submission has unexpected status '{submission.status}'. "
-                "Only 'pending_grading' submissions can be graded.",
-            )
+        return _failed_state(
+            state,
+            f"Submission has unexpected status '{submission.status}'. "
+            "Only 'pending_grading' submissions can be graded.",
+        )
 
     if not submission.responses:
         return _failed_state(state, "Submission has no responses to grade.")
@@ -299,7 +297,7 @@ def retrieve_evidence_node(
                 len(chunks),
                 resp["question_id"],
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a retrieval failure must not stop grading
             # ChromaDB failure: continue with empty evidence and score 0 for this question.
             # This is non-fatal — the grade_responses_node will record 0 + explanation.
             logger.warning(
@@ -355,9 +353,8 @@ def check_evidence_groundedness_node(
     own answer_key, so corpus evidence is not the basis of the judgement and
     gating them on retrieval would refuse gradeable work.
     """
-    from retrieval.models import Chunk, RetrievalResult
-
     from core.config import settings
+    from retrieval.models import Chunk, RetrievalResult
 
     threshold = settings.active_groundedness_threshold
     responses = state["responses"]
@@ -669,9 +666,9 @@ def grade_responses_node(
         student_response = resp.get("answer_text") or "(no response provided)"
 
         # F23: delimit the untrusted student answer and uploaded course evidence,
-        # and prepend the data-boundary notice (grading uses generate_deterministic,
-        # which has no system-instruction channel). The rubric is trusted authority
-        # and is left un-wrapped. Scores are still clamped to [0, max_points] below.
+        # and prepend the data-boundary notice. The grading rules go in the system
+        # instruction. The rubric is trusted authority and is left un-wrapped.
+        # Scores are still clamped to [0, max_points] below.
         prompt = UNTRUSTED_CONTENT_NOTICE + "\n\n" + GRADE_SHORT_ANSWER_PROMPT.format(
             stem=resp["stem"],
             student_response=wrap_untrusted(student_response, "STUDENT RESPONSE"),
@@ -681,12 +678,11 @@ def grade_responses_node(
 
         t0 = time.perf_counter()
         try:
-            raw = gemini_pro.generate_deterministic(prompt)
+            raw = gemini_pro.generate_deterministic(prompt, system_instruction=GRADING_SYSTEM_INSTRUCTION)
         except Exception as exc:
             logger.exception(
-                "Gemini Pro grading call failed for question %s: %s",
+                "Gemini Pro grading call failed for question %s",
                 resp["question_id"],
-                exc,
             )
             # Non-fatal: score all criteria 0 and record the error
             error_criteria = [
@@ -716,9 +712,11 @@ def grade_responses_node(
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             logger.error(
-                "JSON parse error in grading response for question %s (first 400 chars): %r — %s",
+                # Length only: the response is the model's scores and feedback
+                # on a student's answer.
+                "JSON parse error in grading response for question %s (%d chars): %s",
                 resp["question_id"],
-                cleaned[:400],
+                len(cleaned),
                 exc,
             )
             error_criteria = [
@@ -932,7 +930,7 @@ async def persist_recommendation_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception:  # noqa: BLE001 - tracing must never fail grading
+    except Exception:  # tracing must never fail grading
         # Loud on purpose - see the matching comment in the assessment agent.
         logger.exception(
             "Langfuse trace FAILED for grading recommendation %s - the "

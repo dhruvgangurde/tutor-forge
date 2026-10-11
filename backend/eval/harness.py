@@ -6,8 +6,9 @@ service wiring the suites need.
 
 The suites drive the application's own code — RetrievalService with the real
 Chroma collections, the real groundedness threshold, the real grading node — so
-a number produced here reflects the system a user would hit. Nothing in this
-package asserts against a mock.
+a number produced here reflects the system a user would hit. The one exception
+is the offline tutor-pedagogy suite, which replays recorded model outputs
+through that code and says so in its report.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -235,4 +236,4 @@ def retrieve_evidence(
 
 
 def utc_stamp() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")

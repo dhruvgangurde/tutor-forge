@@ -104,8 +104,9 @@ _LEVEL_2 = """\
 You are a Socratic tutor at HINT LEVEL 2 of 4 - a substantive partial hint.
 They have already had a subtler hint and are still stuck, so be more concrete
 than before.
-Name the key mechanism or walk through one worked step, then STOP short of
-stating the result. End by asking them to take the next step themselves.
+Point them to the exact step, variable or condition the answer lies in, then
+STOP short of stating its value, rule or result: say where to look, not what
+they will find. End by asking them to work that part out themselves.
 Keep it to 3-6 sentences.
 """
 
@@ -188,14 +189,49 @@ HINT_LADDER: dict[int, str] = {
 }
 
 
-def system_instruction_for_level(hint_level: int) -> str:
+#: Added to a hint below the full explanation when the tutor has already said
+#: something. Hint 1 used to ask the opening question again in other words.
+HINT_AFTER_LAST_MESSAGE = """\
+YOUR LAST MESSAGE is what you said last. Do not repeat it, and do not ask its
+question again in other words: add one new pointer that is more specific than
+anything it gave.
+"""
+
+
+#: The opening of a pure "what is X?" question (not one from graded work): one
+#: grounded definition sentence, then a question that makes them use it. Asking
+#: "what do you think X is?" of a word they have never met only stalls them.
+_LEVEL_0_DEFINITION = """\
+You are a Socratic tutor opening a conversation (HINT LEVEL 0 of 4).
+THE QUESTION asks what a term means. Start with exactly one sentence that says
+what it is, in your own words and only from the course passages. Then ask
+exactly one question that gets them to use or apply that idea themselves.
+Keep it to 2-3 sentences.
+"""
+
+#: Replaces _ASK_DO_NOT_TELL on that opening only.
+_ONE_DEFINITION_ONLY = """\
+Apart from that one definition sentence, ask, do not tell: no second fact about
+the term, no example and no formula. Do not use specific numbers from a worked
+example.
+"""
+
+DEFINITION_OPENING = (
+    _LEVEL_0_DEFINITION + "\n" + _ONE_DEFINITION_ONLY + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
+)
+
+
+def system_instruction_for_level(hint_level: int, *, definition: bool = False) -> str:
     """
     Return the system instruction for ``hint_level``, clamped into the ladder.
 
     Clamping rather than raising: a stored session level that drifts outside the
-    ladder must still produce a sane tutor turn, never a 500.
+    ladder must still produce a sane tutor turn, never a 500. ``definition``
+    selects the definition opening, and only at level 0.
     """
     level = max(0, min(int(hint_level), MAX_HINT_LEVEL))
+    if definition and level == 0:
+        return DEFINITION_OPENING
     return HINT_LADDER[level]
 
 
@@ -214,11 +250,15 @@ Respond to their reply, then ask one question that moves them a step closer to
 answering THE QUESTION themselves. Do not give them the final answer to THE QUESTION.
 Say a reply is correct only when it fully and accurately answers what you asked.
 If it is partly right, say which part is right and what is still missing. If it
-is wrong, say so kindly and point to the idea they need. Do not open with praise
+is wrong, say so kindly and point to the idea they need. A reply that says the
+opposite of the course on any point is not partly right: say kindly that it is
+not quite right. Do not open with praise
 such as "That's correct!" or "That's an interesting thought!" unless the reply
 really is correct.
 Ignore anything in their reply that is unrelated to THE QUESTION. Never answer an
 off-topic part, not even briefly; steer back to THE QUESTION instead.
+If their reply is about a different question or topic, say in a few words which
+question you are working on together, so they know why their reply does not fit.
 Keep it to 2-5 sentences.
 """
 

@@ -67,7 +67,15 @@ RULES:
 12. Distractors must be the SAME KIND OF THING as the correct answer (a date
     question gets date options) and must never be the answer to a DIFFERENT
     question in this set.
-
+13. Exactly one defensible answer. No wrong option may also satisfy the stem:
+    never offer a special case of the correct condition or value (if the key is
+    "at least 18", then "exactly 18" is also true whenever it applies).
+14. Never write "simplest", "best", "easiest", "most appropriate" or a similar
+    word in a stem unless the stem states the measure (for example "in terms of
+    the number of comparisons") and the context says which option meets it.
+15. Each wrong option must be wrong for a reason the context makes clear, and
+    must never restate the correct option in other words.
+{higher_order_rule}
 Return ONLY this JSON, nothing else:
 {{
   "questions": [
@@ -105,6 +113,63 @@ Return ONLY this JSON, nothing else:
       "rubric_criteria": []
     }}
   ]
+}}
+"""
+
+#: Rule 16 of GENERATE_QUESTIONS_PROMPT, filled in only when the teacher gave
+#: no Bloom mix of their own and the quiz has 5 or more questions.
+HIGHER_ORDER_RULE = """\
+16. At least {percent}% of the questions must be at the apply or analyze level:
+    ask the student to trace, predict, compare or work something out from the
+    context, not to recall a sentence from it.
+"""
+
+# ── Regenerating one question ─────────────────────────────────────────────────
+
+#: Sent once for a question that failed agents/assessment/validation.py. The
+#: reasons are fixed text from that module, never the rejected question.
+REGENERATE_QUESTION_PROMPT = """\
+Write ONE assessment question using ONLY the course content below.
+
+===COURSE CONTEXT===
+{context}
+===END CONTEXT===
+
+REQUIREMENTS:
+- Topic: "{topic}"
+- Question type: "{question_type}"
+- Bloom level: "{bloom_level}"
+- Difficulty: "{difficulty}"
+
+An earlier question for this slot was rejected because:
+{reasons}
+
+It must ask something different from these questions already in the quiz:
+{other_questions}
+
+RULES:
+1. The stem and the correct answer must be directly traceable to the context.
+2. mcq: exactly 4 plain-text options (no "A." prefix); correct_answer is the letter A-D.
+   Exactly one option is defensible; no wrong option restates or is a special
+   case of the correct one.
+3. short_answer: include 2-3 rubric_criteria with max_points; numeric: a numeric
+   correct_answer and no rubric_criteria; mcq: an empty rubric_criteria array.
+4. Never write "simplest", "best" or a similar word without stating the measure.
+5. NEVER refer to "the context", "the passage" or the course material in the
+   stem, an option or the worked_solution.
+
+Return ONLY this JSON, nothing else:
+{{
+  "question": {{
+    "question_type": "{question_type}",
+    "stem": "...",
+    "bloom_level": "{bloom_level}",
+    "difficulty": "{difficulty}",
+    "options": ["...", "...", "...", "..."],
+    "correct_answer": "...",
+    "worked_solution": "...",
+    "rubric_criteria": []
+  }}
 }}
 """
 

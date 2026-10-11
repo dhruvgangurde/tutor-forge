@@ -28,8 +28,10 @@ What a check does when it trips
 It removes the offending sentence, or only its leading clause where the rest of
 the sentence is still a good question ("Not quite, but what...?"). It never
 asks the model again. If nothing is left, or the low rungs or a reply are left
-with no question, the reply becomes a fixed Socratic question. A reply never
-comes out empty.
+with no question, the reply becomes a fixed Socratic question. A reply to a
+real attempt below Hint 3 keeps its untouched opening (at most two sentences,
+such as "That's not quite right.") ahead of that question. A reply never comes
+out empty.
 
 Last of all, a reply keeps only its first question: the model often stacked
 three, which leaves the student unsure which one to answer.
@@ -47,6 +49,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from agents.tutor.prompts import (
@@ -54,7 +57,8 @@ from agents.tutor.prompts import (
     GUARD_FALLBACK_QUESTION,
     MAX_ANSWER_GUARD_LEVEL,
 )
-from agents.tutor.query_resolution import topical_words
+from agents.tutor.query_resolution import definition_head, topical_words
+from core.config import TUTOR_GUARD
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +84,12 @@ RULE_CLAIM_QUESTION = "claim_question"
 RULE_PRONOUN_STATEMENT = "pronoun_statement"
 RULE_BACK_REFERENCE = "back_reference"
 RULE_FORMULA = "formula"
+RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
+RULE_VERDICT_REASON = "verdict_reason"
+RULE_COURSE_CLAIM = "course_claim"
+RULE_DEFINITION_EXTRA = "definition_extra"
+RULE_REPEATED_QUESTION = "repeated_question"
+RULE_RESTATED_CORRECTION = "restated_correction"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -96,6 +106,8 @@ class TutorTurn:
     course_text: str               # the retrieved passages the model was given
     student_reply: str | None = None  # THEIR REPLY, on the reply path only
     is_non_answer: bool = False    # their reply was "no", "I don't know"...
+    definition_allowed: bool = False  # a pure "what is X?" opening, not graded work
+    previous_tutor_message: str | None = None  # what the tutor said last (hint and reply paths)
 
 
 # ── Words ─────────────────────────────────────────────────────────────────────
@@ -350,6 +362,7 @@ class _AnswerSignals:
     course_sentences: list[set[str]]   # non-topic words of course sentences on the topic
     reply_words: set[str]
     all_course_sentences: list[set[str]]  # content words of every course sentence
+    term: set[str] = field(default_factory=set)  # head of a "what is X?" question's term
 
     @property
     def course_words(self) -> set[str]:
@@ -367,13 +380,18 @@ def _answer_signals(turn: TutorTurn, reply_words: set[str]) -> _AnswerSignals:
             all_course_sentences.append(words)
         if needed and len(words & topic) >= needed:
             course_sentences.append(words - topic)
-    return _AnswerSignals(topic, needed, course_sentences, reply_words, all_course_sentences)
+    term = _content_words(definition_head(turn.question) or "")
+    return _AnswerSignals(topic, needed, course_sentences, reply_words, all_course_sentences, term)
 
 
 def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
     """A statement that tells them what the question asks, in definition form or in the course's own words."""
     plain = _SUBORDINATE_RE.sub("", _plain(statement))
     words = _content_words(plain)
+    # "What is the pivot in quick sort?" is answered by "The pivot is ...", which
+    # names only the term, not two of the question's words.
+    if signals.term and signals.term <= words and _DEFINING_RE.search(plain):
+        return not (words - signals.topic and _overlap(words - signals.topic, signals.reply_words) >= 0.6)
     if not signals.needed or len(words & signals.topic) < signals.needed:
         return False
     rest = words - signals.topic
@@ -383,6 +401,220 @@ def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
     if _DEFINING_RE.search(plain):
         return True
     return len(rest) >= 3 and any(_overlap(rest, course) >= 0.6 for course in signals.course_sentences)
+
+
+# ── 2e. Course claims below Hint 3 ────────────────────────────────────────────
+#
+# "To keep track of the region containing elements smaller than the pivot, a
+# specific index is maintained starting just before the low boundary." names no
+# definition and no pronoun, so the rules above let it through, yet it is the
+# course's answer in other words. A statement (or the lead-in of a question) is
+# a course claim when it shares at least claim_min_shared_words (core/config.py)
+# words with a single sentence of the retrieved passages, after setting aside
+# the question's own words, the student's own words and words common to most
+# passages.
+#
+# Course text often states the claim in code ("int i = low - 1", "arr[j] <=
+# pivot") while the tutor says it in words ("one position before low", "less
+# than or equal to"), so common code symbols are read as words on both sides.
+
+#: A question's first clause that itself asks ("What variable is set up before
+#: the loop, and how...?") is the question, not a lead-in; cutting it would
+#: leave "how does its value change?" with nothing for "its" to refer to.
+_ASKS_RE = re.compile(r"^(?:what|why|how|which|who|whom|whose|where)\b", re.IGNORECASE)
+
+_CODE_AS_WORDS = (
+    (re.compile(r"<="), " less equal "),
+    (re.compile(r">="), " greater equal "),
+    (re.compile(r"!="), " not equal "),
+    (re.compile(r"=="), " equal "),
+    (re.compile(r"\+\+|\+=\s*1\b"), " increment "),
+    (re.compile(r"(?<![-\w])--(?!-)|-=\s*1\b"), " decrement "),
+    (re.compile(r"\b([A-Za-z_]\w*)\s*-\s*1\b"), r"\1 minus one before "),
+    (re.compile(r"\b([A-Za-z_]\w*)\s*\+\s*1\b"), r"\1 plus one after "),
+    (re.compile(r"(?<![<>=!-])<(?![<=])"), " less "),
+    (re.compile(r"(?<![<>=!-])>(?![>=])"), " greater "),
+)
+
+
+def _claim_words(text: str) -> set[str]:
+    """Content words, reading common code symbols as the words they stand for."""
+    for pattern, words in _CODE_AS_WORDS:
+        text = pattern.sub(words, text)
+    return _content_words(text)
+
+
+@dataclass(frozen=True)
+class _ClaimSignals:
+    units: list[set[str]]   # claim words of each passage sentence, minus `ignore`
+    ignore: set[str]        # the question's words and background
+    # The student's words. They count toward a claim, but a claim needs some
+    # words of its own: "the index moves when an element is less than or equal
+    # to the pivot" told someone who wrote "pivot" still states the condition,
+    # while "Yes, i starts at low minus one" to someone who wrote that does not.
+    student: set[str] = field(default_factory=set)
+
+
+def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
+    units = [_claim_words(s) for s in re.split(r"(?<=[.!?])\s+|\n+", turn.course_text or "")]
+    units = [u for u in units if u]
+    background: set[str] = set()
+    # Words in most passage sentences are background ("pivot", "array" in a
+    # sorting course), not part of any one claim.
+    if len(units) >= TUTOR_GUARD.claim_min_sentences_for_background:
+        counts = Counter(w for u in units for w in u)
+        share = TUTOR_GUARD.claim_background_share
+        background = {w for w, n in counts.items() if n / len(units) > share}
+    student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
+    ignore = _claim_words(turn.question) | background
+    return _ClaimSignals([u - ignore for u in units], ignore, student - ignore)
+
+
+def _course_claim_words(text: str, claims: _ClaimSignals) -> set[str]:
+    """
+    The words, not the student's, that make ``text`` a course claim: what it
+    shares with the passage sentence it claims. Empty when it is not one.
+    """
+    words = _claim_words(_SUBORDINATE_RE.sub("", _plain(text))) - claims.ignore
+    if len(words) < TUTOR_GUARD.claim_min_shared_words:
+        return set()
+    for unit in claims.units:
+        shared = words & unit
+        new = shared - claims.student
+        if (
+            len(shared) >= TUTOR_GUARD.claim_min_shared_words
+            and len(new) >= TUTOR_GUARD.claim_min_new_shared_words
+        ):
+            return new
+    return set()
+
+
+def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
+    return bool(_course_claim_words(text, claims))
+
+
+# ── 2g. A question that restates what was just removed ───────────────────────
+#
+# Seen live: the correction "the index moves right when an element is less than
+# or equal to the pivot" was followed by "What happens to the elements when that
+# index moves and you find an element less than or equal to the pivot?". Once
+# the correction goes, the question must not carry it either. Only the words
+# the cut correction shared with a passage sentence (and the student did not
+# write) count, so a question is judged against this reply's own correction.
+# Other removals (a definition, a course claim) are not used: their topic
+# words are what any good follow-up question asks about.
+
+_CLAUSE_BREAK_RE = re.compile(r"\s*[,;]\s*|\s+(?:and|while|so\s+that)\s+", re.IGNORECASE)
+
+
+def _removed_claim_words(removals: list[tuple[str, str]], claims: _ClaimSignals) -> set[str]:
+    in_course = set().union(*claims.units) if claims.units else set()
+    removed: set[str] = set()
+    for before, after in removals:
+        gone = _claim_words(_plain(before)) - _claim_words(_plain(after))
+        removed |= gone & in_course
+    return removed - claims.student - claims.ignore
+
+
+def _cut_restated_clause(question: str, removed: set[str], claims: _ClaimSignals) -> str | None:
+    """
+    The question without the trailing clauses that restate ``removed``, or
+    None if that leaves nothing. What is kept may still name one word of it
+    ("when the index moves"): one word is a noun, not the correction.
+    """
+    def restated(text: str) -> set[str]:
+        return (_claim_words(_plain(text)) - claims.student - claims.ignore) & removed
+
+    if len(restated(question)) < TUTOR_GUARD.claim_min_new_shared_words:
+        return question
+    body = question.rstrip().rstrip("?").rstrip()
+    for m in reversed(list(_CLAUSE_BREAK_RE.finditer(body))):
+        head = body[:m.start()].rstrip(" ,;")
+        if len(restated(head)) < TUTOR_GUARD.claim_min_new_shared_words and len(_content_words(head)) >= 2:
+            return head + "?"
+    return None
+
+
+# ── 2h. "this X" whose X was removed ──────────────────────────────────────────
+
+_DETERMINER_RE = re.compile(r"\b(this|that|these|those)(\s+)([A-Za-z][\w-]*)", re.IGNORECASE)
+
+
+def _fix_orphaned_determiners(
+    lines: list[_Line | None], removals: list[tuple[str, str]], tripped: list[str]
+) -> None:
+    """
+    "What happens to that index...?" after the sentence that introduced the
+    index was removed: the question keeps its own noun, as "the index". Only a
+    noun that was in removed text, and is not in what is left before it.
+    """
+    removed = set().union(*(_content_words(b) - _content_words(a) for b, a in removals))
+    seen: set[str] = set()
+    changed = False
+    for line in lines:
+        if line is None:
+            continue
+        for i, sentence in enumerate(line.sentences):
+            out, end = [], 0
+            for m in _DETERMINER_RE.finditer(sentence):
+                noun = _content_words(m.group(3))
+                earlier = seen | _content_words(sentence[:m.start()])
+                if noun and noun & removed and not noun & earlier:
+                    the = "The" if m.group(1)[0].isupper() else "the"
+                    out.append(sentence[end:m.start()] + the + m.group(2) + m.group(3))
+                    end = m.end()
+            if out:
+                changed = True
+                line.sentences[i] = "".join(out) + sentence[end:]
+            seen |= _content_words(line.sentences[i])
+    if changed:
+        tripped.append(RULE_BACK_REFERENCE)
+
+
+# ── 2f. One definition sentence on a "what is X?" opening ────────────────────
+#
+# A pure "what is X?" question that is not from graded work opens with one
+# definition sentence. Only the first sentence of the reply, only when it is a
+# statement, and only when most of its words are in the retrieved passages:
+# a definition from general knowledge stays under the answer rules.
+
+
+def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
+    if not (turn.definition_allowed and turn.path == PATH_NEW_QUESTION and turn.hint_level == 0):
+        return None
+    first = next((s for line in lines if line is not None for s in line.sentences), None)
+    if not first or _is_question(first):
+        return None
+    words = _claim_words(_plain(first)) - _claim_words(turn.question)
+    if not words:
+        return None
+    grounded = len(words & _claim_words(turn.course_text)) / len(words)
+    return first if grounded >= TUTOR_GUARD.definition_grounded_share else None
+
+
+# ── 5. No repeated question ───────────────────────────────────────────────────
+#
+# Seen live: Hint 1 asked "how do you use a chosen element to help organize the
+# rest of the values around it?" right after "how does the algorithm use a
+# chosen element to rearrange the other values around it?". A question that
+# shares most of its words with a question in the tutor's last message is the
+# same question again. The open question's own words are left out: every
+# question about the topic shares them. Only near-repeats are caught.
+
+
+def _previous_questions(turn: TutorTurn, topic: set[str]) -> list[set[str]]:
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", turn.previous_tutor_message or "")
+    words = [_content_words(_plain(s)) - topic for s in sentences if _is_question(s)]
+    return [w for w in words if len(w) >= TUTOR_GUARD.repeat_min_words]
+
+
+def _repeats_question(question: str, previous: list[set[str]], topic: set[str]) -> bool:
+    words = _content_words(_plain(question)) - topic
+    if len(words) < TUTOR_GUARD.repeat_min_words:
+        return False
+    return any(
+        len(words & p) / min(len(words), len(p)) >= TUTOR_GUARD.repeat_overlap for p in previous
+    )
 
 
 def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
@@ -495,6 +727,7 @@ _VERDICT_RE = re.compile(
     r"start|question|point|answer|guess|attempt|thought|observation|instinct)\b"
     r"|\b(?:on\s+the\s+right\s+track|getting\s+(?:there|closer|warmer)|almost\s+there|nearly\s+there)\b"
     r"|\byou(?:'re|\s+are|\s+were)\s+(?:right|correct|close|wrong|incorrect|mistaken)\b"
+    r"|\b(?:partly|partially|half|somewhat|mostly)\s+(?:right|correct)\b"
     r"|\b(?:that'?s|that\s+is|it'?s|it\s+is|this\s+is)\s+(?:not\s+)?(?:quite\s+)?"
     r"(?:right|correct|incorrect|wrong|close|true|a\s+good|an\s+interesting|a\s+great)\b"
     r"|\bnot\s+quite\b"
@@ -505,6 +738,53 @@ _VERDICT_RE = re.compile(
 
 def _is_verdict(text: str) -> bool:
     return bool(_VERDICT_RE.search(_plain(text).lstrip(" \"'")))
+
+
+# ── 3b. A verdict keeps its words, not its reason ─────────────────────────────
+#
+# "That is not quite right, because it does not start at 0 and it moves when an
+# element is less than or equal to the pivot." The verdict is useful feedback on
+# a real attempt; the reason after it was the answer. Below Hint 3 the reason
+# clause goes and the verdict stays.
+#
+# Seen live as well: "You are partly right about what happens, but the index
+# moves right when an element is less than or equal to the pivot, not when it
+# is bigger." The ", but" clause is the reason too. And a reason that negates
+# their own words ("not when it is bigger") says the attempt contradicts the
+# course, so "partly right" would mislead: it becomes "not quite right".
+
+_REASON_SPLIT_RE = re.compile(
+    r"\s*(?:,\s*(?:because|since|as|but)\b|;|\s[—–-]\s|:)\s*", re.IGNORECASE
+)
+_PARTIAL_VERDICT_RE = re.compile(r"\b(?:partly|partially|half|somewhat|mostly)\s+(?:right|correct)\b",
+                                 re.IGNORECASE)
+#: A negation and what follows it, up to the end of its clause.
+_NEGATED_RE = re.compile(r"(?:\bnot|n't|\bnever|\brather\s+than|\binstead\s+of)\b([^,;.!?]*)", re.IGNORECASE)
+#: Said instead of "partly right" when the attempt contradicts the course.
+NOT_QUITE_VERDICT = "That's not quite right."
+
+
+def _negates(reason: str, reply_words: set[str]) -> bool:
+    """The reason says "not <something they wrote>": their attempt is contradicted."""
+    return any(_content_words(m.group(1)) & reply_words for m in _NEGATED_RE.finditer(_plain(reason)))
+
+
+def _reason_clause(sentence: str) -> str:
+    """The reason after a verdict (what _cut_reason removes), or empty."""
+    parts = _REASON_SPLIT_RE.split(sentence, maxsplit=1)
+    return parts[1] if len(parts) == 2 else ""
+
+
+def _cut_reason(sentence: str, reply_words: set[str] = frozenset()) -> str:
+    """The verdict alone, when the sentence is a verdict followed by its reason."""
+    if _is_question(sentence):
+        return sentence
+    parts = _REASON_SPLIT_RE.split(sentence, maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip() or not _is_verdict(parts[0]):
+        return sentence
+    if _PARTIAL_VERDICT_RE.search(_plain(parts[0])) and _negates(parts[1], reply_words):
+        return NOT_QUITE_VERDICT
+    return parts[0].rstrip(" ,;:.!") + "."
 
 
 # ── 4. Worked-example leakage ─────────────────────────────────────────────────
@@ -719,6 +999,35 @@ def _tidy(text: str) -> tuple[str, bool]:
     return re.sub(r"[ \t]{2,}", " ", out).strip(), dropped
 
 
+# ── Keeping the opening when the fallback fires ───────────────────────────────
+
+#: At most this many sentences are kept ahead of the fallback question.
+_MAX_KEPT_SENTENCES = 2
+
+
+def _sentences(lines: list[_Line | None]) -> list[str]:
+    return [s for line in lines if line is not None for s in line.sentences]
+
+
+def _kept_opening(original: list[str], surviving: list[str]) -> list[str]:
+    """
+    The reply's opening sentences that every rule left exactly as they were,
+    up to the first one a rule removed or changed: so nothing kept can follow,
+    or point back at, a removed sentence. At most _MAX_KEPT_SENTENCES, never a
+    question, and it stops before an intro line ending in ":", which would
+    point at text that is no longer there.
+    """
+    kept: list[str] = []
+    for before, after in zip(original, surviving, strict=False):
+        plain = _plain(after)
+        if after != before or _is_question(after) or plain.endswith(":"):
+            break
+        kept.append(after)
+        if len(kept) == _MAX_KEPT_SENTENCES:
+            break
+    return kept
+
+
 # ── The guard ─────────────────────────────────────────────────────────────────
 
 
@@ -741,6 +1050,9 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     low_rung = turn.hint_level <= MAX_ANSWER_GUARD_LEVEL
     signals = _answer_signals(turn, reply_words) if low_rung else None
 
+    # (rule, before, after) for every sentence an answer rule removed or shortened.
+    removals: list[tuple[str, str, str]] = []
+
     def run(rule: str, fix, *, answer: bool = False, with_previous: bool = False) -> None:
         """
         Apply ``fix`` to every sentence in order. ``with_previous`` also passes
@@ -760,6 +1072,8 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 previous = sentence
                 if new != sentence:
                     changed = True
+                    if answer:
+                        removals.append((rule, sentence, new or ""))
                 if not new:
                     pending = pending or answer
                     continue
@@ -775,6 +1089,33 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
         if cut_back:
             tripped.append(RULE_BACK_REFERENCE)
 
+    # 3b. On a reply to a real attempt below Hint 3, a verdict keeps its words
+    # and loses its reason ("That is not quite right, because <the answer>").
+    if low_rung and turn.path == PATH_REPLY and not turn.is_non_answer:
+        run(RULE_VERDICT_REASON, lambda s: _cut_reason(s, reply_words), answer=True)
+
+    # Taken after the verdict cut, so a shortened verdict still counts as the
+    # untouched opening the fallback may keep.
+    original = _sentences(lines)
+
+    # 2f. The one definition sentence a "what is X?" opening may give is spared
+    # by the answer rules; any later one is not.
+    definition = _definition_sentence(lines, turn)
+
+    def spare_definition(fix):
+        if definition is None:
+            return fix
+        spared = False
+
+        def fix_others(s, *previous):
+            nonlocal spared
+            if not spared and s == definition:
+                spared = True
+                return s
+            return fix(s, *previous)
+
+        return fix_others
+
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
 
@@ -788,13 +1129,15 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 return None if _states_answer(s, signals) else s
             return _cut_leading_clause(s, lambda clause: _states_answer(clause, signals))
 
-        run(RULE_STATES_ANSWER, no_answer, answer=True)
+        run(RULE_STATES_ANSWER, spare_definition(no_answer), answer=True)
 
         # 2a. The same answer behind a pronoun: "It's the work or energy per
         # unit charge..." right after a sentence about the topic.
         run(
             RULE_PRONOUN_STATEMENT,
-            lambda s, previous: None if _pronoun_states_answer(s, previous, signals) else s,
+            spare_definition(
+                lambda s, previous: None if _pronoun_states_answer(s, previous, signals) else s
+            ),
             answer=True,
             with_previous=True,
         )
@@ -856,6 +1199,63 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     if low_rung and course_numbers:
         run(RULE_UNUSED_NUMBER, lambda s: None if _numbers(_plain(s)) & course_numbers else s)
 
+    # 2e. Last of the answer rules, as a backstop for what the specific rules
+    # above do not recognise: no course claim in other words below Hint 3. A
+    # statement, or a question's lead-in, that shares several words with one
+    # passage sentence.
+    if low_rung:
+        claims = _claim_signals(turn)
+
+        def no_claim_statement(s: str) -> str | None:
+            if not _is_question(s):
+                return None if _states_course_claim(s, claims) else s
+            return _cut_leading_clause(
+                s,
+                lambda clause: not _ASKS_RE.match(_plain(clause).lstrip())
+                and _states_course_claim(clause, claims),
+            )
+
+        run(RULE_COURSE_CLAIM, spare_definition(no_claim_statement), answer=True)
+
+        # 2g. A question that says again the correction just cut from a verdict
+        # ("...when you find an element less than or equal to the pivot?")
+        # loses that clause, or goes when the clause cannot be cut.
+        corrections = [(_reason_clause(b), "") for rule, b, _ in removals if rule == RULE_VERDICT_REASON]
+        removed_claim = _removed_claim_words(corrections, claims)
+        if len(removed_claim) >= TUTOR_GUARD.claim_min_new_shared_words:
+            run(
+                RULE_RESTATED_CORRECTION,
+                lambda s: _cut_restated_clause(s, removed_claim, claims) if _is_question(s) else s,
+                answer=True,
+            )
+
+    # 2h. "this index" or "that boundary index" whose noun was only in a
+    # removed sentence or clause now points at nothing: it becomes "the index".
+    if removals:
+        _fix_orphaned_determiners(lines, [(b, a) for _, b, a in removals], tripped)
+
+    # 2f. A definition opening is the one sentence and a question: any other
+    # statement, however short ("It is measured in volts."), is a second fact.
+    if definition is not None:
+        run(
+            RULE_DEFINITION_EXTRA,
+            spare_definition(lambda s: s if _is_question(s) else None),
+            answer=True,
+        )
+
+    # 5. No question asked again in other words, on a hint or after "no" / "I
+    # don't know". A reply to an attempt or to an off-topic message may ask
+    # the same question again on purpose, to steer back to it. The full
+    # explanation asks nothing, so it is left alone.
+    topic = _content_words(turn.question)
+    asks_again = turn.path == PATH_HINT or (turn.path == PATH_REPLY and turn.is_non_answer)
+    previous = _previous_questions(turn, topic) if asks_again else []
+    if previous and turn.hint_level < _FULL_EXPLANATION_LEVEL:
+        run(
+            RULE_REPEATED_QUESTION,
+            lambda s: None if _is_question(s) and _repeats_question(s, previous, topic) else s,
+        )
+
     # Repair any join the removals above left, then judge what is left.
     text, dropped = _tidy(_render(lines))
     if dropped and RULE_FRAGMENT not in tripped:
@@ -867,6 +1267,16 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
         and (low_rung or turn.path == PATH_REPLY)
         and not any(_is_question(s) for line in lines if line for s in line.sentences)
     ):
+        # A reply to a real attempt below Hint 3 keeps what it had already got
+        # right ("That's not quite right.") and gains the fallback question,
+        # instead of losing the verdict along with the removed sentence. A
+        # hint that lost only its repeated question keeps its new pointer too.
+        hint_lost_repeat = turn.path == PATH_HINT and RULE_REPEATED_QUESTION in tripped
+        if low_rung and not turn.is_non_answer and (turn.path == PATH_REPLY or hint_lost_repeat):
+            opening = _kept_opening(original, _sentences(lines))
+            if opening:
+                tripped.append(RULE_FALLBACK_KEPT_TEXT)
+                return " ".join(opening) + " " + GUARD_FALLBACK_QUESTION, tripped
         tripped.append(RULE_FALLBACK)
         return (GUARD_FALLBACK_NON_ANSWER if turn.is_non_answer else GUARD_FALLBACK_QUESTION), tripped
 

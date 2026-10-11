@@ -43,16 +43,28 @@ from sqlalchemy import select
 from agents.assessment.prompts import (
     ASSESSMENT_SYSTEM_INSTRUCTION,
     GENERATE_QUESTIONS_PROMPT,
+    HIGHER_ORDER_RULE,
     IMPROVE_DISTRACTORS_PROMPT,
+    REGENERATE_QUESTION_PROMPT,
 )
 from agents.assessment.state import AssessmentState
+from agents.assessment.validation import (
+    HIGHER_ORDER_LEVELS,
+    REASON_NOT_HIGHER_ORDER,
+    REASON_TEXT,
+    evidence_sentences,
+    higher_order_needed,
+    question_problems,
+)
 from core.context_phrasing import strip_context_references
+from core.exceptions import NoUsableQuestions
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from progress.tagging import load_course_concepts, tag_question_at_generation
 
 if TYPE_CHECKING:
-    from retrieval.service import RetrievalService
     from langfuse import Langfuse
+
+    from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +96,12 @@ _DEFAULT_TYPE_MIX: dict[str, int] = {
 # Maximum MCQs to run through the distractor improvement pass.
 # Each pass = one additional LLM call, so cap to control latency.
 _MAX_DISTRACTOR_IMPROVEMENTS = 3
+
+#: Shown to the teacher when the model returns no question, or every question
+#: fails validation twice. A fixed, plain message (core/exceptions.py): never
+#: the model's output.
+_NO_USABLE_QUESTIONS_ERROR = str(NoUsableQuestions())
+_VALID_TYPES = frozenset({"mcq", "short_answer", "numeric"})
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -214,6 +232,133 @@ def _build_bloom_distribution(config: dict) -> str:
     return "\n".join(lines) if lines else "  - mixed Bloom levels"
 
 
+def _higher_order_rule(config: dict) -> str:
+    """Rule 16 of the generation prompt: only without a teacher's Bloom mix, for 5+ questions."""
+    from core.config import QUESTION_CHECKS, settings
+
+    short = int(config.get("count") or 0) < QUESTION_CHECKS.min_questions_for_share
+    if config.get("bloom_mix") or short:
+        return ""
+    return HIGHER_ORDER_RULE.format(percent=round(settings.assessment_min_higher_order_share * 100))
+
+
+def _with_plain_options(question: dict) -> dict:
+    """The question as the student will see it: option labels removed."""
+    options = question.get("options")
+    if not isinstance(options, list):
+        return question
+    return {**question, "options": [_strip_option_prefix(o) for o in options]}
+
+
+def _regenerate_question(
+    question: dict,
+    problems: list[str],
+    *,
+    bloom: str,
+    config: dict,
+    context: str,
+    other_stems: list[str],
+    gemini_flash,
+) -> dict | None:
+    """One more model call for one slot. None when it fails or returns no usable question."""
+    q_type = question.get("question_type")
+    q_type = q_type if q_type in _VALID_TYPES else "mcq"
+    prompt = REGENERATE_QUESTION_PROMPT.format(
+        context=wrap_untrusted(context, "COURSE CONTEXT"),
+        topic=config.get("topic", ""),
+        question_type=q_type,
+        bloom_level=bloom,
+        difficulty=_normalize_difficulty(question.get("difficulty", "")),
+        reasons="\n".join(f"- {REASON_TEXT[p]}" for p in problems),
+        other_questions=wrap_untrusted(
+            "\n".join(f"- {stem}" for stem in other_stems) or "- (none)", "EXISTING QUESTIONS"
+        ),
+    )
+    try:
+        raw = gemini_flash.generate(
+            prompt,
+            temperature=0.4,
+            system_instruction=ASSESSMENT_SYSTEM_INSTRUCTION + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
+        )
+        new = json.loads(_strip_json_fences(raw)).get("question")
+    except Exception:  # noqa: BLE001 - a failed regeneration drops the slot; the quiz stands
+        logger.warning("Question regeneration failed; the slot is dropped.")
+        return None
+    if not isinstance(new, dict) or new.get("question_type") != q_type or not new.get("stem"):
+        return None
+    return new
+
+
+def _validate_and_repair(
+    question_list: list[dict],
+    *,
+    config: dict,
+    context: str,
+    evidence: list[str],
+    gemini_flash,
+) -> list[dict]:
+    """
+    Check every question (agents/assessment/validation.py). A failing one is
+    regenerated once and dropped if it still fails, so a quiz may come back
+    shorter than requested; the teacher reviews every draft, and the draft
+    reports the actual question count. Then, without a teacher's Bloom mix, a
+    quiz of 5+ questions short of the apply-or-higher share has that many
+    recall questions regenerated at apply or analyze level; a replacement that
+    fails keeps the original question.
+    """
+    from core.config import settings
+
+    def stems_except(skip: dict) -> list[str]:
+        return [str(q.get("stem", "")) for q in question_list if q is not skip]
+
+    kept: list[dict] = []
+    regenerated = dropped = 0
+    for q in question_list:
+        problems = question_problems(_with_plain_options(q), evidence)
+        if not problems:
+            kept.append(q)
+            continue
+        regenerated += 1
+        bloom = _normalize_bloom(q.get("bloom_level", ""))
+        new = _regenerate_question(
+            q, problems, bloom=bloom, config=config, context=context,
+            other_stems=stems_except(q), gemini_flash=gemini_flash,
+        )
+        if new is not None and not question_problems(_with_plain_options(new), evidence):
+            kept.append(new)
+        else:
+            dropped += 1
+
+    raised = needed = kept_original = 0
+    if not config.get("bloom_mix"):
+        blooms = [_normalize_bloom(q.get("bloom_level", "")) for q in kept]
+        needed = higher_order_needed(blooms, settings.assessment_min_higher_order_share)
+        recall = [i for i, b in enumerate(blooms) if b not in HIGHER_ORDER_LEVELS][-needed:] if needed else []
+        for n, i in enumerate(recall):
+            target = "apply" if n % 2 == 0 else "analyze"
+            new = _regenerate_question(
+                kept[i], [REASON_NOT_HIGHER_ORDER], bloom=target, config=config,
+                context=context, other_stems=stems_except(kept[i]), gemini_flash=gemini_flash,
+            )
+            if (
+                new is not None
+                and _normalize_bloom(new.get("bloom_level", "")) in HIGHER_ORDER_LEVELS
+                and not question_problems(_with_plain_options(new), evidence)
+            ):
+                kept[i] = new
+                raised += 1
+            else:
+                kept_original += 1
+
+    # Counts only, never question text.
+    logger.info(
+        "[ASSESSMENT-VALIDATION] checked=%d regenerated=%d dropped=%d kept=%d "
+        "higher_order_needed=%d higher_order_added=%d higher_order_kept_original=%d",
+        len(question_list), regenerated, dropped, len(kept), needed, raised, kept_original,
+    )
+    return kept
+
+
 def _failed_state(state: AssessmentState, error: str) -> AssessmentState:
     """Return a state update that marks the graph run as failed."""
     return {
@@ -232,7 +377,7 @@ def _failed_state(state: AssessmentState, error: str) -> AssessmentState:
 
 def retrieve_concepts_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> AssessmentState:
     """
     Retrieve semantically relevant course chunks for the requested topic.
@@ -246,10 +391,10 @@ def retrieve_concepts_node(
     assessment_id = state.get("assessment_id", "unknown")
 
     logger.info(
-        "[RETRIEVAL-START] assessment_id=%s course_id=%s topic=%r",
+        "[RETRIEVAL-START] assessment_id=%s course_id=%s topic_chars=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
     )
 
     t0 = time.perf_counter()
@@ -257,16 +402,15 @@ def retrieve_concepts_node(
         result = retrieval_service.retrieve(course_id, topic, top_k=8)
     except Exception as exc:
         logger.exception(
-            "ChromaDB retrieval failed for course_id=%s topic=%r: %s",
+            "ChromaDB retrieval failed for course_id=%s topic_chars=%d",
             course_id,
-            topic,
-            exc,
+            len(topic),
         )
         logger.error(
-            "[RETRIEVAL-ERROR] assessment_id=%s course_id=%s topic=%r exception=%s",
+            "[RETRIEVAL-ERROR] assessment_id=%s course_id=%s topic_chars=%d exception=%s",
             assessment_id,
             course_id,
-            topic,
+            len(topic),
             exc,
         )
         return _failed_state(state, f"Retrieval failed: {exc}")
@@ -276,31 +420,32 @@ def retrieve_concepts_node(
     top_score = result.top_score if not result.is_empty() else 0.0
 
     logger.info(
-        "Retrieved %d chunks for course_id=%s topic=%r in %dms (top_score=%.3f)",
+        "Retrieved %d chunks for course_id=%s topic_chars=%d in %dms (top_score=%.3f)",
         chunk_count,
         course_id,
-        topic,
+        len(topic),
         elapsed_ms,
         top_score,
     )
 
-    # DIAGNOSTIC LOGGING: Print all retrieved chunks with scores
+    # Scores and sizes only: the topic is what the teacher typed and the chunks
+    # are course text, so neither is logged.
     logger.info(
-        "[RETRIEVAL-RESULTS] assessment_id=%s course_id=%s topic=%r chunk_count=%d",
+        "[RETRIEVAL-RESULTS] assessment_id=%s course_id=%s topic_chars=%d chunk_count=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         chunk_count,
     )
     for idx, (chunk, score) in enumerate(zip(result.chunks, result.confidence_scores), 1):
         logger.info(
-            "[RETRIEVAL-CHUNK-%d] rank=%d confidence=%.4f source=%s page=%s text_preview=%r",
+            "[RETRIEVAL-CHUNK-%d] rank=%d confidence=%.4f source=%s page=%s text_chars=%d",
             idx,
             idx,
             score,
             chunk.source_file,
             chunk.page_or_slide,
-            chunk.text[:150].replace("\n", " "),
+            len(chunk.text),
         )
 
     # Serialise RetrievalResult for downstream nodes.
@@ -339,7 +484,7 @@ def retrieve_concepts_node(
 
 def check_groundedness_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> AssessmentState:
     """
     Hard gate: refuse generation if the topic is not grounded in course material.
@@ -351,17 +496,17 @@ def check_groundedness_node(
 
     course_id = state["course_id"]
     assessment_id = state.get("assessment_id", "unknown")
-    topic = state["config"].get("topic", "unknown")
+    topic = state["config"].get("topic", "") or ""
 
     cache = state.get("retrieval_cache") or {}
     raw_chunks = cache.get("chunks", [])
     confidence_scores = cache.get("confidence_scores", [])
 
     logger.info(
-        "[GROUNDEDNESS-START] assessment_id=%s course_id=%s topic=%r cache_chunks=%d",
+        "[GROUNDEDNESS-START] assessment_id=%s course_id=%s topic_chars=%d cache_chunks=%d",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         len(raw_chunks),
     )
 
@@ -396,11 +541,11 @@ def check_groundedness_node(
     grounded = retrieval_service.is_grounded(result, threshold=threshold)
 
     logger.info(
-        "[GROUNDEDNESS-DECISION] assessment_id=%s course_id=%s topic=%r "
+        "[GROUNDEDNESS-DECISION] assessment_id=%s course_id=%s topic_chars=%d "
         "top_score=%.4f threshold=%.2f threshold_source=%s grounded=%s",
         assessment_id,
         course_id,
-        topic,
+        len(topic),
         top_score,
         threshold,
         threshold_source,
@@ -433,9 +578,9 @@ def refuse_node(state: AssessmentState) -> AssessmentState:
     Routes to END via graph edge.
     """
     logger.warning(
-        "Assessment generation refused (not grounded) for course_id=%s topic=%r",
+        "Assessment generation refused (not grounded) for course_id=%s topic_chars=%d",
         state["course_id"],
-        state["config"].get("topic", ""),
+        len(state["config"].get("topic", "") or ""),
     )
     return _failed_state(state, _REFUSAL_MESSAGE)
 
@@ -444,7 +589,7 @@ def refuse_node(state: AssessmentState) -> AssessmentState:
 
 def generate_questions_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_flash,
 ) -> AssessmentState:
     """
@@ -501,6 +646,7 @@ def generate_questions_node(
         count=config.get("count", 10),
         type_distribution=_build_type_distribution(config),
         bloom_distribution=_build_bloom_distribution(config),
+        higher_order_rule=_higher_order_rule(config),
     )
 
     t0 = time.perf_counter()
@@ -511,7 +657,7 @@ def generate_questions_node(
             system_instruction=ASSESSMENT_SYSTEM_INSTRUCTION + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
         )
     except Exception as exc:
-        logger.exception("Gemini Flash generation failed: %s", exc)
+        logger.exception("Gemini Flash generation failed")
         return _failed_state(state, f"LLM generation failed: {exc}")
 
     gen_ms = round((time.perf_counter() - t0) * 1000)
@@ -522,16 +668,15 @@ def generate_questions_node(
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        # Counts only: the response is generated questions and answers.
         logger.error(
-            "JSON parse error in Gemini response (first 500 chars): %r — %s",
-            cleaned[:500],
-            exc,
+            "JSON parse error in Gemini response (%d chars): %s", len(cleaned), exc
         )
         return _failed_state(state, f"LLM returned malformed JSON: {exc}")
 
     question_list: list[dict] = parsed.get("questions", [])
     if not question_list:
-        return _failed_state(state, "LLM returned an empty question list.")
+        return _failed_state(state, _NO_USABLE_QUESTIONS_ERROR)
 
     # ── Optional distractor improvement pass (capped) ─────────────────────────
     mcq_improved = 0
@@ -559,17 +704,27 @@ def generate_questions_node(
                     leaked = _leaking_options(candidate, foreign)
                     if leaked:
                         logger.warning(
-                            "Distractor improvement REJECTED for %r: option(s) %r "
+                            "Distractor improvement REJECTED for question %d: %d option(s) "
                             "reproduce another question's answer in this batch.",
-                            q.get("stem", "")[:60],
-                            [x[:40] for x in leaked],
+                            question_list.index(q) + 1,
+                            len(leaked),
                         )
                     else:
                         q["options"] = candidate
                         mcq_improved += 1
-            except Exception:
-                # Non-fatal — keep original options on any failure
+            except Exception:  # noqa: BLE001, S110 - non-fatal: the original options stand
                 pass
+
+    # ── Validate: regenerate a failing question once, then drop it ─────────────
+    question_list = _validate_and_repair(
+        question_list,
+        config=config,
+        context=context,
+        evidence=evidence_sentences([c.text for c in chunks]),
+        gemini_flash=gemini_flash,
+    )
+    if not question_list:
+        return _failed_state(state, _NO_USABLE_QUESTIONS_ERROR)
 
     # ── Normalise and extract state arrays ────────────────────────────────────
     questions_out: list[dict] = []
@@ -600,9 +755,7 @@ def generate_questions_node(
         stem = strip_context_references(raw_stem)
         if stem != raw_stem:
             context_phrases_stripped += 1
-            logger.info(
-                "Stripped context framing from stem: %r -> %r", raw_stem[:70], stem[:70]
-            )
+            logger.info("Stripped context framing from the stem of question %d", idx + 1)
 
         raw_options = q.get("options")
         options = (
@@ -647,10 +800,10 @@ def generate_questions_node(
         if leaked:
             contaminated += 1
             logger.warning(
-                "[DISTRACTOR-CONTAMINATION] question %r carries option(s) %r that "
+                "[DISTRACTOR-CONTAMINATION] question %d carries %d option(s) that "
                 "answer a DIFFERENT question in this batch. Teacher review needed.",
-                questions_out[idx]["stem"][:60],
-                [x[:40] for x in leaked],
+                idx + 1,
+                len(leaked),
             )
 
     logger.info(
@@ -685,7 +838,7 @@ def generate_questions_node(
 async def persist_assessment_node(
     state: AssessmentState,
     db,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> AssessmentState:
     """
     UPDATE the placeholder Assessment row and INSERT Questions + RubricCriteria.
@@ -829,7 +982,7 @@ async def persist_assessment_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception:  # noqa: BLE001 - tracing must never fail generation
+    except Exception:  # tracing must never fail generation
         # Loud on purpose. This call sat broken on the removed v2 API for an
         # entire major version because a bare warning hid it; observability
         # coverage is itself an acceptance criterion, so a dead trace is a

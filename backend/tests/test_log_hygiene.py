@@ -1,8 +1,9 @@
 """
 tests/test_log_hygiene.py
 -------------------------
-The tutor and ingestion logs carry lengths, counts and ids, never what a
-student typed or what a course says. Each test runs the real node with a
+The tutor, ingestion, grading and course logs (and the mock provider's)
+carry lengths, counts and ids, never what a student typed, what a course
+says, what the model wrote or what a teacher named something. Each test runs the real node with a
 distinctive marker word in every piece of text and checks the logs at DEBUG
 level for it. Fakes only: no network, no database.
 """
@@ -135,4 +136,68 @@ def test_chunking_logs_carry_no_chunk_text(caplog):
         out = chunk_and_embed_node(_ingestion_state(parsed_content=parsed), MagicMock())
 
     assert out["chunks"]
+    assert _MARKER not in _logged(caplog)
+
+
+# ── Grading, course lifecycle and the mock provider ───────────────────────────
+
+
+def test_malformed_grading_output_is_logged_by_length_only(caplog):
+    from agents.grading.nodes import grade_responses_node
+
+    response = {
+        "question_id": str(uuid.uuid4()),
+        "question_type": "short_answer",
+        "stem": "Explain photosynthesis.",
+        "answer_key": {"correct_answer": "Light becomes chemical energy."},
+        "answer_text": f"My answer {_MARKER}",
+        "answer_choice": None,
+        "max_points": 2.0,
+        "rubric_criteria": [{"criterion_id": str(uuid.uuid4()), "description": "Names light", "max_points": 2.0}],
+    }
+    state = {
+        "submission_id": uuid.uuid4(), "course_id": uuid.uuid4(), "responses": [response],
+        "evidence_per_question": [[]], "criterion_results": [], "total_score": 0.0, "max_score": 0.0,
+        "recommendation_rationale": {}, "recommendation_id": None, "trace_id": None,
+        "status": "running", "error": None,
+    }
+    model = MagicMock()
+    model.generate_deterministic.return_value = f'{{"criterion_scores": [{{"feedback": "{_MARKER} good'
+    with caplog.at_level(logging.DEBUG, logger="agents.grading"):
+        grade_responses_node(state, gemini_pro=model)
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(m.startswith("JSON parse error in grading response for question") and " chars)" in m
+               for m in messages)
+    assert _MARKER not in _logged(caplog)
+
+
+@pytest.mark.asyncio
+async def test_course_lifecycle_logs_the_name_length_only(caplog):
+    from unittest.mock import AsyncMock
+
+    from courses.lifecycle import archive_course, hard_delete_course, restore_course
+
+    course = MagicMock()
+    course.id = uuid.uuid4()
+    course.name = f"Biology {_MARKER}"
+    course.archived_at = None
+    db = AsyncMock()
+    with caplog.at_level(logging.DEBUG, logger="courses"):
+        await archive_course(course, db)
+        await restore_course(course, db)
+        await hard_delete_course(course, db)
+
+    messages = [r.getMessage() for r in caplog.records if r.name.startswith("courses")]
+    assert len(messages) == 3
+    assert all(f"name_chars={len(course.name)}" in m for m in messages)
+    assert _MARKER not in _logged(caplog)
+
+
+def test_the_mock_provider_logs_the_prompt_length_only(caplog):
+    from core.mock_gemini import MockGeminiProClient
+
+    with caplog.at_level(logging.DEBUG, logger="core"):
+        MockGeminiProClient().generate(f"Explain {_MARKER} to me.")
+    assert any("prompt of" in r.getMessage() for r in caplog.records)
     assert _MARKER not in _logged(caplog)

@@ -53,6 +53,8 @@ from __future__ import annotations
 
 import re
 
+from core.config import TUTOR_GUARD
+
 # ── Low-content detection ─────────────────────────────────────────────────────
 
 #: Words that carry no retrievable topic on their own: function words, plus the
@@ -81,7 +83,7 @@ _FILLER_WORDS = frozenset({
     "bit", "little", "much", "many",
     # contractions: the tokenizer keeps apostrophes, so these need listing in
     # both forms or "don't" counts as a topical word.
-    "dont", "don't", "cant", "can't", "im", "i'm", "its", "it's", "whats",
+    "dont", "don't", "cant", "can't", "im", "i'm", "it's",
     "what's", "thats", "that's", "doesnt", "doesn't", "didnt", "didn't",
     "wont", "won't", "isnt", "isn't", "ive", "i've", "id", "i'd", "ill",
     "i'll", "youre", "you're", "lets", "let's",
@@ -256,6 +258,61 @@ def classify_turn(text: str) -> str:
     if not topical_words(joined):
         return TURN_FOLLOW_UP
     return TURN_NEW_QUESTION
+
+
+# ── "What is X?" ──────────────────────────────────────────────────────────────
+#
+# A pure request for what a term means ("what is a pivot?", "define recursion")
+# gets one grounded definition sentence before the guiding question: asking
+# "what do you think a pivot is?" to someone who has never met the word only
+# stalls them. Anything that asks for a fact about the term instead ("what is
+# the time complexity of merge sort?") is not a definition question and keeps
+# the ask-do-not-tell opening.
+
+_DEFINITION_RE = re.compile(
+    r"^(?:please\s+)?(?:(?:can|could)\s+you\s+)?(?:"
+    r"what(?:'s|\s+is|\s+are)\s+(?:meant\s+by\s+|the\s+(?:definition|meaning)\s+of\s+)?(?P<what>.+?)"
+    r"|define\s+(?P<define>.+?)"
+    r"|what\s+(?:does|do)\s+(?P<mean>.+?)\s+mean"
+    r")\s*[?.!]*\s*$",
+    re.IGNORECASE,
+)
+_ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+", re.IGNORECASE)
+
+#: Words that turn "what is the X" into a question about a fact or a result.
+_NOT_A_TERM_RE = re.compile(
+    r"\b(?:complexity|value|values|result|results|output|outputs|answer|answers|sum|total|"
+    r"number|count|maximum|minimum|max|min|best|worst|average|advantages?|disadvantages?|"
+    r"purpose|role|reason|cost|between|happens?|if|when|after|before|steps?|order|why|how)\b",
+    re.IGNORECASE,
+)
+
+
+def definition_term(text: str) -> str | None:
+    """
+    The term a pure "what is X / define X / what does X mean" question asks
+    about, or None for any other message.
+    """
+    plain = " ".join((text or "").replace("’", "'").split())
+    match = _DEFINITION_RE.match(plain)
+    if not match:
+        return None
+    term = _ARTICLE_RE.sub("", next(g for g in match.groups() if g)).strip()
+    if (
+        not term
+        or len(term.split()) > TUTOR_GUARD.definition_max_term_words
+        or re.search(r"\d|[=<>+*/()\[\]]", term)
+        or _NOT_A_TERM_RE.search(term)
+        or not topical_words(term)
+    ):
+        return None
+    return term
+
+
+def definition_head(text: str) -> str | None:
+    """The head of a definition question's term: "pivot in quick sort" is asked about as "pivot"."""
+    term = definition_term(text)
+    return re.split(r"\s+(?:in|of|for|within|during)\s+", term, maxsplit=1)[0] if term else None
 
 
 #: Replies that say "I can't answer that" rather than attempting an answer.

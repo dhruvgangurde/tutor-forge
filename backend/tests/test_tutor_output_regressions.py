@@ -19,7 +19,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from agents.tutor.nodes import advance_hint_node, generate_guiding_question_node
-from agents.tutor.prompts import GUARD_FALLBACK_NON_ANSWER, GUARD_FALLBACK_QUESTION
+from agents.tutor.prompts import (
+    GUARD_FALLBACK_NON_ANSWER,
+    GUARD_FALLBACK_QUESTION,
+    system_instruction_for_level,
+)
 from core.context_phrasing import strip_context_references
 from retrieval.models import Chunk
 from retrieval.service import RetrievalService
@@ -302,3 +306,151 @@ def test_formula_in_a_hint_below_hint_3_is_removed():
         course_chunks=_SERIES_COURSE,
     )
     assert out == "Take the next step: what happens if you add a third resistor?"
+
+
+# ── Round 1f: a real attempt keeps its verdict when the fallback fires ───────
+
+
+def test_fallback_after_a_real_attempt_keeps_the_verdict():
+    out = _run(
+        "That's not quite right. The maximum element is not simply the first one. "
+        "It's found by comparing every element with the current maximum and keeping the larger one.",
+        reply="is it the largest element?",
+        hint_level=1,
+        question="how do you find the maximum element in an array?",
+        course_chunks=[
+            (
+                "To find the maximum element in an array, compare every element with the current "
+                "maximum and keep the larger one. Start with the first element as the current maximum."
+            )
+        ],
+    )
+    assert out == (
+        "That's not quite right. The maximum element is not simply the first one. "
+        + GUARD_FALLBACK_QUESTION
+    )
+
+
+# ── Phase B (Gemini replay): a wrong attempt corrected by stating the answer ──
+
+
+def test_live_correction_keeps_the_verdict_and_drops_the_stated_fact():
+    out = _run(
+        "That is not quite right, because it does not start at 0 and it moves when an element is "
+        "less than or equal to the pivot. Look at what happens to that index and the elements when "
+        "you find a value that is less than or equal to the pivot.",
+        reply="i think i starts at 0 and moves right whenever an element is bigger than the pivot",
+        hint_level=0,
+        question="how does the partition function keep track of the smaller elements?",
+        course_chunks=[
+            (
+                "int partition(int arr[], int low, int high) { int pivot = arr[high]; "
+                "int i = low - 1; for (int j = low; j < high; j++) { if (arr[j] <= pivot) "
+                "{ i++; swap(arr[i], arr[j]); } } }"
+            )
+        ],
+    )
+    assert out.startswith("That is not quite right.")
+    assert "because" not in out
+    assert "does not start at 0" not in out
+
+
+# ── Phase B (Gemini replay): the answer restated in other words below Hint 3 ──
+
+_PARTITION_Q = "how does the partition function keep track of the smaller elements?"
+#: Code as the course states it: the facts are in symbols, not words.
+_PARTITION_CODE = [
+    (
+        "int partition(int arr[], int low, int high) { int pivot = arr[high]; "
+        "int i = low - 1; for (int j = low; j < high; j++) { if (arr[j] <= pivot) "
+        "{ i++; swap(arr[i], arr[j]); } } swap(arr[i + 1], arr[high]); return i + 1; }"
+    )
+]
+
+
+def test_live_new_question_lead_in_that_states_the_answer_is_removed():
+    out = _run(
+        "To keep track of the region containing elements smaller than the pivot, a specific index is "
+        "maintained starting just before the low boundary. What happens to this index and the elements "
+        "when you encounter a value that is less than or equal to the pivot?",
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    assert out == (  # "this index" was introduced by the removed lead-in
+        "What happens to the index and the elements when you encounter a value that is less than or "
+        "equal to the pivot?"
+    )
+
+
+def test_live_hint_2_that_states_where_the_index_starts_is_cut_to_its_question():
+    out = _run(
+        "To keep track of the elements smaller than the pivot, the function maintains a boundary index that "
+        "starts at one position before the low index. When you scan through the array with a loop variable "
+        "and find an element that is less than or equal to the pivot, what action do you take with that "
+        "boundary index before swapping elements?",
+        hint=True,
+        hint_level=1,  # advance_hint_node escalates to Hint 2
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    assert out == "What action do you take with the boundary index before swapping elements?"
+    assert "one position before" not in out
+
+
+def test_course_claim_is_logged_by_name_only(caplog):
+    state = _state(question=_PARTITION_Q, course_chunks=_PARTITION_CODE)
+    with caplog.at_level(logging.INFO, logger="agents.tutor"):
+        _run_state(
+            "To keep track of the region containing elements smaller than the pivot, a specific index is "
+            "maintained starting just before the low boundary. What do you think happens next?",
+            state,
+        )
+    messages = [r.getMessage() for r in caplog.records if r.name.startswith("agents.tutor")]
+    assert "[TUTOR-GUARD] rule=course_claim path=new_question hint_level=0" in messages
+    joined = " ".join(messages).lower()
+    assert "low boundary" not in joined and "keep track" not in joined
+
+
+# ── Gemini replay: "partly right, but <the answer>, not <their words>" ────────
+
+
+def test_live_partly_right_correction_loses_the_fact_and_the_partly_right():
+    out = _run(
+        "You are partly right about what happens, but the index moves right when an element is less "
+        "than or equal to the pivot, not when it is bigger. What happens to the elements when that index "
+        "moves and you find an element less than or equal to the pivot?",
+        reply="i think i starts at 0 and moves right whenever an element is bigger than the pivot",
+        hint_level=0,
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    # The attempt says the opposite of the course, so it is not "partly right";
+    # the condition is in neither sentence; "that index" no longer points at a
+    # removed sentence.
+    assert out == "That's not quite right. What happens to the elements when the index moves?"
+
+
+def test_hint_2_instruction_says_where_to_look_not_what_they_will_find():
+    hint_2 = system_instruction_for_level(2)
+    assert "STOP short of stating its value, rule or result" in hint_2
+    assert "say where to look, not what\nthey will find" in hint_2
+    assert "walk through one worked step" not in hint_2  # the old wording invited the live leak
+
+
+def test_the_guard_checks_passages_below_the_groundedness_bar_too():
+    # Only the first passage clears the bar and reaches the model; the claim is
+    # in the second. The guard used to see only the first, so it let it through.
+    state = _state(
+        question=_PARTITION_Q,
+        course_chunks=[
+            "Quick sort sorts an array by partitioning it around a pivot.",
+            "The boundary index starts one position before the low index.",
+        ],
+    )
+    state["retrieval_result"]["confidence_scores"] = [0.9, 0.0]
+    out = _run_state(
+        "The function keeps a boundary index starting one position before the low index. "
+        "What do you think happens next?",
+        state,
+    )
+    assert out == "What do you think happens next?"

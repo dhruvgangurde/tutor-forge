@@ -147,6 +147,7 @@ npm run dev                # → http://localhost:5173
 | `GEMINI_EMBED_RPM`        | `90`                     | Client-side pacing per embedding model, requests per minute (0 = off)                                                                   |
 | `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one interactive Gemini call (tutor chat, hints, query embedding); a 429 there fails fast as "The AI service is busy"   |
 | `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0`           | The same limit for every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full minute and retries |
+| `ASSESSMENT_MIN_HIGHER_ORDER_SHARE` | `0.4`          | Smallest share of apply-or-higher questions in a generated quiz of 5+ questions when the teacher gives no Bloom mix                     |
 | `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                                            |
 | `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                                        |
 | `CORS_ALLOWED_ORIGINS`    | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)                                                                                    |

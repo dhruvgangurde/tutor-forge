@@ -75,7 +75,13 @@ export async function submitAssessment(
   assessmentId: string,
   responses: SubmissionResponseItem[]
 ): Promise<SubmissionAck> {
-  const resp = await api.post<SubmissionAck>(`/assessments/${assessmentId}/submit`, { responses })
+  // An expired sign-in is handled on the quiz page (sign in again, keep the
+  // answers) rather than by the client's reload to /login.
+  const resp = await api.post<SubmissionAck>(
+    `/assessments/${assessmentId}/submit`,
+    { responses },
+    { skipSessionRedirect: true }
+  )
   return resp.data
 }
 

@@ -85,9 +85,9 @@ class GeminiProClient:
             _call, description=f"Gemini Pro generate ({self._model_name})", generation=True
         )
 
-    def generate_deterministic(self, prompt: str) -> str:
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
         """Enforces temperature=0 — required for all grading calls (FR-05.3)."""
-        return self.generate(prompt, temperature=0.0)
+        return self.generate(prompt, temperature=0.0, system_instruction=system_instruction)
 
     @property
     def embedding_model_name(self) -> str:

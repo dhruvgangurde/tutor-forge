@@ -61,6 +61,7 @@ from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
+    HINT_AFTER_LAST_MESSAGE,
     MAX_HINT_LEVEL,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
@@ -89,9 +90,10 @@ from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from retrieval.service import RetrievalService
-    from main import GeminiProClient
     from langfuse import Langfuse
+
+    from main import GeminiProClient
+    from retrieval.service import RetrievalService
 
 #: Kept as an alias: the out-of-corpus wording moved to agents/tutor/prompts.py
 #: when FR-03.3 gained its own, differently-worded decline.
@@ -102,7 +104,7 @@ _REFUSAL_MESSAGE = OUT_OF_CORPUS_REFUSAL
 
 def retrieve_context_node(
     state: TutorState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> TutorState:
     """
     Resolve what to retrieve on, then retrieve the course context for it.
@@ -154,7 +156,7 @@ def retrieve_context_node(
 
 def check_groundedness_node(
     state: TutorState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> TutorState:
     """
     Call is_grounded() to determine if the question can be answered
@@ -168,9 +170,8 @@ def check_groundedness_node(
     provider (real bar 0.20) on-topic questions were refused outright. The
     threshold argument is now required, so that failure mode is unavailable.
     """
-    from retrieval.models import Chunk, RetrievalResult
-
     from core.config import settings
+    from retrieval.models import Chunk, RetrievalResult
 
     raw = state.get("retrieval_result") or {}
     chunks = [Chunk(**c) for c in raw.get("chunks", [])]
@@ -228,7 +229,7 @@ def refuse_node(state: TutorState) -> TutorState:
 
 def decline_direct_answer_node(
     state: TutorState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> TutorState:
     """
     FR-03.3: the topic IS in the corpus, but the student asked to skip the
@@ -278,8 +279,8 @@ def decline_direct_answer_node(
 
 def generate_guiding_question_node(
     state: TutorState,
-    retrieval_service: "RetrievalService",
-    gemini_pro: "GeminiProClient",
+    retrieval_service: RetrievalService,
+    gemini_pro: GeminiProClient,
     is_hint: bool = False,
 ) -> TutorState:
     """
@@ -303,6 +304,9 @@ def generate_guiding_question_node(
     raw = state.get("retrieval_result") or {}
     chunks = [Chunk(**c) for c in raw.get("chunks", [])]
     scores = raw.get("confidence_scores", [])
+    # The guard checks against every retrieved passage: a claim from one below
+    # the bar is still the course's answer.
+    retrieved = chunks
 
     # Only passages that clear the groundedness bar on their own reach the
     # model and the citations. All five retrieved chunks used to go in, so a
@@ -322,6 +326,11 @@ def generate_guiding_question_node(
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
     in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
+    # A pure "what is X?" opening (the service has ruled out graded work) gets
+    # one definition sentence; hints and replies keep the normal ladder.
+    definition = (
+        bool(state.get("definition_allowed")) and not in_conversation and not is_hint and hint_level == 0
+    )
 
     # F23: delimit untrusted inputs (student text, the tutor's earlier turn and
     # uploaded course text) so instructions embedded in them cannot override the
@@ -341,11 +350,16 @@ def generate_guiding_question_node(
     else:
         # Labelled "The question", not "Student question": the label was
         # echoed back as "the student" in the reply.
-        prompt = (
-            f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}\n\n"
-            f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
-        )
-        system = system_instruction_for_level(hint_level)
+        parts = [f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}"]
+        system = system_instruction_for_level(hint_level, definition=definition)
+        # A hint sees what the tutor said last, so it can add to it instead of
+        # asking the same question again.
+        last = state.get("tutor_last_message") if is_hint else None
+        if last and hint_level < FULL_EXPLANATION_LEVEL:
+            parts.append(f"Your last message:\n{wrap_untrusted(last, 'YOUR LAST MESSAGE')}")
+            system += "\n" + HINT_AFTER_LAST_MESSAGE
+        parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
+        prompt = "\n\n".join(parts)
 
     raw_response = gemini_pro.generate(
         prompt,
@@ -395,9 +409,11 @@ def generate_guiding_question_node(
             path=path,
             hint_level=hint_level,
             question=topic,
-            course_text="\n\n".join(c.text for c in chunks),
+            course_text="\n\n".join(c.text for c in retrieved),
             student_reply=state["question"] if in_conversation else None,
             is_non_answer=bool(state.get("is_non_answer")),
+            definition_allowed=definition,
+            previous_tutor_message=state.get("tutor_last_message") if (in_conversation or is_hint) else None,
         ),
     )
 
@@ -420,8 +436,8 @@ def generate_guiding_question_node(
 
 def advance_hint_node(
     state: TutorState,
-    retrieval_service: "RetrievalService",
-    gemini_pro: "GeminiProClient",
+    retrieval_service: RetrievalService,
+    gemini_pro: GeminiProClient,
 ) -> TutorState:
     """
     Escalate one rung and regenerate at that level's directness.
@@ -444,7 +460,7 @@ def advance_hint_node(
 
 def emit_pedagogy_trace_node(
     state: TutorState,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> TutorState:
     """
     Write pedagogy trace metadata to Langfuse for observability.
@@ -469,7 +485,7 @@ def emit_pedagogy_trace_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception:  # noqa: BLE001 - tracing must never break the turn
+    except Exception:  # tracing must never break the turn
         # Loud on purpose: observability coverage is an acceptance criterion, so
         # a silently dead trace is a defect, not a footnote.
         logger.exception(

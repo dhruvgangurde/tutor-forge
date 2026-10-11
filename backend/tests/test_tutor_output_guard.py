@@ -12,23 +12,28 @@ import logging
 import pytest
 
 from agents.tutor.output_guard import (
+    NOT_QUITE_VERDICT,
     PATH_HINT,
     PATH_NEW_QUESTION,
     PATH_REPLY,
     RULE_BACK_REFERENCE,
     RULE_CLAIM_QUESTION,
+    RULE_COURSE_CLAIM,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
+    RULE_FALLBACK_KEPT_TEXT,
     RULE_FORMULA,
     RULE_FRAGMENT,
     RULE_INVENTED_REFERENCE,
     RULE_NON_ANSWER_STATEMENT,
     RULE_ONE_QUESTION,
     RULE_PRONOUN_STATEMENT,
+    RULE_RESTATED_CORRECTION,
     RULE_SOURCE_REFERENCE,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
     RULE_VERDICT_AFTER_NON_ANSWER,
+    RULE_VERDICT_REASON,
     TutorTurn,
     apply_guards,
     guard_tutor_reply,
@@ -164,8 +169,11 @@ def test_definition_is_removed_from_a_reply_below_hint_3():
         level=1,
         reply="is it about batteries?",
     )
-    assert out == "What do you think is being compared?"
-    assert RULE_STATES_ANSWER in tripped
+    # The verdict on the attempt stays; the definition after it does not
+    # (verdict_reason, Phase B T1).
+    assert out == "Not exactly. What do you think is being compared?"
+    assert "volts" not in out and "compares two points" not in out
+    assert RULE_VERDICT_REASON in tripped
 
 
 def test_definition_as_a_lead_in_to_a_question_is_cut():
@@ -182,7 +190,7 @@ def test_course_wording_without_a_defining_verb_is_still_caught():
         "Moving a charge between two points takes work done per unit charge, which gives "
         "the potential difference. What do you think that work depends on?"
     )
-    assert out == "What do you think that work depends on?"
+    assert out == "What do you think the work depends on?"  # "that work" was in the removed sentence
     assert RULE_STATES_ANSWER in tripped
 
 
@@ -600,7 +608,12 @@ def test_scaffolding_without_the_topic_is_kept_after_a_non_answer():
 
 def test_same_statement_after_a_real_attempt_keeps_the_current_rules():
     text = _PARAPHRASE + " What do you think that work is done against?"
-    assert _guard(text, path=PATH_REPLY, reply="is it about energy?") == (text, [])
+    out, tripped = _guard(text, path=PATH_REPLY, reply="is it about energy?")
+    assert RULE_NON_ANSWER_STATEMENT not in tripped  # the stricter non-answer rule does not apply
+    # It is the definition in other words, so course_claim removes it below Hint 3
+    # ("charge" is in half the passage sentences: not background).
+    assert out == "What do you think the work is done against?"
+    assert RULE_COURSE_CLAIM in tripped
 
 
 @pytest.mark.parametrize("level", [3, 4])
@@ -972,6 +985,8 @@ def _pronoun_guard(text, *, path=PATH_REPLY, level=1, reply="is it about batteri
     )
 
 
+_PRONOUN_KNOWN_MISS = "It's the work done per unit charge."
+
 #: The prototype table from the round 1e proposal: (sentence, previous sentence or None, trips).
 _PRONOUN_TABLE = [
     (_LIVE_PRONOUN, "The potential difference is not the product of current and resistance.", True),
@@ -979,9 +994,10 @@ _PRONOUN_TABLE = [
     ("It is the work done per unit charge.", None, True),
     ("That's a common mix-up.", "Potential difference is not current times resistance.", False),
     ("It's the key idea in this chapter.", "Potential difference matters.", False),
-    # Known miss, kept visible: "it" follows a sentence that is not about the
-    # topic, so the rule does not assume "it" means the topic.
-    ("It's the work done per unit charge.", "Think about lifting a box.", False),
+    # Known miss for this rule, kept visible: "it" follows a sentence that is
+    # not about the topic, so the rule does not assume "it" means the topic.
+    # The course_claim rule (Phase B) now removes it instead; see the test.
+    (_PRONOUN_KNOWN_MISS, "Think about lifting a box.", False),
     ("This is related to energy, so think about what gets used up.", "Potential difference matters in circuits.", False),
     ("It's okay to be unsure about this.", None, False),
 ]
@@ -995,6 +1011,11 @@ def test_pronoun_table(sentence, previous, trips):
     if trips:
         assert out == head + question
         assert RULE_PRONOUN_STATEMENT in tripped
+    elif sentence == _PRONOUN_KNOWN_MISS:
+        # Still not this rule's catch, but no longer a miss: course_claim removes it.
+        assert out == head + question
+        assert RULE_PRONOUN_STATEMENT not in tripped
+        assert RULE_COURSE_CLAIM in tripped
     else:
         assert out == head + sentence + " " + question
         assert RULE_PRONOUN_STATEMENT not in tripped
@@ -1272,3 +1293,479 @@ def test_ask_do_not_tell_forbids_the_formula_below_hint_3_only():
     for level in (3, 4):
         assert "Do not write the formula either" not in HINT_LADDER[level]
         assert "Do not write the formula either" not in reply_instruction(True, level)
+
+
+# ── Fallback after a real attempt keeps the reply's untouched opening ─────────
+
+_MAX_Q = "how do you find the maximum element in an array?"
+_MAX_COURSE = (
+    "To find the maximum element in an array, compare every element with the current maximum "
+    "and keep the larger one. Start with the first element as the current maximum."
+)
+_ATTEMPT = "is it the largest element?"
+
+
+def _attempt_guard(text, *, path=PATH_REPLY, level=1, reply=_ATTEMPT, non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_MAX_Q,
+            course_text=_MAX_COURSE,
+            student_reply=reply if path == PATH_REPLY else None,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+def test_live_case_keeps_the_opening_and_appends_the_fallback_question():
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is not simply the first one. "
+        "It's found by comparing every element with the current maximum and keeping the larger one."
+    )
+    assert out == (
+        "That's not quite right. The maximum element is not simply the first one. "
+        + GUARD_FALLBACK_QUESTION
+    )
+    assert tripped == [RULE_PRONOUN_STATEMENT, RULE_FALLBACK_KEPT_TEXT]
+
+
+def test_only_a_verdict_survives_and_the_fallback_question_follows_it():
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    assert out == "That's not quite right. " + GUARD_FALLBACK_QUESTION
+    assert tripped == [RULE_STATES_ANSWER, RULE_FALLBACK_KEPT_TEXT]
+
+
+def test_nothing_surviving_keeps_the_full_fallback():
+    out, tripped = _attempt_guard("The maximum element is the element that is larger than every other one.")
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_a_removed_opening_sentence_keeps_the_full_fallback():
+    out, tripped = _attempt_guard(
+        "The maximum element is the element that is larger than every other one. Good effort, though."
+    )
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_a_sentence_after_a_removed_one_is_not_kept():
+    out, _ = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one. "
+        "Keep that in mind."
+    )
+    assert out == "That's not quite right. " + GUARD_FALLBACK_QUESTION
+    assert "Keep that in mind" not in out
+
+
+def test_never_more_than_two_sentences_are_kept():
+    out, _ = _attempt_guard(
+        "Not quite. Close, though. Think again. "
+        "The maximum element is the element that is larger than every other one."
+    )
+    assert out == "Not quite. Close, though. " + GUARD_FALLBACK_QUESTION
+
+
+def test_an_intro_line_ending_in_a_colon_is_not_kept():
+    out, _ = _attempt_guard(
+        "Not quite. Here is the idea:\n\n"
+        "The maximum element is the element that is larger than every other one."
+    )
+    assert out == "Not quite. " + GUARD_FALLBACK_QUESTION
+
+
+def test_kept_text_never_holds_a_question_of_its_own():
+    out, _ = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    kept = out[: -len(GUARD_FALLBACK_QUESTION)]
+    assert "?" not in kept
+    assert out.count("?") == GUARD_FALLBACK_QUESTION.count("?")
+
+
+def test_a_non_answer_keeps_its_full_fallback():
+    out, tripped = _attempt_guard(
+        "That's fine. The maximum element is the element that is larger than every other one.",
+        reply="no",
+        non_answer=True,
+    )
+    assert out == GUARD_FALLBACK_NON_ANSWER
+    assert tripped[-1] == RULE_FALLBACK
+
+
+@pytest.mark.parametrize("path, level", [(PATH_NEW_QUESTION, 0), (PATH_HINT, 1), (PATH_HINT, 2)])
+def test_new_question_and_hint_paths_keep_the_full_fallback(path, level):
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one.",
+        path=path,
+        level=level,
+    )
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+@pytest.mark.parametrize("level", [3, 4])
+def test_hint_3_and_the_full_explanation_keep_the_full_fallback(level):
+    out, tripped = _attempt_guard("That's not quite right. See Example 7 for the method.", level=level)
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_fallback_kept_text_logs_the_rule_name_only(caplog):
+    reply = (
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    with caplog.at_level(logging.INFO, logger="agents.tutor.output_guard"):
+        guard_tutor_reply(
+            reply,
+            TutorTurn(
+                path=PATH_REPLY,
+                hint_level=1,
+                question=_MAX_Q,
+                course_text=_MAX_COURSE,
+                student_reply=_ATTEMPT,
+            ),
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert "[TUTOR-GUARD] rule=fallback_kept_text path=reply hint_level=1" in messages
+    joined = " ".join(messages).lower()
+    for fragment in ("quite right", "maximum", "largest", "work through"):
+        assert fragment not in joined
+
+
+# ── A verdict keeps its words, not its reason (levels 0-2, real attempts) ─────
+
+_PARTITION_Q = "how does the partition function keep track of the smaller elements?"
+_PARTITION_ATTEMPT = "i think i starts at 0 and moves right whenever an element is bigger than the pivot"
+_PARTITION_COURSE = (
+    "int partition(int arr[], int low, int high) { int pivot = arr[high]; int i = low - 1; "
+    "for (int j = low; j < high; j++) { if (arr[j] <= pivot) { i++; swap(arr[i], arr[j]); } } }"
+)
+
+
+def _verdict_guard(text, *, path=PATH_REPLY, level=0, reply=_PARTITION_ATTEMPT, non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PARTITION_Q,
+            course_text=_PARTITION_COURSE,
+            student_reply=reply if path == PATH_REPLY else None,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "sentence, verdict",
+    [
+        ("That is not quite right, because it moves when an element is smaller than the pivot.",
+         "That is not quite right."),
+        ("Not quite, since the index starts somewhere else.", "Not quite."),
+        ("That is not correct; the index starts one place earlier.", "That is not correct."),
+        ("That's not right - it moves on the smaller elements.", "That's not right."),
+        ("Not quite: it starts one position before low.", "Not quite."),
+    ],
+)
+def test_a_verdict_keeps_its_words_and_loses_its_reason(sentence, verdict):
+    out, tripped = _verdict_guard(sentence + " What decides when the index moves?")
+    assert out == verdict + " What decides when the index moves?"
+    assert RULE_VERDICT_REASON in tripped
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_the_reason_is_cut_at_every_level_below_hint_3(level):
+    out, _ = _verdict_guard(
+        "That is not quite right, because it moves on smaller values. What decides when it moves?",
+        level=level,
+    )
+    assert out == "That is not quite right. What decides when it moves?"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Think about it, because the index matters here. What decides when it moves?",  # no verdict
+        "That is not quite right. What decides when the index moves?",                  # no reason
+        "Not quite, but what decides when the index moves?",                            # a question
+    ],
+)
+def test_other_sentences_are_left_alone(text):
+    assert _verdict_guard(text) == (text, [])
+
+
+@pytest.mark.parametrize(
+    "path, level, non_answer, reply",
+    [
+        (PATH_REPLY, 3, False, _PARTITION_ATTEMPT),   # Hint 3 may explain
+        (PATH_REPLY, 4, False, _PARTITION_ATTEMPT),
+        (PATH_NEW_QUESTION, 0, False, None),         # not a reply to an attempt
+        (PATH_HINT, 1, False, None),
+    ],
+)
+def test_the_reason_stays_outside_real_attempt_replies_below_hint_3(path, level, non_answer, reply):
+    text = "That is not quite right, because it moves on smaller values. What decides when it moves?"
+    _out, tripped = _verdict_guard(text, path=path, level=level, non_answer=non_answer, reply=reply)
+    assert RULE_VERDICT_REASON not in tripped
+
+
+def test_a_cut_verdict_still_counts_as_the_untouched_opening_for_the_fallback():
+    out, tripped = _verdict_guard(
+        "That is not quite right, because it does not start at 0 and it moves when an element is "
+        "smaller than the pivot."
+    )
+    assert out == "That is not quite right. " + GUARD_FALLBACK_QUESTION
+    assert tripped == [RULE_VERDICT_REASON, RULE_FALLBACK_KEPT_TEXT]
+
+
+
+# ── Gemini replay: "partly right, but <the answer>, not <their words>" ───────
+
+
+def test_a_but_clause_is_a_reason_too():
+    out, tripped = _verdict_guard(
+        "You're right that it scans the range, but it only moves on the smaller elements. "
+        "What decides when the index moves?"
+    )
+    assert out == "You're right that it scans the range. What decides when the index moves?"
+    assert RULE_VERDICT_REASON in tripped
+
+
+def test_partly_right_that_contradicts_their_words_becomes_not_quite_right():
+    out, tripped = _verdict_guard(
+        "You are partly right about what happens, but the index moves on smaller values, not when "
+        "it is bigger. What decides when the index moves?"
+    )
+    assert out == NOT_QUITE_VERDICT + " What decides when the index moves?"
+    assert "partly" not in out
+    assert RULE_VERDICT_REASON in tripped
+
+
+@pytest.mark.parametrize("verdict", ["You are partly right", "That's partially correct", "You're half right"])
+def test_partly_right_without_a_contradiction_keeps_its_words(verdict):
+    out, _ = _verdict_guard(verdict + ", but there is one more step to it. What decides when the index moves?")
+    assert out == verdict + ". What decides when the index moves?"
+
+
+def test_a_correction_with_their_words_still_counts_as_a_course_claim():
+    # "pivot" is theirs; "less" and "equal" (from "<=" in the code) are not.
+    out, tripped = _verdict_guard(
+        "Look again. The index moves right when an element is less than or equal to the pivot. "
+        "What does that tell you?"
+    )
+    assert "less than or equal" not in out
+    assert RULE_COURSE_CLAIM in tripped
+
+
+def test_their_own_words_alone_do_not_make_a_course_claim():
+    out, tripped = _verdict_guard(
+        "Yes, i starts at low minus one. What happens when j finds a small element?",
+        reply="i starts at low minus one",
+    )
+    assert out == "Yes, i starts at low minus one. What happens when j finds a small element?"
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_a_question_that_restates_the_cut_correction_loses_that_clause():
+    out, tripped = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "What happens to the elements when it moves and you find an element less than or equal to the pivot?"
+    )
+    assert out == "Not quite. What happens to the elements when it moves?"
+    assert RULE_RESTATED_CORRECTION in tripped
+
+
+def test_with_prose_passages_the_kept_clause_may_still_name_the_index():
+    # Course text in words, as in a lab guide: "index" is part of the
+    # correction too, but one shared word is a noun, not the correction.
+    # "what happens" belongs to the replaced verdict, not to the correction.
+    out, tripped = apply_guards(
+        "You are partly right about what happens, but the index moves right when an element is less "
+        "than or equal to the pivot, not when it is bigger. What happens to the elements when that "
+        "index moves and you find an element less than or equal to the pivot?",
+        TutorTurn(
+            path=PATH_REPLY,
+            hint_level=0,
+            question=_PARTITION_Q,
+            course_text=(
+                "The index i starts one position before low. The index moves right each time an "
+                "element is less than or equal to the pivot, and then the two elements are swapped."
+            ),
+            student_reply=_PARTITION_ATTEMPT,
+        ),
+    )
+    assert out == NOT_QUITE_VERDICT + " What happens to the elements when the index moves?"
+    assert RULE_RESTATED_CORRECTION in tripped
+
+
+def test_a_question_that_is_all_restatement_goes_and_the_verdict_stays():
+    out, tripped = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "Can you see why it moves for an element less than or equal to the pivot?"
+    )
+    assert out == "Not quite. " + GUARD_FALLBACK_QUESTION
+    assert RULE_RESTATED_CORRECTION in tripped and RULE_FALLBACK_KEPT_TEXT in tripped
+
+
+def test_a_question_using_the_corrections_words_once_is_kept():
+    text = "Not quite. What happens when an element is equal to the pivot?"
+    out, _ = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "What happens when an element is equal to the pivot?"
+    )
+    assert out == text
+
+
+def test_that_index_becomes_the_index_when_its_sentence_was_removed():
+    out, tripped = _verdict_guard(
+        "Not quite, because the index moves when an element is less than or equal to the pivot. "
+        "What happens to that index next?"
+    )
+    assert out == "Not quite. What happens to the index next?"
+    assert RULE_BACK_REFERENCE in tripped
+
+
+def test_that_index_stays_when_the_index_is_still_mentioned_before_it():
+    out, _ = _verdict_guard(
+        "Not quite, because the index moves when an element is less than or equal to the pivot. "
+        "Think about the index again. What happens to that index next?"
+    )
+    assert out == "Not quite. Think about the index again. What happens to that index next?"
+
+
+def test_that_index_stays_when_nothing_was_removed():
+    text = "Not quite. Think about the index again. What happens to that index next?"
+    assert _verdict_guard(text) == (text, [])
+
+
+def test_the_reply_prompt_says_a_contradiction_is_not_partly_right():
+    from agents.tutor.prompts import reply_instruction
+
+    text = " ".join(reply_instruction(non_answer=False).split())
+    assert "says the opposite of the course on any point is not partly right" in text
+
+
+# ── Phase B (T2): a course claim in other words below Hint 3 ─────────────────
+
+#: The live hint-0 lead-in: the course's answer, worded without a definition or pronoun.
+_T2_LEAD_IN = (
+    "To keep track of the region containing elements smaller than the pivot, a specific index is "
+    "maintained starting just before the low boundary."
+)
+_FOLLOW_UP = " What do you think happens next?"
+
+
+def _course_claim_guard(text, *, path=PATH_NEW_QUESTION, level=0, reply=None, course=_PARTITION_COURSE):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PARTITION_Q,
+            course_text=course,
+            student_reply=reply if path == PATH_REPLY else None,
+        ),
+    )
+
+
+@pytest.mark.parametrize("path, level", [(PATH_NEW_QUESTION, 0), (PATH_HINT, 1), (PATH_HINT, 2)])
+def test_a_course_claim_in_other_words_is_removed_below_hint_3(path, level):
+    out, tripped = _course_claim_guard(_T2_LEAD_IN + _FOLLOW_UP, path=path, level=level)
+    assert out == _FOLLOW_UP.strip()
+    assert RULE_COURSE_CLAIM in tripped
+
+
+@pytest.mark.parametrize("level", [3, 4])
+def test_a_course_claim_is_left_alone_at_hint_3_and_after(level):
+    out, tripped = _course_claim_guard(_T2_LEAD_IN + _FOLLOW_UP, path=PATH_HINT, level=level)
+    assert out == _T2_LEAD_IN + _FOLLOW_UP
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_code_symbols_in_the_course_are_read_as_words():
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    _out, tripped = _course_claim_guard(statement)
+    assert RULE_COURSE_CLAIM in tripped  # "arr[j] <= pivot" reads as "less equal pivot"
+
+    other_condition = _PARTITION_COURSE.replace("<=", ">")
+    out, tripped = _course_claim_guard(statement, course=other_condition)
+    assert (out, tripped) == (statement, [])
+
+
+def test_the_students_own_words_do_not_make_a_course_claim():
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    _out, tripped = _course_claim_guard(
+        statement, path=PATH_REPLY, level=1, reply="it moves when a value is less than or equal to the pivot"
+    )
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_words_common_to_most_passages_are_background():
+    course = (
+        "Quick sort picks a pivot from the array. The array is split around the pivot. "
+        "Each pivot ends in its final place in the array. "
+        "Recursion then handles each side of the pivot in the array."
+    )
+    statement = "The pivot sits somewhere in the array and recursion handles the rest." + _FOLLOW_UP
+    out, tripped = _course_claim_guard(statement, course=course)
+    assert (out, tripped) == (statement, [])
+
+    # The same last sentence alone has no background, so the shared words count.
+    _out, tripped = _course_claim_guard(statement, course=course.rsplit(". ", 1)[1])
+    assert RULE_COURSE_CLAIM in tripped
+
+
+def test_a_word_in_exactly_half_the_passages_is_not_background():
+    # "pivot" is in 2 of 4 sentences: not most of them, so it still counts and
+    # "less than or equal to the pivot" is the condition in arr[j] <= pivot.
+    course = (
+        "The index i starts at low - 1. When arr[j] <= pivot, i is incremented. "
+        "The pivot is the last element. The array is split into two halves."
+    )
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    out, tripped = _course_claim_guard(statement, course=course)
+    assert out == _FOLLOW_UP.strip()
+    assert RULE_COURSE_CLAIM in tripped
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Think about what the loop variable is compared against on each step.",
+        "Picture the array split into a part you have already checked and a part you have not.",
+        "Let's slow down and trace one step together.",
+        "Try walking through a small example by hand.",
+        "Partition is the step that does most of the work in quick sort.",
+        "There are two indexes moving through the array during partition.",
+        "Focus on the moment the loop finds an element that belongs on the left.",
+    ],
+)
+def test_guiding_sentences_are_not_course_claims(sentence):
+    text = sentence + _FOLLOW_UP
+    assert _course_claim_guard(text, path=PATH_HINT, level=1) == (text, [])
+
+
+def test_a_first_clause_that_asks_is_the_question_not_a_lead_in():
+    # Live Hint 1. Cutting "What variable is initialized..." would leave
+    # "How does its value change...?" with nothing for "its" to refer to.
+    question = (
+        "What variable is initialized before the loop starts to mark the boundary of that region, and "
+        "how does its value change when you find an element that belongs there?"
+    )
+    assert _course_claim_guard(question, path=PATH_HINT, level=1) == (question, [])
+
+
+def test_a_lead_in_that_states_a_course_claim_is_cut_from_a_question():
+    out, tripped = _course_claim_guard(
+        "Since the index begins one position before low and increments on each value less than or "
+        "equal to the pivot, where does the pivot end up?",
+        path=PATH_HINT,
+        level=2,
+    )
+    assert out == "Where does the pivot end up?"
+    assert RULE_COURSE_CLAIM in tripped

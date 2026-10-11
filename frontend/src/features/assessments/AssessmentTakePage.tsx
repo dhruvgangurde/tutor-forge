@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { isAxiosError } from 'axios'
 import { useAssessmentForStudent, useMySubmissions, useSubmitAssessment } from './hooks'
 import { SkeletonBlock } from '../../components/ui/Skeleton'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -7,6 +8,8 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { NotFoundState } from '../../components/ui/NotFoundState'
 import { CheckIcon } from '../../components/ui/icons'
 import { GradeStatus } from './GradeStatus'
+import { SessionEndingBanner } from './SessionEndingBanner'
+import { SignInAgainDialog } from './SignInAgainDialog'
 import type { StudentQuestion, SubmissionResponseItem } from '../../lib/api/types'
 import { getErrorMessage } from '../../lib/api/errors'
 import { MAX_ANSWER_TEXT_CHARS } from '../../lib/limits'
@@ -32,6 +35,18 @@ export function AssessmentTakePage() {
   const [responses, setResponses] = useState<Record<string, SubmissionResponseItem>>({})
   const [isReviewing, setIsReviewing] = useState(false)
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false)
+  // An expired sign-in at submit opens a sign-in dialog on this page instead
+  // of the reload to /login, which threw away every answer (they only live in
+  // `responses`). After the same student signs in, the submit is retried once.
+  const [showSignIn, setShowSignIn] = useState(false)
+  const submitButtonRef = useRef<HTMLButtonElement>(null)
+  const signInWasOpen = useRef(false)
+
+  // Closing the dialog (Cancel or Escape) returns focus to the Submit button.
+  useEffect(() => {
+    if (signInWasOpen.current && !showSignIn) submitButtonRef.current?.focus()
+    signInWasOpen.current = showSignIn
+  }, [showSignIn])
 
   if (!assessmentId) {
     return <p className="placeholder-label">Invalid assessment ID</p>
@@ -141,7 +156,7 @@ export function AssessmentTakePage() {
     setCurrentQuestionIndex(index)
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (isRetry = false) => {
     const responseItems = questions.map((q) => {
       const resp = responses[q.id]
       return {
@@ -157,6 +172,14 @@ export function AssessmentTakePage() {
         onSuccess: (ack) => {
           navigate(`/assessments/submissions/${ack.submission_id}`)
         },
+        onError: (err) => {
+          // Only the first submit opens the dialog: a retry that is refused
+          // again shows the error instead of asking again and again.
+          if (!isRetry && isAxiosError(err) && err.response?.status === 401) {
+            submitMutation.reset()
+            setShowSignIn(true)
+          }
+        },
       }
     )
   }
@@ -164,6 +187,7 @@ export function AssessmentTakePage() {
   if (isReviewing) {
     return (
       <div className={styles.quizColumn}>
+        <SessionEndingBanner />
         <div className="page-header">
           <h1 className="page-title">Review Your Answers</h1>
           <p className="page-subtitle">{assessment.title}</p>
@@ -221,6 +245,7 @@ export function AssessmentTakePage() {
             Back to Questions
           </button>
           <button
+            ref={submitButtonRef}
             type="button"
             onClick={() => setShowSubmitConfirm(true)}
             disabled={submitMutation.isPending}
@@ -243,12 +268,23 @@ export function AssessmentTakePage() {
           }}
           onCancel={() => setShowSubmitConfirm(false)}
         />
+
+        {showSignIn && (
+          <SignInAgainDialog
+            onSignedIn={() => {
+              setShowSignIn(false)
+              handleSubmit(true)
+            }}
+            onCancel={() => setShowSignIn(false)}
+          />
+        )}
       </div>
     )
   }
 
   return (
     <div className={styles.quizColumn}>
+      <SessionEndingBanner />
       {/* The position is shown once: "Question N of M" beside a thin bar. */}
       <div className={styles.quizHeader}>
         <h1 className={styles.quizTitle}>{assessment.title}</h1>

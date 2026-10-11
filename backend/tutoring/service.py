@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -32,14 +33,21 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
-from agents.tutor.query_resolution import TURN_NEW_QUESTION, classify_turn
-from db.models import Course, TutoringMessage, TutoringSession, User
+from agents.tutor.query_resolution import (
+    TURN_NEW_QUESTION,
+    classify_turn,
+    definition_head,
+    definition_term,
+    topical_words,
+)
+from core.config import TUTOR_GUARD
+from db.models import Assessment, Course, Question, TutoringMessage, TutoringSession
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
+
     from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -67,8 +75,9 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
     The stored anchor wins. Without one (sessions from before the anchor
     existed, or after a new question was refused) it falls back to the most
     recent student message the classifier calls a new question, else the
-    session's first student message. Whatever it returns still has to pass the
-    groundedness gate before anything is generated from it.
+    session's first student message -- unless the tutor refused that message,
+    in which case there is no open question (None). Whatever it returns still
+    has to pass the groundedness gate before anything is generated from it.
     """
     if session.anchor_message_id is not None:
         anchored = await db.get(TutoringMessage, session.anchor_message_id)
@@ -77,17 +86,28 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
 
     result = await db.execute(
         select(TutoringMessage)
-        .where(
-            TutoringMessage.session_id == session.id,
-            TutoringMessage.role == "student",
-        )
-        .order_by(TutoringMessage.created_at.asc())
+        .where(TutoringMessage.session_id == session.id)
+        .order_by(TutoringMessage.created_at.asc(), _STUDENT_FIRST)
     )
-    students = list(result.scalars().all())
+    messages = list(result.scalars().all())
+    students = [m for m in messages if m.role == "student"]
+
+    def was_refused(student_msg: TutoringMessage) -> bool:
+        """True when the tutor's answer to this message was a refusal."""
+        after = messages[messages.index(student_msg) + 1:]
+        reply = next((m for m in after if m.role == "tutor"), None)
+        return reply is not None and reply.is_refusal
+
+    # A refused question is never the open question. It used to be picked up
+    # here once its refusal had cleared the anchor, so every later reply,
+    # however on-topic, was judged against it and refused too. With no open
+    # question the message is judged on its own text instead.
     for msg in reversed(students):
         if classify_turn(msg.content) == TURN_NEW_QUESTION:
-            return msg
-    return students[0] if students else None
+            return None if was_refused(msg) else msg
+    if students and not was_refused(students[0]):
+        return students[0]
+    return None
 
 
 async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringMessage | None:
@@ -103,6 +123,49 @@ async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringM
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+# A "what is X?" question gets one definition sentence (agents/tutor/prompts.py),
+# but not when it is a question from graded work: a published quiz question in
+# this course that it repeats, or one that asks what the same term means.
+# The word shares that make it the same question are in core/config.py.
+_ASKS_MEANING_RE = re.compile(
+    r"\b(?:defin\w*|describes?|meaning|means|refers?\s+to|is\s+called|known\s+as)\b", re.IGNORECASE
+)
+
+
+def _words(text: str) -> set[str]:
+    return {w[:-1] if len(w) > 4 and w.endswith("s") else w for w in topical_words(text)}
+
+
+def _is_graded_question(question: str, term: str, stem: str) -> bool:
+    # "pivot in quick sort" is asked about as "the pivot": match on the head.
+    asked, term_words, quiz = _words(question), _words(definition_head(question) or term), _words(stem)
+    if not asked or not quiz:
+        return False
+    shared = len(asked & quiz)
+    if (
+        shared / len(asked) >= TUTOR_GUARD.graded_question_asked_share
+        and shared / len(quiz) >= TUTOR_GUARD.graded_question_stem_share
+    ):
+        return True
+    asks_meaning = definition_term(stem) is not None or bool(_ASKS_MEANING_RE.search(stem))
+    return asks_meaning and term_words <= quiz
+
+
+async def _definition_allowed(course_id: uuid.UUID, question: str, db: AsyncSession) -> bool:
+    """True for a pure "what is X?" question that is not from graded work in this course."""
+    term = definition_term(question)
+    if term is None:
+        return False
+    stems = (
+        await db.execute(
+            select(Question.stem)
+            .join(Assessment, Question.assessment_id == Assessment.id)
+            .where(Assessment.course_id == course_id, Assessment.status == "published")
+        )
+    ).scalars().all()
+    return not any(_is_graded_question(question, term, stem) for stem in stems)
 
 
 async def create_session(
@@ -149,9 +212,9 @@ async def send_chat_message(
     session: TutoringSession,
     question: str,
     db: AsyncSession,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_pro,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> dict:
     """
     Process a student's question and return a Socratic guiding response.
@@ -174,6 +237,7 @@ async def send_chat_message(
     open_question = await _open_question(session, db)
     is_new_question = open_question is None or classify_turn(question) == TURN_NEW_QUESTION
     last_tutor = None if is_new_question else await _last_tutor_turn(session.id, db)
+    definition_allowed = is_new_question and await _definition_allowed(session.course_id, question, db)
 
     # Persist the student's message at receipt, stamped now. It used to be
     # written after the reply, in the same flush, so it carried the reply's
@@ -206,6 +270,7 @@ async def send_chat_message(
         "is_grounded": False,
         # A new question starts a fresh ladder; a reply stays on the current rung.
         "hint_level": 0 if is_new_question else session.current_hint_level,
+        "definition_allowed": definition_allowed,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
@@ -266,9 +331,9 @@ async def send_chat_message(
 async def request_hint(
     session: TutoringSession,
     db: AsyncSession,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_pro,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> dict:
     """
     Escalate the hint level for the open learning question.
@@ -293,6 +358,8 @@ async def request_hint(
     open_question = await _open_question(session, db)
     if open_question is None:
         raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
+    # What the tutor said last, so the hint adds to it instead of repeating it.
+    last_tutor = await _last_tutor_turn(session.id, db)
 
     # The student's later replies are deliberately left out of the hint prompt:
     # a hint is about the learning question, and a reply that drifted is
@@ -303,6 +370,7 @@ async def request_hint(
         "student_id": session.student_id,
         "question": open_question.content,
         "prior_question": None,
+        "tutor_last_message": last_tutor.content if last_tutor else None,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,

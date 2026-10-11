@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -105,6 +106,12 @@ class Settings(BaseSettings):
     # model, in approximate tokens (RetrievalService.build_context_window uses
     # 4 characters per token). Chunks are added best-first until it is spent.
     tutor_context_token_budget: int = 3000
+
+    # ── Assessment generation ─────────────────────────────────────────────────
+    # Smallest share of apply-or-higher Bloom levels in a generated quiz of 5 or
+    # more questions, when the teacher gave no Bloom mix of their own. Short
+    # quizzes and a teacher's own mix are left as they are.
+    assessment_min_higher_order_share: float = 0.4
 
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
@@ -227,6 +234,63 @@ class Settings(BaseSettings):
         if self.llm_provider == "ollama":
             return self.groundedness_threshold_ollama
         return self.groundedness_threshold
+
+
+# ── Tutor guard and quiz check thresholds ─────────────────────────────────────
+# Word-overlap heuristics for the deterministic tutor output guard and the
+# generated-question checks. Fixed in code, not read from the environment:
+# they were calibrated together on real course text, and changing one without
+# re-running the eval suite (backend/eval/) is not supported.
+
+
+@dataclass(frozen=True)
+class TutorGuardThresholds:
+    # agents/tutor/output_guard.py, course_claim: a statement below Hint 3 that
+    # shares this many words with one passage sentence is the course's answer
+    # in other words. Live leaks shared 4 to 6; guiding sentences 0 to 2.
+    claim_min_shared_words: int = 3
+    # Of those, at least this many must be words the student did not write:
+    # their own words count toward a claim, but cannot make one on their own.
+    claim_min_new_shared_words: int = 2
+    # Words in more than this share of the passage sentences are background
+    # ("pivot" in a sorting course), counted only with this many sentences.
+    claim_background_share: float = 0.5
+    claim_min_sentences_for_background: int = 4
+    # The one definition sentence on a "what is X?" opening is kept only when
+    # this share of its words is in the passages.
+    definition_grounded_share: float = 0.6
+    # repeated_question: a question sharing this share of its words with a
+    # question in the tutor's last message is asked again. A live repeat scored
+    # 0.80; genuinely new hint questions 0.33 to 0.42.
+    repeat_overlap: float = 0.6
+    repeat_min_words: int = 3
+    # agents/tutor/query_resolution.py: a "what is X?" term longer than this
+    # many words is a question about something else, not a term.
+    definition_max_term_words: int = 5
+    # tutoring/service.py: a "what is X?" question repeats a published quiz
+    # question when this share of its words is in the quiz question and it
+    # uses this share of the quiz question's words.
+    graded_question_asked_share: float = 0.8
+    graded_question_stem_share: float = 0.6
+
+
+@dataclass(frozen=True)
+class QuestionCheckThresholds:
+    # agents/assessment/validation.py: a recall question's key is supported
+    # when this share of its words is in one passage sentence.
+    key_support_share: float = 0.6
+    # A wrong option restates the key when it has the same content words and
+    # is at least this similar character by character (difflib ratio), for keys
+    # of at least this many characters.
+    restates_key_ratio: float = 0.8
+    restates_key_min_chars: int = 10
+    # Quizzes shorter than this are not held to the apply-or-higher share
+    # (settings.assessment_min_higher_order_share).
+    min_questions_for_share: int = 5
+
+
+TUTOR_GUARD = TutorGuardThresholds()
+QUESTION_CHECKS = QuestionCheckThresholds()
 
 
 # The placeholder JWT secret shipped in config defaults and .env.example. A

@@ -94,6 +94,26 @@ class DomainError(Exception):
     """
 
 
+#: What a teacher is told when quiz generation ends with no usable question.
+NO_USABLE_QUESTIONS_MESSAGE = (
+    "I couldn't write good questions from this material this time. "
+    "Please try again, or choose a different topic."
+)
+
+
+class NoUsableQuestions(DomainError):
+    """
+    Quiz generation returned no question, or every question failed the checks
+    in agents/assessment/validation.py even after one regeneration.
+
+    ``str()`` is always the plain NO_USABLE_QUESTIONS_MESSAGE: it is stored as
+    the draft's ``generation_error`` and shown to the teacher as it is.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(NO_USABLE_QUESTIONS_MESSAGE)
+
+
 #: What a person is told when the AI provider is rate-limiting or over quota.
 AI_BUSY_MESSAGE = "The AI service is busy. Please try again in a minute."
 

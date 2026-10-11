@@ -337,6 +337,7 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `RATE_LIMIT_*` | enabled; auth 10/60 s, AI 20/60 s | |
 | `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` | 50 MB / 20 | oversized ⇒ 413 |
 | `GROUNDEDNESS_THRESHOLD` / `_MOCK` | `0.65` / `0.20` | see §7 |
+| `ASSESSMENT_MIN_HIGHER_ORDER_SHARE` | `0.4` | smallest share of apply-or-higher questions in a generated quiz of 5+ questions when the teacher gives no Bloom mix |
 
 ### Local run (this machine is **Windows 11 + PowerShell**)
 ```powershell

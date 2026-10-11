@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
@@ -189,12 +189,12 @@ async def archive_course(course: Course, db: AsyncSession) -> Course:
     the record of *when* it was archived is not overwritten by a double-click.
     """
     if course.archived_at is None:
-        course.archived_at = datetime.now(timezone.utc)
+        course.archived_at = datetime.now(UTC)
         await db.commit()
         logger.info(
-            "Course archived: course_id=%s name=%r — history preserved.",
+            "Course archived: course_id=%s name_chars=%d — history preserved.",
             course.id,
-            course.name,
+            len(course.name or ""),
         )
     return course
 
@@ -204,7 +204,7 @@ async def restore_course(course: Course, db: AsyncSession) -> Course:
     if course.archived_at is not None:
         course.archived_at = None
         await db.commit()
-        logger.info("Course restored: course_id=%s name=%r", course.id, course.name)
+        logger.info("Course restored: course_id=%s name_chars=%d", course.id, len(course.name or ""))
     return course
 
 
@@ -230,7 +230,7 @@ async def hard_delete_course(
     if retrieval_service is not None:
         try:
             retrieval_service.delete_course_collection(course_id)
-        except Exception:  # noqa: BLE001 - never block the delete on Chroma
+        except Exception:  # never block the delete on Chroma
             logger.exception(
                 "Could not delete Chroma collection for course %s; the database "
                 "rows are still being removed and the collection is now orphaned.",
@@ -244,7 +244,7 @@ async def hard_delete_course(
     await db.execute(sa_delete(Course).where(Course.id == course_id))
     await db.commit()
     logger.warning(
-        "Course HARD DELETED: course_id=%s name=%r (had no student submissions).",
+        "Course HARD DELETED: course_id=%s name_chars=%d (had no student submissions).",
         course_id,
-        name,
+        len(name or ""),
     )
