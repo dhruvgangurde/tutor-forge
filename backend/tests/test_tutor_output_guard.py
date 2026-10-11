@@ -17,6 +17,7 @@ from agents.tutor.output_guard import (
     PATH_REPLY,
     RULE_BACK_REFERENCE,
     RULE_CLAIM_QUESTION,
+    RULE_COURSE_CLAIM,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
     RULE_FALLBACK_KEPT_TEXT,
@@ -977,6 +978,8 @@ def _pronoun_guard(text, *, path=PATH_REPLY, level=1, reply="is it about batteri
     )
 
 
+_PRONOUN_KNOWN_MISS = "It's the work done per unit charge."
+
 #: The prototype table from the round 1e proposal: (sentence, previous sentence or None, trips).
 _PRONOUN_TABLE = [
     (_LIVE_PRONOUN, "The potential difference is not the product of current and resistance.", True),
@@ -984,9 +987,10 @@ _PRONOUN_TABLE = [
     ("It is the work done per unit charge.", None, True),
     ("That's a common mix-up.", "Potential difference is not current times resistance.", False),
     ("It's the key idea in this chapter.", "Potential difference matters.", False),
-    # Known miss, kept visible: "it" follows a sentence that is not about the
-    # topic, so the rule does not assume "it" means the topic.
-    ("It's the work done per unit charge.", "Think about lifting a box.", False),
+    # Known miss for this rule, kept visible: "it" follows a sentence that is
+    # not about the topic, so the rule does not assume "it" means the topic.
+    # The course_claim rule (Phase B) now removes it instead; see the test.
+    (_PRONOUN_KNOWN_MISS, "Think about lifting a box.", False),
     ("This is related to energy, so think about what gets used up.", "Potential difference matters in circuits.", False),
     ("It's okay to be unsure about this.", None, False),
 ]
@@ -1000,6 +1004,11 @@ def test_pronoun_table(sentence, previous, trips):
     if trips:
         assert out == head + question
         assert RULE_PRONOUN_STATEMENT in tripped
+    elif sentence == _PRONOUN_KNOWN_MISS:
+        # Still not this rule's catch, but no longer a miss: course_claim removes it.
+        assert out == head + question
+        assert RULE_PRONOUN_STATEMENT not in tripped
+        assert RULE_COURSE_CLAIM in tripped
     else:
         assert out == head + sentence + " " + question
         assert RULE_PRONOUN_STATEMENT not in tripped
@@ -1505,3 +1514,111 @@ def test_a_cut_verdict_still_counts_as_the_untouched_opening_for_the_fallback():
     )
     assert out == "That is not quite right. " + GUARD_FALLBACK_QUESTION
     assert tripped == [RULE_VERDICT_REASON, RULE_FALLBACK_KEPT_TEXT]
+
+
+# ── Phase B (T2): a course claim in other words below Hint 3 ─────────────────
+
+#: The live hint-0 lead-in: the course's answer, worded without a definition or pronoun.
+_T2_LEAD_IN = (
+    "To keep track of the region containing elements smaller than the pivot, a specific index is "
+    "maintained starting just before the low boundary."
+)
+_FOLLOW_UP = " What do you think happens next?"
+
+
+def _course_claim_guard(text, *, path=PATH_NEW_QUESTION, level=0, reply=None, course=_PARTITION_COURSE):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PARTITION_Q,
+            course_text=course,
+            student_reply=reply if path == PATH_REPLY else None,
+        ),
+    )
+
+
+@pytest.mark.parametrize("path, level", [(PATH_NEW_QUESTION, 0), (PATH_HINT, 1), (PATH_HINT, 2)])
+def test_a_course_claim_in_other_words_is_removed_below_hint_3(path, level):
+    out, tripped = _course_claim_guard(_T2_LEAD_IN + _FOLLOW_UP, path=path, level=level)
+    assert out == _FOLLOW_UP.strip()
+    assert RULE_COURSE_CLAIM in tripped
+
+
+@pytest.mark.parametrize("level", [3, 4])
+def test_a_course_claim_is_left_alone_at_hint_3_and_after(level):
+    out, tripped = _course_claim_guard(_T2_LEAD_IN + _FOLLOW_UP, path=PATH_HINT, level=level)
+    assert out == _T2_LEAD_IN + _FOLLOW_UP
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_code_symbols_in_the_course_are_read_as_words():
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    _out, tripped = _course_claim_guard(statement)
+    assert RULE_COURSE_CLAIM in tripped  # "arr[j] <= pivot" reads as "less equal pivot"
+
+    other_condition = _PARTITION_COURSE.replace("<=", ">")
+    out, tripped = _course_claim_guard(statement, course=other_condition)
+    assert (out, tripped) == (statement, [])
+
+
+def test_the_students_own_words_do_not_make_a_course_claim():
+    statement = "The marker moves whenever a value is less than or equal to the pivot." + _FOLLOW_UP
+    _out, tripped = _course_claim_guard(
+        statement, path=PATH_REPLY, level=1, reply="it moves when a value is less than or equal to the pivot"
+    )
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_words_common_to_most_passages_are_background():
+    course = (
+        "Quick sort picks a pivot from the array. The array is split around the pivot. "
+        "Each pivot ends in its final place in the array. "
+        "Recursion then handles each side of the pivot in the array."
+    )
+    statement = "The pivot sits somewhere in the array and recursion handles the rest." + _FOLLOW_UP
+    out, tripped = _course_claim_guard(statement, course=course)
+    assert (out, tripped) == (statement, [])
+
+    # The same last sentence alone has no background, so the shared words count.
+    _out, tripped = _course_claim_guard(statement, course=course.rsplit(". ", 1)[1])
+    assert RULE_COURSE_CLAIM in tripped
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Think about what the loop variable is compared against on each step.",
+        "Picture the array split into a part you have already checked and a part you have not.",
+        "Let's slow down and trace one step together.",
+        "Try walking through a small example by hand.",
+        "Partition is the step that does most of the work in quick sort.",
+        "There are two indexes moving through the array during partition.",
+        "Focus on the moment the loop finds an element that belongs on the left.",
+    ],
+)
+def test_guiding_sentences_are_not_course_claims(sentence):
+    text = sentence + _FOLLOW_UP
+    assert _course_claim_guard(text, path=PATH_HINT, level=1) == (text, [])
+
+
+def test_a_first_clause_that_asks_is_the_question_not_a_lead_in():
+    # Live Hint 1. Cutting "What variable is initialized..." would leave
+    # "How does its value change...?" with nothing for "its" to refer to.
+    question = (
+        "What variable is initialized before the loop starts to mark the boundary of that region, and "
+        "how does its value change when you find an element that belongs there?"
+    )
+    assert _course_claim_guard(question, path=PATH_HINT, level=1) == (question, [])
+
+
+def test_a_lead_in_that_states_a_course_claim_is_cut_from_a_question():
+    out, tripped = _course_claim_guard(
+        "Since the index begins one position before low and increments on each value less than or "
+        "equal to the pivot, where does the pivot end up?",
+        path=PATH_HINT,
+        level=2,
+    )
+    assert out == "Where does the pivot end up?"
+    assert RULE_COURSE_CLAIM in tripped

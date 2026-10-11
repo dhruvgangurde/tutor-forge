@@ -19,7 +19,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from agents.tutor.nodes import advance_hint_node, generate_guiding_question_node
-from agents.tutor.prompts import GUARD_FALLBACK_NON_ANSWER, GUARD_FALLBACK_QUESTION
+from agents.tutor.prompts import (
+    GUARD_FALLBACK_NON_ANSWER,
+    GUARD_FALLBACK_QUESTION,
+    system_instruction_for_level,
+)
 from core.context_phrasing import strip_context_references
 from retrieval.models import Chunk
 from retrieval.service import RetrievalService
@@ -349,3 +353,66 @@ def test_live_correction_keeps_the_verdict_and_drops_the_stated_fact():
     assert out.startswith("That is not quite right.")
     assert "because" not in out
     assert "does not start at 0" not in out
+
+
+# ── Phase B (Gemini replay): the answer restated in other words below Hint 3 ──
+
+_PARTITION_Q = "how does the partition function keep track of the smaller elements?"
+#: Code as the course states it: the facts are in symbols, not words.
+_PARTITION_CODE = [
+    (
+        "int partition(int arr[], int low, int high) { int pivot = arr[high]; "
+        "int i = low - 1; for (int j = low; j < high; j++) { if (arr[j] <= pivot) "
+        "{ i++; swap(arr[i], arr[j]); } } swap(arr[i + 1], arr[high]); return i + 1; }"
+    )
+]
+
+
+def test_live_new_question_lead_in_that_states_the_answer_is_removed():
+    out = _run(
+        "To keep track of the region containing elements smaller than the pivot, a specific index is "
+        "maintained starting just before the low boundary. What happens to this index and the elements "
+        "when you encounter a value that is less than or equal to the pivot?",
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    assert out == (
+        "What happens to this index and the elements when you encounter a value that is less than or "
+        "equal to the pivot?"
+    )
+
+
+def test_live_hint_2_that_states_where_the_index_starts_is_cut_to_its_question():
+    out = _run(
+        "To keep track of the elements smaller than the pivot, the function maintains a boundary index that "
+        "starts at one position before the low index. When you scan through the array with a loop variable "
+        "and find an element that is less than or equal to the pivot, what action do you take with that "
+        "boundary index before swapping elements?",
+        hint=True,
+        hint_level=1,  # advance_hint_node escalates to Hint 2
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    assert out == "What action do you take with that boundary index before swapping elements?"
+    assert "one position before" not in out
+
+
+def test_course_claim_is_logged_by_name_only(caplog):
+    state = _state(question=_PARTITION_Q, course_chunks=_PARTITION_CODE)
+    with caplog.at_level(logging.INFO, logger="agents.tutor"):
+        _run_state(
+            "To keep track of the region containing elements smaller than the pivot, a specific index is "
+            "maintained starting just before the low boundary. What do you think happens next?",
+            state,
+        )
+    messages = [r.getMessage() for r in caplog.records if r.name.startswith("agents.tutor")]
+    assert "[TUTOR-GUARD] rule=course_claim path=new_question hint_level=0" in messages
+    joined = " ".join(messages).lower()
+    assert "low boundary" not in joined and "keep track" not in joined
+
+
+def test_hint_2_instruction_says_where_to_look_not_what_they_will_find():
+    hint_2 = system_instruction_for_level(2)
+    assert "STOP short of stating its value, rule or result" in hint_2
+    assert "say where to look, not what\nthey will find" in hint_2
+    assert "walk through one worked step" not in hint_2  # the old wording invited the live leak

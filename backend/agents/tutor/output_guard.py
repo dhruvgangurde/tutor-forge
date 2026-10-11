@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 from agents.tutor.prompts import (
@@ -84,6 +85,7 @@ RULE_BACK_REFERENCE = "back_reference"
 RULE_FORMULA = "formula"
 RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
 RULE_VERDICT_REASON = "verdict_reason"
+RULE_COURSE_CLAIM = "course_claim"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -387,6 +389,76 @@ def _states_answer(statement: str, signals: _AnswerSignals) -> bool:
     if _DEFINING_RE.search(plain):
         return True
     return len(rest) >= 3 and any(_overlap(rest, course) >= 0.6 for course in signals.course_sentences)
+
+
+# ── 2e. Course claims below Hint 3 ────────────────────────────────────────────
+#
+# "To keep track of the region containing elements smaller than the pivot, a
+# specific index is maintained starting just before the low boundary." names no
+# definition and no pronoun, so the rules above let it through, yet it is the
+# course's answer in other words. A statement (or the lead-in of a question) is
+# a course claim when it shares at least _CLAIM_MIN_SHARED words with a single
+# sentence of the retrieved passages, after setting aside the question's own
+# words, the student's own words and words common to most passages.
+#
+# Course text often states the claim in code ("int i = low - 1", "arr[j] <=
+# pivot") while the tutor says it in words ("one position before low", "less
+# than or equal to"), so common code symbols are read as words on both sides.
+
+_CLAIM_MIN_SHARED = 3
+#: A question's first clause that itself asks ("What variable is set up before
+#: the loop, and how...?") is the question, not a lead-in; cutting it would
+#: leave "how does its value change?" with nothing for "its" to refer to.
+_ASKS_RE = re.compile(r"^(?:what|why|how|which|who|whom|whose|where)\b", re.IGNORECASE)
+#: Words in at least this share of the passages' sentences are background
+#: ("pivot", "array" in a sorting course), not part of any one claim.
+_BACKGROUND_SHARE = 0.5
+_MIN_UNITS_FOR_BACKGROUND = 4
+
+_CODE_AS_WORDS = (
+    (re.compile(r"<="), " less equal "),
+    (re.compile(r">="), " greater equal "),
+    (re.compile(r"!="), " not equal "),
+    (re.compile(r"=="), " equal "),
+    (re.compile(r"\+\+|\+=\s*1\b"), " increment "),
+    (re.compile(r"(?<![-\w])--(?!-)|-=\s*1\b"), " decrement "),
+    (re.compile(r"\b([A-Za-z_]\w*)\s*-\s*1\b"), r"\1 minus one before "),
+    (re.compile(r"\b([A-Za-z_]\w*)\s*\+\s*1\b"), r"\1 plus one after "),
+    (re.compile(r"(?<![<>=!-])<(?![<=])"), " less "),
+    (re.compile(r"(?<![<>=!-])>(?![>=])"), " greater "),
+)
+
+
+def _claim_words(text: str) -> set[str]:
+    """Content words, reading common code symbols as the words they stand for."""
+    for pattern, words in _CODE_AS_WORDS:
+        text = pattern.sub(words, text)
+    return _content_words(text)
+
+
+@dataclass(frozen=True)
+class _ClaimSignals:
+    units: list[set[str]]   # claim words of each passage sentence, minus `ignore`
+    ignore: set[str]        # the question's words, the student's words, background
+
+
+def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
+    units = [_claim_words(s) for s in re.split(r"(?<=[.!?])\s+|\n+", turn.course_text or "")]
+    units = [u for u in units if u]
+    background: set[str] = set()
+    if len(units) >= _MIN_UNITS_FOR_BACKGROUND:
+        counts = Counter(w for u in units for w in u)
+        background = {w for w, n in counts.items() if n / len(units) >= _BACKGROUND_SHARE}
+    student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
+    ignore = _claim_words(turn.question) | student | background
+    return _ClaimSignals([u - ignore for u in units], ignore)
+
+
+def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
+    words = _claim_words(_SUBORDINATE_RE.sub("", _plain(text))) - claims.ignore
+    if len(words) < _CLAIM_MIN_SHARED:
+        return False
+    return any(len(words & unit) >= _CLAIM_MIN_SHARED for unit in claims.units)
 
 
 def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
@@ -919,6 +991,24 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     # Hint 3 only; the higher rungs may work through the numbers.
     if low_rung and course_numbers:
         run(RULE_UNUSED_NUMBER, lambda s: None if _numbers(_plain(s)) & course_numbers else s)
+
+    # 2e. Last of the answer rules, as a backstop for what the specific rules
+    # above do not recognise: no course claim in other words below Hint 3. A
+    # statement, or a question's lead-in, that shares several words with one
+    # passage sentence.
+    if low_rung:
+        claims = _claim_signals(turn)
+
+        def no_claim_statement(s: str) -> str | None:
+            if not _is_question(s):
+                return None if _states_course_claim(s, claims) else s
+            return _cut_leading_clause(
+                s,
+                lambda clause: not _ASKS_RE.match(_plain(clause).lstrip())
+                and _states_course_claim(clause, claims),
+            )
+
+        run(RULE_COURSE_CLAIM, no_claim_statement, answer=True)
 
     # Repair any join the removals above left, then judge what is left.
     text, dropped = _tidy(_render(lines))
