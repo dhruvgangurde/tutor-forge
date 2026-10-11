@@ -6,7 +6,7 @@ CLI entry point for the evaluation suites.
     python -m eval.runner --all
     python -m eval.runner --suite groundedness --suite observability
     python -m eval.runner --suite acceptance-proxy --limit 25
-    python -m eval.runner --suite tutor-pedagogy   # offline, no LLM call
+    python -m eval.runner --suite tutor-pedagogy   # offline; add --live for Gemini
     python -m eval.runner --suite grading-checks   # offline; add --live for the real model
 
 Every suite is independent and failure-isolated: one suite raising does not
@@ -54,7 +54,7 @@ async def _run_suite(
         kwargs["limit"] = limit
     if name == "grading-variance":
         kwargs["runs"] = runs
-    if name == "grading-checks":
+    if name in ("grading-checks", "tutor-pedagogy"):
         kwargs["live"] = live
     return await module.run(**kwargs)
 
@@ -99,7 +99,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--live", action="store_true",
-        help="grading-checks only: grade with the configured model instead of recorded outputs.",
+        help="grading-checks and tutor-pedagogy only: use Gemini instead of recorded outputs.",
     )
     args = parser.parse_args()
 

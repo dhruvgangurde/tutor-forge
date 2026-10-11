@@ -45,6 +45,7 @@ import contextlib
 import json
 import logging
 import re
+import time
 import uuid
 
 from eval.harness import SuiteResult, load_dataset
@@ -69,6 +70,68 @@ class ScriptedModel:
         self.calls.append({"prompt": prompt, "system": system_instruction})
         # A call with nothing recorded is a gate that should have refused.
         return self.outputs.pop(0) if self.outputs else "(no recorded output: unexpected model call)"
+
+
+class LiveModel:
+    """
+    The configured model behind ScriptedModel's interface (live mode only). It
+    keeps every call and output and counts calls. After one failed call (a
+    daily quota, a 429 that did not clear) every later call raises without
+    reaching the API, so the run stops instead of retrying in a loop.
+    """
+
+    def __init__(self, client, counter: dict):
+        self.client = client
+        self.counter = counter
+        self.calls: list[dict] = []
+        self.outputs: list[str] = []
+
+    def generate(self, prompt: str, temperature: float | None = None, system_instruction: str = "", **kwargs) -> str:
+        if self.counter.get("error"):
+            raise RuntimeError("live run stopped after an earlier failed call")
+        self.calls.append({"prompt": prompt, "system": system_instruction})
+        self.counter["calls"] += 1
+        if temperature is not None:
+            kwargs["temperature"] = temperature
+        try:
+            out = self.client.generate(prompt, system_instruction=system_instruction, **kwargs)
+        except Exception as exc:
+            self.counter["error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+            raise
+        self.outputs.append(out)
+        return out
+
+
+def _sentences(text: str | None) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+
+def _repeats_previous(text: str | None, previous: str | None, question: str) -> bool:
+    """Live: a question in ``text`` repeating one in ``previous``, by the guard's own measure."""
+    from agents.tutor.output_guard import (
+        PATH_HINT,
+        TutorTurn,
+        _content_words,
+        _is_question,
+        _previous_questions,
+        _repeats_question,
+    )
+
+    topic = _content_words(question)
+    turn = TutorTurn(path=PATH_HINT, hint_level=1, question=question, course_text="",
+                     previous_tutor_message=previous)
+    earlier = _previous_questions(turn, topic)
+    return any(_is_question(s) and _repeats_question(s, earlier, topic) for s in _sentences(text))
+
+
+def _definition_given(text: str | None, question: str) -> bool:
+    """Live: the reply opens with a statement naming the term of a "what is X?" question."""
+    from agents.tutor.output_guard import _content_words, _is_question
+    from agents.tutor.query_resolution import definition_head
+
+    head = definition_head(question)
+    first = (_sentences(text) or [""])[0]
+    return bool(head) and not _is_question(first) and _content_words(head) <= _content_words(first)
 
 
 class _Span:
@@ -219,11 +282,11 @@ def _probe_state(probe: dict, data: dict) -> dict:
     }
 
 
-async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID) -> dict:
+async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID, live: dict | None = None) -> dict:
     from agents.tutor.graph import build_tutor_graph
 
     state = {**_probe_state(probe, data), "course_id": course_id}
-    model = ScriptedModel([probe["model_output"]])
+    model = LiveModel(live["pro"], live["counter"]) if live else ScriptedModel([probe["model_output"]])
     graph = build_tutor_graph(retrieval_service=retrieval, gemini_pro=model, langfuse=_NoTracing(),
                               mode=probe["mode"])
     with _guard_rules() as rules:
@@ -233,7 +296,8 @@ async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID) -
     student_text = f"{state['question']} {state['prior_question'] or ''}"
     student_facts = facts_in(student_text, facts)
     shown = final.get("response", "")
-    raw_leak = sorted(facts_in(probe["model_output"], facts) - student_facts)
+    raw = (model.outputs[0] if model.outputs else "") if live else probe["model_output"]
+    raw_leak = sorted(facts_in(raw, facts) - student_facts)
     final_leak = sorted(facts_in(shown, facts) - student_facts)
     level = final.get("hint_level", state["hint_level"])
     definition = probe.get("definition")
@@ -255,11 +319,18 @@ async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID) -
         "known_gap": probe.get("known_gap"),
         "gate": bool(probe.get("gate")),
     }
+    question_text = data["questions"][probe["question"]]
     if probe.get("repeated_question"):
-        row["repeat_survived"] = contains(shown, probe["repeated_question"])
+        if live:
+            row["repeat_raw"] = _repeats_previous(raw, probe.get("previous"), question_text)
+            row["repeat_survived"] = _repeats_previous(shown, probe.get("previous"), question_text)
+        else:
+            row["repeat_survived"] = contains(shown, probe["repeated_question"])
     if definition:
         row["definition_expected"] = definition["expected"]
-        row["definition_kept"] = contains(shown, definition["sentence"])
+        row["definition_kept"] = (
+            _definition_given(shown, question_text) if live else contains(shown, definition["sentence"])
+        )
     row["gate_ok"] = (
         not row["refused"]
         and not row["leak"]
@@ -305,14 +376,21 @@ async def _conversation_db(data: dict, conversations: list[dict]):
     return engine, factory, course_ids, student_id
 
 
-async def _run_conversation(conv: dict, data: dict, factory, retrieval, course_id, student_id) -> list[dict]:
+async def _run_conversation(
+    conv: dict, data: dict, factory, retrieval, course_id, student_id, live: dict | None = None
+) -> list[dict]:
     from tutoring.service import create_session, request_hint, send_chat_message
 
     rows: list[dict] = []
+    last_shown = None
+    open_question = None
     async with factory() as db:
         session = await create_session(course_id, student_id, db)
         for n, turn in enumerate(conv["turns"], 1):
-            model = ScriptedModel([turn["model_output"]] if "model_output" in turn else [])
+            if live:
+                model = LiveModel(live["pro"], live["counter"])
+            else:
+                model = ScriptedModel([turn["model_output"]] if "model_output" in turn else [])
             text = None
             with _guard_rules() as rules:
                 if turn["kind"] == "hint":
@@ -323,6 +401,8 @@ async def _run_conversation(conv: dict, data: dict, factory, retrieval, course_i
                 else:
                     key = turn["text"]
                     text = data["questions"].get(key) or data["students"].get(key) or key
+                    if key in data["questions"]:
+                        open_question = text
                     final = await send_chat_message(session, text, db, retrieval, model, _NoTracing())
             shown = final.get("response", "")
             row = {
@@ -347,11 +427,22 @@ async def _run_conversation(conv: dict, data: dict, factory, retrieval, course_i
                 )
             if turn.get("check_hint_prompt"):
                 row["hint_prompt_has_last_message"] = "<<UNTRUSTED YOUR LAST MESSAGE>>" in prompt
+            question_text = open_question or text or ""
             if turn.get("repeated_question"):
-                row["repeat_survived"] = contains(shown, turn["repeated_question"])
+                if live:
+                    raw = model.outputs[0] if model.outputs else ""
+                    row["repeat_raw"] = _repeats_previous(raw, last_shown, question_text)
+                    row["repeat_survived"] = _repeats_previous(shown, last_shown, question_text)
+                else:
+                    row["repeat_survived"] = contains(shown, turn["repeated_question"])
             if turn.get("definition"):
                 row["definition_expected"] = turn["definition"]["expected"]
-                row["definition_kept"] = contains(shown, turn["definition"]["sentence"])
+                row["definition_kept"] = (
+                    _definition_given(shown, question_text) if live
+                    else contains(shown, turn["definition"]["sentence"])
+                )
+            if shown and not row["refused"]:
+                last_shown = shown
             rows.append(row)
     return rows
 
@@ -376,7 +467,7 @@ class _RecordedFlash:
         return json.dumps(self.batch)
 
 
-def _generation(data: dict, retrieval) -> tuple[list[dict], dict]:
+def _generation(data: dict, retrieval, live: dict | None = None) -> tuple[list[dict], dict]:
     from agents.assessment.nodes import generate_questions_node
     from agents.assessment.validation import (
         REASON_UNSUPPORTED_KEY,
@@ -424,8 +515,10 @@ def _generation(data: dict, retrieval) -> tuple[list[dict], dict]:
         "is_grounded": True, "questions": [], "bloom_tags": [], "distractors": [], "rubric_criteria": [],
         "answer_key": [], "assessment_id": uuid.uuid4(), "trace_id": None, "status": "running", "error": None,
     }
-    flash = _RecordedFlash(batch, regens)
+    flash = LiveModel(live["flash"], live["counter"]) if live else _RecordedFlash(batch, regens)
     result = generate_questions_node(state, retrieval_service=retrieval, gemini_flash=flash)
+    if live:
+        flash.regenerate_calls = sum(1 for c in flash.calls if c["prompt"].startswith("Write ONE assessment question"))
     kept = []
     for q, key in zip(result.get("questions", []), result.get("answer_key", []), strict=False):
         full = {**q, "correct_answer": key["correct_answer"]}
@@ -451,30 +544,86 @@ def _generation(data: dict, retrieval) -> tuple[list[dict], dict]:
 # ── The suite ─────────────────────────────────────────────────────────────────
 
 
-async def run() -> SuiteResult:
+def _live_clients() -> dict:
+    """Gemini Pro and Flash as the app builds them, before the mock bar is switched on."""
+    from main import _build_llm_clients
+
+    pro, flash = _build_llm_clients()
+    return {"pro": pro, "flash": flash, "counter": {"calls": 0, "error": None}}
+
+
+async def run(live: bool = False) -> SuiteResult:
+    """
+    Offline (default): recorded model outputs. Live: Gemini writes every reply
+    and the quiz; retrieval and the gate stay on the mock embedder, in memory.
+    Nothing is written outside an in-memory database and Chroma collection.
+    """
+    from core.config import settings
+    from core.gemini_calls import background_work
+
     data = load_dataset(DATASET)
     fixture = data["fixture"]
-    with _mock_provider():
+    if live and settings.llm_provider != "gemini":
+        return SuiteResult(
+            name="tutor-pedagogy", criterion="Tutor pedagogy and quiz quality (T1-T6, G1), live",
+            target="-", status="skipped",
+            headline=f"Live mode needs LLM_PROVIDER=gemini (it is {settings.llm_provider!r}); nothing was run.",
+        )
+    live_ctx = _live_clients() if live else None
+    counter = live_ctx["counter"] if live_ctx else {}
+    started = time.perf_counter()
+    probes: list[dict] = []
+    turns: list[dict] = []
+    gen_rows: list[dict] = []
+    pipeline = {"status": "not measured", "requested": 0, "kept": 0, "regeneration_calls": 0, "questions": []}
+
+    # Background work: the configured pacing applies and a 429 waits out its
+    # window inside call_with_retry; a failure that does not clear stops the run.
+    with _mock_provider(), (background_work() if live else contextlib.nullcontext()):
         probe_course = uuid.uuid4()
         engine, factory, conv_courses, student_id = await _conversation_db(data, data["conversations"])
         try:
             retrieval = _build_retrieval(
                 fixture["passages"], fixture["source_file"], [probe_course, *conv_courses.values()]
             )
-            probes = [await _run_probe(p, data, retrieval, probe_course) for p in data["reply_probes"]]
-            turns: list[dict] = []
-            for conv in data["conversations"]:
-                turns += await _run_conversation(
-                    conv, data, factory, retrieval, conv_courses[conv["id"]], student_id
-                )
-            gen_rows, pipeline = _generation(data, retrieval)
+            try:
+                for p in data["reply_probes"]:
+                    row = await _run_probe(p, data, retrieval, probe_course, live_ctx)
+                    if counter.get("error"):
+                        break  # the case that hit the failure is not counted
+                    probes.append(row)
+                for conv in data["conversations"]:
+                    if counter.get("error"):
+                        break
+                    rows = await _run_conversation(
+                        conv, data, factory, retrieval, conv_courses[conv["id"]], student_id, live_ctx
+                    )
+                    if not counter.get("error"):
+                        turns += rows
+                if not counter.get("error"):
+                    rows, summary = _generation(data, retrieval, live_ctx)
+                    if not counter.get("error"):
+                        gen_rows, pipeline = rows, summary
+            except Exception:
+                if not live:
+                    raise
+                counter["error"] = counter.get("error") or "stopped by an exception outside a model call"
         finally:
             await engine.dispose()
 
-    return _result(probes, turns, gen_rows, pipeline)
+    live_info = None
+    if live:
+        live_info = {
+            "calls": counter["calls"],
+            "duration_s": round(time.perf_counter() - started, 1),
+            "stopped_early": counter.get("error"),
+        }
+    return _result(probes, turns, gen_rows, pipeline, live_info)
 
 
-def _result(probes: list[dict], turns: list[dict], gen_rows: list[dict], pipeline: dict) -> SuiteResult:
+def _result(
+    probes: list[dict], turns: list[dict], gen_rows: list[dict], pipeline: dict, live: dict | None = None
+) -> SuiteResult:
     guarded = [r for r in probes if not r["refused"] and r["level_shown"] in _GUARDED_LEVELS]
     leaks = [r for r in guarded if r["leak"]]
     raw_leaks = [r for r in guarded if r["raw_leak"]]
@@ -550,23 +699,34 @@ def _result(probes: list[dict], turns: list[dict], gen_rows: list[dict], pipelin
         "gated_cases": len(gates),
         "gated_cases_failed": gates_failed,
         "checks": checks,
-        "live_gemini": LIVE_NOT_MEASURED,
-        # Whatever LLM_PROVIDER says in .env (and in the report header), this run
-        # used the mock provider's embeddings and bar, and recorded model outputs.
-        "provider_used": "mock (offline)",
+        "live_gemini": "measured" if live else LIVE_NOT_MEASURED,
+        # Whatever LLM_PROVIDER says in .env (and in the report header), retrieval
+        # used the mock provider's embeddings and bar; offline, the model outputs
+        # were recorded.
+        "provider_used": "gemini generation; mock embeddings and bar" if live else "mock (offline)",
     }
+    if live:
+        metrics.update({
+            "live_calls": live["calls"],
+            "live_duration_s": live["duration_s"],
+            "live_stopped_early": live["stopped_early"],
+            "probes_run": len(probes),
+            "conversation_turns_run": len(turns),
+            "model_repeats_before_the_guard": sum(1 for r in repeat_rows if r.get("repeat_raw")),
+        })
 
     met = (
         not leaks and not repeats and not on_topic_refused and not off_topic_accepted
         and not definition_mismatch and not gates_failed and all(checks.values())
     )
     headline = (
-        f"Offline: {len(leaks)} of {len(guarded)} replies at levels 0-2 leak; "
+        f"{'Live' if live else 'Offline'}: {len(leaks)} of {len(guarded)} replies at levels 0-2 leak; "
         f"{len(on_topic_refused)} of {len(on_topic)} on-topic turns refused; "
         f"{len(repeats)} of {len(repeat_rows)} labeled repeats shown; "
         f"{len(fallback_on_non_leaking)} of {len(non_leaking)} non-leaking replies fell back "
         f"({len(fallback_false_positive)} not after a repeat). "
-        "Live Gemini: not measured."
+        + (f"Stopped early: {live['stopped_early']}." if live and live["stopped_early"]
+           else "" if live else "Live Gemini: not measured.")
     )
     def shows_gap(r: dict) -> bool:
         return bool(
@@ -577,6 +737,9 @@ def _result(probes: list[dict], turns: list[dict], gen_rows: list[dict], pipelin
     gaps = sorted({r["known_gap"] for r in probes + turns + gen_rows if r.get("known_gap") and shows_gap(r)})
     notes = [
         (
+            "Live mode: Gemini wrote every reply and the quiz; repeats and definitions are judged on "
+            "the live text (the guard's own repeat measure; a first sentence naming the term)."
+            if live else
             "Offline mode replays recorded model outputs through the real graph, service, guard and "
             "validator. It measures those deterministic layers, not the model. Live (Gemini) numbers: "
             "not measured."
@@ -590,7 +753,7 @@ def _result(probes: list[dict], turns: list[dict], gen_rows: list[dict], pipelin
     ]
     return SuiteResult(
         name="tutor-pedagogy",
-        criterion="Tutor pedagogy and quiz quality (T1-T6, G1), offline",
+        criterion=f"Tutor pedagogy and quiz quality (T1-T6, G1), {'live' if live else 'offline'}",
         target="0 leaks at levels 0-2, 0 on-topic refusals, 0 repeated questions",
         status="pass" if met else "fail",
         headline=headline,

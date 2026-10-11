@@ -48,7 +48,8 @@ python -m eval.runner --suite grading-variance
 python -m eval.runner --suite paraphrase-bias
 python -m eval.runner --suite distractor-quality
 python -m eval.runner --suite tutor-pedagogy       # offline: no LLM, no .env needed
-python -m eval.runner --suite grading-checks       # offline; --live grades with the real model
+python -m eval.runner --suite grading-checks       # offline
+python -m eval.runner --suite tutor-pedagogy --suite grading-checks --live   # Gemini
 python -m eval.runner --all
 ```
 
@@ -57,7 +58,7 @@ That folder is gitignored (`backend/eval/results/` in the root `.gitignore`), so
 reports are not committed; measured numbers go in a short dated summary in the
 docs instead.
 
-## tutor-pedagogy (offline)
+## tutor-pedagogy (offline; live with --live)
 
 Findings T1-T6 and G1 from live testing on Gemini, as recorded cases
 (`datasets/tutor_pedagogy.json`): the live tutor replies and quiz questions,
@@ -70,8 +71,19 @@ not the model, and its refusal numbers are on the mock embedder's scale.
 
 It reports leakage at hint levels 0-2, on-topic refusals, repeated questions,
 fallbacks on non-leaking replies, the definition sentence kept or removed, and
-MC key support. Live (Gemini) numbers are reported as not measured. It runs in
-pytest (`tests/test_eval_tutor_pedagogy.py`) as a regression gate: fixed live
+MC key support. Offline, live (Gemini) numbers are reported as not measured.
+
+With `--live` (and `LLM_PROVIDER=gemini`; any other provider is refused) Gemini
+writes every reply and the quiz, while retrieval and the gate stay on the mock
+embedder in memory, so nothing touches the real database or Chroma store.
+Repeats are judged with the guard's own repeat measure on the live text, and a
+definition counts as given when the reply opens with a statement naming the
+term. Both live suites run as background work (the configured pacing; a 429
+waits out its window), count their calls, and stop at the first failed call
+with no retry loop, reporting what finished. Live is never run by pytest.
+
+The offline run is a pytest regression gate
+(`tests/test_eval_tutor_pedagogy.py`): fixed live
 failures must stay fixed, and any leak, repeat or mismatch it finds must be a
 documented `known_gap` in the dataset.
 

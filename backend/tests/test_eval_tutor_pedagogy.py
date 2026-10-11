@@ -171,3 +171,53 @@ def test_registered_in_the_runner():
     from eval.runner import SUITES
 
     assert SUITES["tutor-pedagogy"] == "eval.suites.tutor_pedagogy"
+
+
+class _FakeGemini:
+    """Stands in for Gemini in the live-mode wiring tests: one safe question for every call."""
+
+    def __init__(self, fail_on: int | None = None):
+        self.calls = 0
+        self.fail_on = fail_on
+
+    def generate(self, prompt, temperature=0.7, system_instruction=""):
+        self.calls += 1
+        if self.fail_on and self.calls >= self.fail_on:
+            raise RuntimeError("quota exhausted")
+        return "What do you think happens next?"
+
+
+def _live_run(monkeypatch, pro, flash):
+    import main
+    from core.config import settings
+    from eval.suites.tutor_pedagogy import run
+
+    monkeypatch.setattr(settings, "llm_provider", "gemini")  # live runs only on Gemini
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (pro, flash))
+    return asyncio.run(run(live=True))
+
+
+def test_live_mode_wiring_uses_the_model_and_counts_calls(monkeypatch):
+    pro, flash = _FakeGemini(), _FakeGemini()
+    live = _live_run(monkeypatch, pro, flash)
+    assert live.metrics["live_gemini"] == "measured"
+    assert live.metrics["live_calls"] == pro.calls + flash.calls > 0
+    assert live.metrics["live_stopped_early"] is None
+    assert live.metrics["probes_run"] == len(_data()["reply_probes"])
+    assert live.metrics["leaks"] == 0  # a safe question leaks nothing
+    assert live.headline.startswith("Live:")
+
+
+def test_live_mode_stops_at_the_first_failure_without_retrying(monkeypatch):
+    pro, flash = _FakeGemini(fail_on=3), _FakeGemini()
+    live = _live_run(monkeypatch, pro, flash)
+    assert pro.calls == 3 and flash.calls == 0  # nothing reaches a model after the failure
+    assert live.metrics["live_stopped_early"].startswith("RuntimeError")
+    assert live.metrics["probes_run"] < len(_data()["reply_probes"])
+    assert "Stopped early" in live.headline
+
+
+def test_live_mode_refuses_a_provider_other_than_gemini():
+    from eval.suites.tutor_pedagogy import run
+
+    assert asyncio.run(run(live=True)).status == "skipped"  # tests pin LLM_PROVIDER=mock
