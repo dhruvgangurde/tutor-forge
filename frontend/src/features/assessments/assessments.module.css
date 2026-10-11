@@ -380,6 +380,13 @@
   margin-top: var(--space-3);
 }
 
+/* Sign in again without leaving the quiz (SignInAgainDialog). */
+.signInForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 /* ── Submission detail ──────────────────────────────────────────────────── */
 .readingColumn {
   max-width: 860px;
