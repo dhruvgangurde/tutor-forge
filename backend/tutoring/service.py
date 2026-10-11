@@ -32,14 +32,14 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
 from agents.tutor.query_resolution import TURN_NEW_QUESTION, classify_turn
-from db.models import Course, TutoringMessage, TutoringSession, User
+from db.models import Course, TutoringMessage, TutoringSession
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
+
     from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -161,9 +161,9 @@ async def send_chat_message(
     session: TutoringSession,
     question: str,
     db: AsyncSession,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_pro,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> dict:
     """
     Process a student's question and return a Socratic guiding response.
@@ -278,9 +278,9 @@ async def send_chat_message(
 async def request_hint(
     session: TutoringSession,
     db: AsyncSession,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_pro,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> dict:
     """
     Escalate the hint level for the open learning question.
