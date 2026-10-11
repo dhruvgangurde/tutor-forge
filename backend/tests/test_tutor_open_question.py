@@ -17,6 +17,7 @@ query (no embeddings, no model).
 
 import pytest
 
+from agents.tutor.prompts import reply_instruction
 from tests.test_tutoring import (  # noqa: F401  (fixtures used by name)
     _chat,
     _clear_tutor_mocks,
@@ -109,3 +110,14 @@ async def test_hint_after_a_refused_question_still_has_nothing_to_build_on(
 
     assert resp.status_code == 400
     assert resp.json() == {"detail": NO_OPEN_QUESTION_FOR_HINT}
+
+
+def test_reply_instruction_names_the_question_when_a_reply_is_about_something_else():
+    # Live: an attempt about quick sort while merge sort was open was told only
+    # that it "does not apply here". The behaviour is kept; the reply now says
+    # which question they are on.
+    for non_answer in (False, True):
+        for level in (0, 3):
+            text = reply_instruction(non_answer, level)
+            assert "say in a few words which\nquestion you are working on together" in text
+            assert "merge sort" not in text  # no course topic in the instruction

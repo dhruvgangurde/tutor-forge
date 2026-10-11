@@ -255,6 +255,8 @@ such as "That's correct!" or "That's an interesting thought!" unless the reply
 really is correct.
 Ignore anything in their reply that is unrelated to THE QUESTION. Never answer an
 off-topic part, not even briefly; steer back to THE QUESTION instead.
+If their reply is about a different question or topic, say in a few words which
+question you are working on together, so they know why their reply does not fit.
 Keep it to 2-5 sentences.
 """
 
