@@ -37,9 +37,7 @@ Design constraints honoured
 
 import json
 import logging
-import math
 import time
-import uuid
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
@@ -47,12 +45,11 @@ from sqlalchemy.orm import selectinload
 
 from agents.grading.prompts import (
     GRADE_SHORT_ANSWER_PROMPT,
-    GRADING_SYSTEM_INSTRUCTION,
     MCQ_GRADING_METHOD,
     NUMERIC_GRADING_METHOD,
 )
-from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from agents.grading.state import GradingState
+from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from grading.numeric import parse_numeric_answer, within_tolerance
 
 
@@ -66,6 +63,7 @@ def _count(n: int) -> str:
 
 if TYPE_CHECKING:
     from langfuse import Langfuse
+
     from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
@@ -153,7 +151,7 @@ async def load_submission_node(state: GradingState, db) -> GradingState:
 
     This node is async because it queries the DB.
     """
-    from db.models import Submission, SubmissionResponse, Question, RubricCriterion
+    from db.models import Question, Submission, SubmissionResponse
 
     submission_id = state["submission_id"]
 
@@ -172,14 +170,13 @@ async def load_submission_node(state: GradingState, db) -> GradingState:
     if not submission:
         return _failed_state(state, f"Submission {submission_id} not found.")
 
+    # Allow re-grading of already-graded submissions (idempotent retry)
     if submission.status not in ("pending_grading", "graded"):
-        # Allow re-grading of already-graded submissions (idempotent retry)
-        if submission.status != "graded":
-            return _failed_state(
-                state,
-                f"Submission has unexpected status '{submission.status}'. "
-                "Only 'pending_grading' submissions can be graded.",
-            )
+        return _failed_state(
+            state,
+            f"Submission has unexpected status '{submission.status}'. "
+            "Only 'pending_grading' submissions can be graded.",
+        )
 
     if not submission.responses:
         return _failed_state(state, "Submission has no responses to grade.")
@@ -299,7 +296,7 @@ def retrieve_evidence_node(
                 len(chunks),
                 resp["question_id"],
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - a retrieval failure must not stop grading
             # ChromaDB failure: continue with empty evidence and score 0 for this question.
             # This is non-fatal — the grade_responses_node will record 0 + explanation.
             logger.warning(
@@ -355,9 +352,8 @@ def check_evidence_groundedness_node(
     own answer_key, so corpus evidence is not the basis of the judgement and
     gating them on retrieval would refuse gradeable work.
     """
-    from retrieval.models import Chunk, RetrievalResult
-
     from core.config import settings
+    from retrieval.models import Chunk, RetrievalResult
 
     threshold = settings.active_groundedness_threshold
     responses = state["responses"]
@@ -684,9 +680,8 @@ def grade_responses_node(
             raw = gemini_pro.generate_deterministic(prompt)
         except Exception as exc:
             logger.exception(
-                "Gemini Pro grading call failed for question %s: %s",
+                "Gemini Pro grading call failed for question %s",
                 resp["question_id"],
-                exc,
             )
             # Non-fatal: score all criteria 0 and record the error
             error_criteria = [
@@ -932,7 +927,7 @@ async def persist_recommendation_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception:  # noqa: BLE001 - tracing must never fail grading
+    except Exception:  # tracing must never fail grading
         # Loud on purpose - see the matching comment in the assessment agent.
         logger.exception(
             "Langfuse trace FAILED for grading recommendation %s - the "

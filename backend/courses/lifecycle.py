@@ -39,7 +39,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
@@ -189,7 +189,7 @@ async def archive_course(course: Course, db: AsyncSession) -> Course:
     the record of *when* it was archived is not overwritten by a double-click.
     """
     if course.archived_at is None:
-        course.archived_at = datetime.now(timezone.utc)
+        course.archived_at = datetime.now(UTC)
         await db.commit()
         logger.info(
             "Course archived: course_id=%s name=%r — history preserved.",
@@ -230,7 +230,7 @@ async def hard_delete_course(
     if retrieval_service is not None:
         try:
             retrieval_service.delete_course_collection(course_id)
-        except Exception:  # noqa: BLE001 - never block the delete on Chroma
+        except Exception:  # never block the delete on Chroma
             logger.exception(
                 "Could not delete Chroma collection for course %s; the database "
                 "rows are still being removed and the collection is now orphaned.",
