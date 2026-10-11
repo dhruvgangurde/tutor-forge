@@ -302,3 +302,26 @@ def test_formula_in_a_hint_below_hint_3_is_removed():
         course_chunks=_SERIES_COURSE,
     )
     assert out == "Take the next step: what happens if you add a third resistor?"
+
+
+# ── Round 1f: a real attempt keeps its verdict when the fallback fires ───────
+
+
+def test_fallback_after_a_real_attempt_keeps_the_verdict():
+    out = _run(
+        "That's not quite right. The maximum element is not simply the first one. "
+        "It's found by comparing every element with the current maximum and keeping the larger one.",
+        reply="is it the largest element?",
+        hint_level=1,
+        question="how do you find the maximum element in an array?",
+        course_chunks=[
+            (
+                "To find the maximum element in an array, compare every element with the current "
+                "maximum and keep the larger one. Start with the first element as the current maximum."
+            )
+        ],
+    )
+    assert out == (
+        "That's not quite right. The maximum element is not simply the first one. "
+        + GUARD_FALLBACK_QUESTION
+    )

@@ -19,6 +19,7 @@ from agents.tutor.output_guard import (
     RULE_CLAIM_QUESTION,
     RULE_EXAMPLE_REFERENCE,
     RULE_FALLBACK,
+    RULE_FALLBACK_KEPT_TEXT,
     RULE_FORMULA,
     RULE_FRAGMENT,
     RULE_INVENTED_REFERENCE,
@@ -1272,3 +1273,145 @@ def test_ask_do_not_tell_forbids_the_formula_below_hint_3_only():
     for level in (3, 4):
         assert "Do not write the formula either" not in HINT_LADDER[level]
         assert "Do not write the formula either" not in reply_instruction(True, level)
+
+
+# ── Fallback after a real attempt keeps the reply's untouched opening ─────────
+
+_MAX_Q = "how do you find the maximum element in an array?"
+_MAX_COURSE = (
+    "To find the maximum element in an array, compare every element with the current maximum "
+    "and keep the larger one. Start with the first element as the current maximum."
+)
+_ATTEMPT = "is it the largest element?"
+
+
+def _attempt_guard(text, *, path=PATH_REPLY, level=1, reply=_ATTEMPT, non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_MAX_Q,
+            course_text=_MAX_COURSE,
+            student_reply=reply if path == PATH_REPLY else None,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+def test_live_case_keeps_the_opening_and_appends_the_fallback_question():
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is not simply the first one. "
+        "It's found by comparing every element with the current maximum and keeping the larger one."
+    )
+    assert out == (
+        "That's not quite right. The maximum element is not simply the first one. "
+        + GUARD_FALLBACK_QUESTION
+    )
+    assert tripped == [RULE_PRONOUN_STATEMENT, RULE_FALLBACK_KEPT_TEXT]
+
+
+def test_only_a_verdict_survives_and_the_fallback_question_follows_it():
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    assert out == "That's not quite right. " + GUARD_FALLBACK_QUESTION
+    assert tripped == [RULE_STATES_ANSWER, RULE_FALLBACK_KEPT_TEXT]
+
+
+def test_nothing_surviving_keeps_the_full_fallback():
+    out, tripped = _attempt_guard("The maximum element is the element that is larger than every other one.")
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_a_removed_opening_sentence_keeps_the_full_fallback():
+    out, tripped = _attempt_guard(
+        "The maximum element is the element that is larger than every other one. Good effort, though."
+    )
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_a_sentence_after_a_removed_one_is_not_kept():
+    out, _ = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one. "
+        "Keep that in mind."
+    )
+    assert out == "That's not quite right. " + GUARD_FALLBACK_QUESTION
+    assert "Keep that in mind" not in out
+
+
+def test_never_more_than_two_sentences_are_kept():
+    out, _ = _attempt_guard(
+        "Not quite. Close, though. Think again. "
+        "The maximum element is the element that is larger than every other one."
+    )
+    assert out == "Not quite. Close, though. " + GUARD_FALLBACK_QUESTION
+
+
+def test_an_intro_line_ending_in_a_colon_is_not_kept():
+    out, _ = _attempt_guard(
+        "Not quite. Here is the idea:\n\n"
+        "The maximum element is the element that is larger than every other one."
+    )
+    assert out == "Not quite. " + GUARD_FALLBACK_QUESTION
+
+
+def test_kept_text_never_holds_a_question_of_its_own():
+    out, _ = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    kept = out[: -len(GUARD_FALLBACK_QUESTION)]
+    assert "?" not in kept
+    assert out.count("?") == GUARD_FALLBACK_QUESTION.count("?")
+
+
+def test_a_non_answer_keeps_its_full_fallback():
+    out, tripped = _attempt_guard(
+        "That's fine. The maximum element is the element that is larger than every other one.",
+        reply="no",
+        non_answer=True,
+    )
+    assert out == GUARD_FALLBACK_NON_ANSWER
+    assert tripped[-1] == RULE_FALLBACK
+
+
+@pytest.mark.parametrize("path, level", [(PATH_NEW_QUESTION, 0), (PATH_HINT, 1), (PATH_HINT, 2)])
+def test_new_question_and_hint_paths_keep_the_full_fallback(path, level):
+    out, tripped = _attempt_guard(
+        "That's not quite right. The maximum element is the element that is larger than every other one.",
+        path=path,
+        level=level,
+    )
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+@pytest.mark.parametrize("level", [3, 4])
+def test_hint_3_and_the_full_explanation_keep_the_full_fallback(level):
+    out, tripped = _attempt_guard("That's not quite right. See Example 7 for the method.", level=level)
+    assert out == GUARD_FALLBACK_QUESTION
+    assert tripped[-1] == RULE_FALLBACK
+
+
+def test_fallback_kept_text_logs_the_rule_name_only(caplog):
+    reply = (
+        "That's not quite right. The maximum element is the element that is larger than every other one."
+    )
+    with caplog.at_level(logging.INFO, logger="agents.tutor.output_guard"):
+        guard_tutor_reply(
+            reply,
+            TutorTurn(
+                path=PATH_REPLY,
+                hint_level=1,
+                question=_MAX_Q,
+                course_text=_MAX_COURSE,
+                student_reply=_ATTEMPT,
+            ),
+        )
+    messages = [r.getMessage() for r in caplog.records]
+    assert "[TUTOR-GUARD] rule=fallback_kept_text path=reply hint_level=1" in messages
+    joined = " ".join(messages).lower()
+    for fragment in ("quite right", "maximum", "largest", "work through"):
+        assert fragment not in joined

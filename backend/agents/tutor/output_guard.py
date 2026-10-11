@@ -28,8 +28,10 @@ What a check does when it trips
 It removes the offending sentence, or only its leading clause where the rest of
 the sentence is still a good question ("Not quite, but what...?"). It never
 asks the model again. If nothing is left, or the low rungs or a reply are left
-with no question, the reply becomes a fixed Socratic question. A reply never
-comes out empty.
+with no question, the reply becomes a fixed Socratic question. A reply to a
+real attempt below Hint 3 keeps its untouched opening (at most two sentences,
+such as "That's not quite right.") ahead of that question. A reply never comes
+out empty.
 
 Last of all, a reply keeps only its first question: the model often stacked
 three, which leaves the student unsure which one to answer.
@@ -80,6 +82,7 @@ RULE_CLAIM_QUESTION = "claim_question"
 RULE_PRONOUN_STATEMENT = "pronoun_statement"
 RULE_BACK_REFERENCE = "back_reference"
 RULE_FORMULA = "formula"
+RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -719,6 +722,35 @@ def _tidy(text: str) -> tuple[str, bool]:
     return re.sub(r"[ \t]{2,}", " ", out).strip(), dropped
 
 
+# ── Keeping the opening when the fallback fires ───────────────────────────────
+
+#: At most this many sentences are kept ahead of the fallback question.
+_MAX_KEPT_SENTENCES = 2
+
+
+def _sentences(lines: list[_Line | None]) -> list[str]:
+    return [s for line in lines if line is not None for s in line.sentences]
+
+
+def _kept_opening(original: list[str], surviving: list[str]) -> list[str]:
+    """
+    The reply's opening sentences that every rule left exactly as they were,
+    up to the first one a rule removed or changed: so nothing kept can follow,
+    or point back at, a removed sentence. At most _MAX_KEPT_SENTENCES, never a
+    question, and it stops before an intro line ending in ":", which would
+    point at text that is no longer there.
+    """
+    kept: list[str] = []
+    for before, after in zip(original, surviving, strict=False):
+        plain = _plain(after)
+        if after != before or _is_question(after) or plain.endswith(":"):
+            break
+        kept.append(after)
+        if len(kept) == _MAX_KEPT_SENTENCES:
+            break
+    return kept
+
+
 # ── The guard ─────────────────────────────────────────────────────────────────
 
 
@@ -734,6 +766,7 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     """Return the guarded reply and the names of the rules that changed it."""
     text, dropped = _tidy(text or "")
     lines = _parse(text)
+    original = _sentences(lines)  # before any rule, to find the untouched opening
     tripped: list[str] = [RULE_FRAGMENT] if dropped else []
     reply_words = _content_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
     student_numbers = _numbers(turn.question) | _numbers(turn.student_reply or "")
@@ -867,6 +900,14 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
         and (low_rung or turn.path == PATH_REPLY)
         and not any(_is_question(s) for line in lines if line for s in line.sentences)
     ):
+        # A reply to a real attempt below Hint 3 keeps what it had already got
+        # right ("That's not quite right.") and gains the fallback question,
+        # instead of losing the verdict along with the removed sentence.
+        if low_rung and turn.path == PATH_REPLY and not turn.is_non_answer:
+            opening = _kept_opening(original, _sentences(lines))
+            if opening:
+                tripped.append(RULE_FALLBACK_KEPT_TEXT)
+                return " ".join(opening) + " " + GUARD_FALLBACK_QUESTION, tripped
         tripped.append(RULE_FALLBACK)
         return (GUARD_FALLBACK_NON_ANSWER if turn.is_non_answer else GUARD_FALLBACK_QUESTION), tripped
 
