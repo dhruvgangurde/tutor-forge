@@ -152,3 +152,27 @@ def test_registered_in_the_runner():
     from eval.runner import SUITES
 
     assert SUITES["grading-checks"] == "eval.suites.grading_checks"
+
+
+class _CitingLiveModel(_FakeLiveModel):
+    """Like a real model: it quotes the evidence in its citations."""
+
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
+        out = json.loads(super().generate_deterministic(prompt, system_instruction))
+        for c in out["criterion_scores"]:
+            c["citations"] = [{"quoted_text": "The index i starts at low - 1", "source_file": "sorting_lab_guide.md",
+                               "page_or_slide": 1}]
+        return json.dumps(out)
+
+
+def test_live_mode_handles_citations_that_quote_the_evidence(monkeypatch):
+    # The first live run stopped here: the fixture's evidence lacked the
+    # "confidence" key that real retrieval provides and citations look up.
+    import main
+    from core.config import settings
+    from eval.suites.grading_checks import run
+
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (_CitingLiveModel(), None))
+    live = asyncio.run(run(live=True))
+    assert live.status == "pass", live.headline

@@ -98,7 +98,7 @@ class _CountingGrader:
 
 def _evidence(fixture: dict) -> list[dict]:
     return [
-        {"text": p, "source_file": fixture["source_file"], "page_or_slide": i + 1, "score": 0.9}
+        {"text": p, "source_file": fixture["source_file"], "page_or_slide": i + 1, "confidence": 0.9}
         for i, p in enumerate(fixture["passages"])
     ]
 
