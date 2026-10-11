@@ -680,7 +680,8 @@ class TestNodes:
         }
         result = generate_questions_node(state, retrieval_service=svc, gemini_flash=flash)
         assert result["status"] == "failed"
-        assert "empty" in result["error"].lower()
+        from core.exceptions import NoUsableQuestions
+        assert result["error"] == str(NoUsableQuestions())  # the plain all-failed wording
 
     def test_bloom_normalization(self):
         """LLM-returned 'APPLY' should be normalized to 'apply'."""

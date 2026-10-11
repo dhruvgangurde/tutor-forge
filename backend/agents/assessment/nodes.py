@@ -97,9 +97,9 @@ _DEFAULT_TYPE_MIX: dict[str, int] = {
 # Each pass = one additional LLM call, so cap to control latency.
 _MAX_DISTRACTOR_IMPROVEMENTS = 3
 
-_NO_QUESTIONS_ERROR = "LLM returned an empty question list."
-#: Shown to the teacher when every question fails validation twice. A fixed,
-#: plain message (core/exceptions.py): never the model's output.
+#: Shown to the teacher when the model returns no question, or every question
+#: fails validation twice. A fixed, plain message (core/exceptions.py): never
+#: the model's output.
 _NO_USABLE_QUESTIONS_ERROR = str(NoUsableQuestions())
 _VALID_TYPES = frozenset({"mcq", "short_answer", "numeric"})
 
@@ -676,7 +676,7 @@ def generate_questions_node(
 
     question_list: list[dict] = parsed.get("questions", [])
     if not question_list:
-        return _failed_state(state, _NO_QUESTIONS_ERROR)
+        return _failed_state(state, _NO_USABLE_QUESTIONS_ERROR)
 
     # ── Optional distractor improvement pass (capped) ─────────────────────────
     mcq_improved = 0
