@@ -329,7 +329,7 @@ def _validate_and_repair(
         else:
             dropped += 1
 
-    raised = needed = 0
+    raised = needed = kept_original = 0
     if not config.get("bloom_mix"):
         blooms = [_normalize_bloom(q.get("bloom_level", "")) for q in kept]
         needed = higher_order_needed(blooms, settings.assessment_min_higher_order_share)
@@ -347,12 +347,14 @@ def _validate_and_repair(
             ):
                 kept[i] = new
                 raised += 1
+            else:
+                kept_original += 1
 
     # Counts only, never question text.
     logger.info(
         "[ASSESSMENT-VALIDATION] checked=%d regenerated=%d dropped=%d kept=%d "
-        "higher_order_needed=%d higher_order_added=%d",
-        len(question_list), regenerated, dropped, len(kept), needed, raised,
+        "higher_order_needed=%d higher_order_added=%d higher_order_kept_original=%d",
+        len(question_list), regenerated, dropped, len(kept), needed, raised, kept_original,
     )
     return kept
 

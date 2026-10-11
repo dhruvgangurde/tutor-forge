@@ -12,6 +12,7 @@ Fake model outputs only. No model, no network.
 """
 
 import json
+import logging
 import uuid
 from unittest.mock import MagicMock
 
@@ -318,6 +319,32 @@ def test_a_replacement_still_at_recall_level_keeps_the_original():
     result, _ = _run({"questions": _recall_quiz()}, [{"question": still_recall}] * 2,
                      config={"topic": "t", "count": 5})
     assert [q["stem"] for q in result["questions"]] == [f"Recall question {i}." for i in range(5)]
+
+
+def _validation_log(caplog):
+    lines = [r.getMessage() for r in caplog.records if "[ASSESSMENT-VALIDATION]" in r.getMessage()]
+    assert len(lines) == 1
+    return lines[0]
+
+
+def test_the_log_counts_originals_kept_because_the_replacement_failed(caplog):
+    still_recall = _short("Another recall question.", bloom="remember")
+    applied = _short("Trace partition on [3, 1, 2].", bloom="apply")
+    with caplog.at_level(logging.INFO, logger="agents.assessment"):
+        _run({"questions": _recall_quiz()}, [{"question": still_recall}, {"question": applied}],
+             config={"topic": "t", "count": 5})
+    line = _validation_log(caplog)
+    assert "higher_order_needed=2 higher_order_added=1 higher_order_kept_original=1" in line
+    assert "Recall question" not in line and "Another recall" not in line and "Trace" not in line
+
+
+def test_the_log_counts_no_kept_original_when_every_replacement_lands(caplog):
+    applied = _short("Trace partition on [3, 1, 2].", bloom="apply")
+    analyzed = _short("Compare two pivot positions.", bloom="analyze")
+    with caplog.at_level(logging.INFO, logger="agents.assessment"):
+        _run({"questions": _recall_quiz()}, [{"question": applied}, {"question": analyzed}],
+             config={"topic": "t", "count": 5})
+    assert "higher_order_added=2 higher_order_kept_original=0" in _validation_log(caplog)
 
 
 def test_a_teachers_bloom_mix_is_never_overridden():
