@@ -8,6 +8,7 @@ import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { NotFoundState } from '../../components/ui/NotFoundState'
 import { CheckIcon } from '../../components/ui/icons'
 import { GradeStatus } from './GradeStatus'
+import { SessionEndingBanner } from './SessionEndingBanner'
 import { SignInAgainDialog } from './SignInAgainDialog'
 import type { StudentQuestion, SubmissionResponseItem } from '../../lib/api/types'
 import { getErrorMessage } from '../../lib/api/errors'
@@ -186,6 +187,7 @@ export function AssessmentTakePage() {
   if (isReviewing) {
     return (
       <div className={styles.quizColumn}>
+        <SessionEndingBanner />
         <div className="page-header">
           <h1 className="page-title">Review Your Answers</h1>
           <p className="page-subtitle">{assessment.title}</p>
@@ -282,6 +284,7 @@ export function AssessmentTakePage() {
 
   return (
     <div className={styles.quizColumn}>
+      <SessionEndingBanner />
       {/* The position is shown once: "Question N of M" beside a thin bar. */}
       <div className={styles.quizHeader}>
         <h1 className={styles.quizTitle}>{assessment.title}</h1>
