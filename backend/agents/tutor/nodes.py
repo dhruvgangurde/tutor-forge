@@ -50,21 +50,40 @@ import logging
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+from agents.tutor.output_guard import (
+    PATH_HINT,
+    PATH_NEW_QUESTION,
+    PATH_REPLY,
+    TutorTurn,
+    guard_tutor_reply,
+)
+from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
     MAX_HINT_LEVEL,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
+    reply_instruction,
     system_instruction_for_level,
 )
 from agents.tutor.query_resolution import (
     SOURCE_MESSAGE,
+    SOURCE_PRIOR_TURN,
+    TURN_NEW_QUESTION,
+    TURN_REPLY,
+    classify_turn,
+    is_non_answer,
     is_pedagogy_skip_request,
     resolve_retrieval_query,
 )
 from agents.tutor.state import TutorState
-from core.context_phrasing import mentions_context, strip_context_references
+from core.context_phrasing import (
+    mentions_context,
+    refers_to_learner_in_third_person,
+    strip_context_references,
+    strip_source_narration,
+)
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 
 logger = logging.getLogger(__name__)
@@ -102,14 +121,17 @@ def retrieve_context_node(
     """
     question = state["question"]
     resolved, source = resolve_retrieval_query(question, state.get("prior_question"))
+    turn_kind = TURN_NEW_QUESTION if source == SOURCE_MESSAGE else classify_turn(question)
 
     if source != SOURCE_MESSAGE:
+        # Lengths only: both texts are what the student typed.
         logger.info(
-            "[QUERY-RESOLUTION] session_id=%s message=%r had too little topical "
-            "content to retrieve on; using prior turn %r instead.",
+            "[QUERY-RESOLUTION] session_id=%s message_chars=%d is a %s, not a new "
+            "question; retrieving on the open question (%d chars) instead.",
             state.get("session_id"),
-            question[:80],
-            resolved[:80],
+            len(question),
+            turn_kind,
+            len(resolved),
         )
 
     result = retrieval_service.retrieve(state["course_id"], resolved)
@@ -117,6 +139,8 @@ def retrieve_context_node(
         **state,
         "resolved_question": resolved,
         "retrieval_query_source": source,
+        "turn_kind": turn_kind,
+        "is_non_answer": turn_kind == TURN_REPLY and is_non_answer(question),
         "pedagogy_skip_requested": is_pedagogy_skip_request(question),
         "retrieval_result": {
             "query": result.query,
@@ -161,11 +185,11 @@ def check_groundedness_node(
     grounded = retrieval_service.is_grounded(result, threshold=threshold)
 
     logger.info(
-        "[GROUNDEDNESS-DECISION] session_id=%s course_id=%s query=%r "
+        "[GROUNDEDNESS-DECISION] session_id=%s course_id=%s query_chars=%d "
         "query_source=%s top_score=%.4f threshold=%.2f threshold_source=%s grounded=%s",
         state.get("session_id"),
         state.get("course_id"),
-        (state.get("resolved_question") or state["question"])[:120],
+        len(state.get("resolved_question") or state["question"]),
         state.get("retrieval_query_source", SOURCE_MESSAGE),
         top_score,
         threshold,
@@ -256,6 +280,7 @@ def generate_guiding_question_node(
     state: TutorState,
     retrieval_service: "RetrievalService",
     gemini_pro: "GeminiProClient",
+    is_hint: bool = False,
 ) -> TutorState:
     """
     Generate the tutor turn for this hint level, grounded in retrieved context.
@@ -272,45 +297,86 @@ def generate_guiding_question_node(
     string "give me the answer" produces nonsense, and the retrieved context is
     about the prior topic anyway.
     """
+    from core.config import settings
     from retrieval.models import Chunk, RetrievalResult
 
     raw = state.get("retrieval_result") or {}
     chunks = [Chunk(**c) for c in raw.get("chunks", [])]
-    result = RetrievalResult(
-        query=raw.get("query", ""),
-        chunks=chunks,
-        confidence_scores=raw.get("confidence_scores", []),
-    )
+    scores = raw.get("confidence_scores", [])
 
-    context = retrieval_service.build_context_window(result, token_budget=3000)
+    # Only passages that clear the groundedness bar on their own reach the
+    # model and the citations. All five retrieved chunks used to go in, so a
+    # low-scoring passage on three-phase loads was stitched into an answer
+    # about charges. The gate has already passed, so the best chunk clears it.
+    threshold = settings.active_groundedness_threshold
+    relevant = [(c, s) for c, s in zip(chunks, scores) if s >= threshold]
+    if relevant:
+        chunks, scores = [c for c, _ in relevant], [s for _, s in relevant]
+    result = RetrievalResult(query=raw.get("query", ""), chunks=chunks, confidence_scores=scores)
+
+    context = retrieval_service.build_context_window(
+        result, token_budget=settings.tutor_context_token_budget
+    )
     citations = retrieval_service.build_citation_bundle(result)
 
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
+    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
 
-    # F23: delimit untrusted inputs (student question + uploaded course text) so
-    # instructions embedded inside them cannot override the tutor's task.
-    prompt = (
-        f"Student question:\n{wrap_untrusted(topic, 'STUDENT QUESTION')}\n\n"
-        f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
-    )
+    # F23: delimit untrusted inputs (student text, the tutor's earlier turn and
+    # uploaded course text) so instructions embedded in them cannot override the
+    # tutor's task. None of it ever goes into the system instruction.
+    if in_conversation:
+        # A reply or follow-up: the model needs the open question, what it
+        # asked last, and what the student said, or it cannot judge the reply.
+        parts = [f"The question we are working on:\n{wrap_untrusted(topic, 'THE QUESTION')}"]
+        if state.get("tutor_last_message"):
+            parts.append(
+                f"Your last message:\n{wrap_untrusted(state['tutor_last_message'], 'YOUR LAST MESSAGE')}"
+            )
+        parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
+        parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
+        prompt = "\n\n".join(parts)
+        system = reply_instruction(bool(state.get("is_non_answer")), hint_level)
+    else:
+        # Labelled "The question", not "Student question": the label was
+        # echoed back as "the student" in the reply.
+        prompt = (
+            f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}\n\n"
+            f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
+        )
+        system = system_instruction_for_level(hint_level)
+
     raw_response = gemini_pro.generate(
         prompt,
         temperature=TUTOR_TEMPERATURE,
-        system_instruction=system_instruction_for_level(hint_level)
-        + "\n\n"
-        + UNTRUSTED_CONTENT_NOTICE,
+        system_instruction=system + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
     )
 
     # Every ladder rung now tells the model never to mention "the context", but
     # that instruction is exactly what was already failing — a student was shown
     # "the course context provided does not directly mention...". So the output
     # is sanitised too, on the same principle as the grading groundedness gate:
-    # an instruction the model may ignore is not an enforcement.
-    response = strip_context_references(raw_response)
-    if response != raw_response:
+    # an instruction the model may ignore is not an enforcement. Simple LaTeX
+    # is turned into plain text first, since the chat does not render maths.
+    if in_conversation:
+        path = PATH_REPLY
+    else:
+        path = PATH_HINT if is_hint else PATH_NEW_QUESTION
+    cleaned = to_plain_math(raw_response)
+    response = strip_source_narration(strip_context_references(cleaned))
+    # Both warnings below log only the rule, the path and the level, in the
+    # same form as the output guard: never the reply, which can carry what the
+    # student wrote, and never the session id.
+    if refers_to_learner_in_third_person(response):
+        # Not rewritten ("the student is considering" has no safe "you" form);
+        # loud so the prompt can be tightened if it keeps happening.
+        logger.warning(
+            "[TUTOR-GUARD] rule=third_person_learner path=%s hint_level=%s", path, hint_level
+        )
+    if response != cleaned:
         logger.info(
-            "Stripped context framing from tutor response (session %s).",
+            "Stripped context framing or source narration from tutor response (session %s).",
             state.get("session_id"),
         )
     elif mentions_context(response):
@@ -318,11 +384,22 @@ def generate_guiding_question_node(
         # module does not handle yet. Loud so it can be added, not shipped
         # silently.
         logger.warning(
-            "Tutor response still mentions the context and was NOT sanitised "
-            "(session %s): %r",
-            state.get("session_id"),
-            response[:160],
+            "[TUTOR-GUARD] rule=unhandled_context_mention path=%s hint_level=%s", path, hint_level
         )
+
+    # The prompt rules on invented statements, stating the answer, verdicts
+    # after a non-answer and worked-example leakage are enforced here too.
+    response = guard_tutor_reply(
+        response,
+        TutorTurn(
+            path=path,
+            hint_level=hint_level,
+            question=topic,
+            course_text="\n\n".join(c.text for c in chunks),
+            student_reply=state["question"] if in_conversation else None,
+            is_non_answer=bool(state.get("is_non_answer")),
+        ),
+    )
 
     return {
         **state,
@@ -334,6 +411,7 @@ def generate_guiding_question_node(
             "hint_level": hint_level,
             "is_full_explanation": hint_level >= FULL_EXPLANATION_LEVEL,
             "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+            "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
         },
     }
 
@@ -357,7 +435,9 @@ def advance_hint_node(
     """
     new_level = min(state["hint_level"] + 1, MAX_HINT_LEVEL)
     state_with_level = {**state, "hint_level": new_level}
-    return generate_guiding_question_node(state_with_level, retrieval_service, gemini_pro)
+    return generate_guiding_question_node(
+        state_with_level, retrieval_service, gemini_pro, is_hint=True
+    )
 
 
 # ── Node 6 ────────────────────────────────────────────────────────────────────

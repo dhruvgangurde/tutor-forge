@@ -38,40 +38,16 @@ from core.config import assert_safe_production_config, legacy_env_warnings, sett
 from core.exceptions import register_exception_handlers
 from core.logging import RequestIdMiddleware, configure_logging
 from core.ratelimit import RateLimitMiddleware
-from core.retry import call_with_retry
+from core.gemini_calls import call_gemini, wait_cap
 from core.security_headers import SecurityHeadersMiddleware
+from core.throttle import EMBED, GENERATE, embedding_batch_limit, throttle
 
 
 # ── Gemini client wrappers ────────────────────────────────────────────────────
 # Imported here to keep lifespan readable; actual classes live in their own modules.
 
-def _transient_gemini_errors() -> tuple[type[BaseException], ...]:
-    """
-    Exception types that warrant a retry (F10): timeouts, connection drops, and
-    the transient google-api-core status errors (429/503/deadline/500). Bad
-    requests, auth, and not-found errors are intentionally excluded so they fail
-    fast. google.api_core is a google-generativeai dependency; if it is somehow
-    unavailable we still retry the stdlib transient errors.
-    """
-    errors: list[type[BaseException]] = [TimeoutError, ConnectionError]
-    try:
-        from google.api_core import exceptions as gexc
-
-        errors += [
-            gexc.TooManyRequests,       # 429
-            gexc.ResourceExhausted,     # 429 (quota)
-            gexc.ServiceUnavailable,    # 503
-            gexc.DeadlineExceeded,      # 504 / timeout
-            gexc.InternalServerError,   # 500
-            gexc.Aborted,               # transient conflict
-        ]
-    except Exception:  # noqa: BLE001 - retry set is best-effort
-        pass
-    return tuple(errors)
-
-
-# Computed once; used by both real clients.
-_GEMINI_TRANSIENT = _transient_gemini_errors()
+#: The Gemini API accepts at most this many texts in one embedding request.
+_EMBED_BATCH_LIMIT = 100
 
 
 class GeminiProClient:
@@ -92,6 +68,8 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> str:
+            # Every attempt is a request; background jobs may wait longer for a slot.
+            throttle(GENERATE, self._model_name, max_wait=wait_cap())
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,
@@ -103,38 +81,97 @@ class GeminiProClient:
             )
             return response.text
 
-        return call_with_retry(
-            _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini Pro generate ({self._model_name})",
+        return call_gemini(
+            _call, description=f"Gemini Pro generate ({self._model_name})", generation=True
         )
 
     def generate_deterministic(self, prompt: str) -> str:
         """Enforces temperature=0 — required for all grading calls (FR-05.3)."""
         return self.generate(prompt, temperature=0.0)
 
+    @property
+    def embedding_model_name(self) -> str:
+        """Recorded on new collections; see retrieval/service.py."""
+        return settings.embedding_model
+
+    @property
+    def embedding_dimensions(self) -> int:
+        """One configured size for indexing and querying alike."""
+        return settings.embedding_dimensions
+
     def embed(self, text: str) -> list[float]:
         import google.generativeai as genai
 
         def _call() -> list[float]:
+            throttle(EMBED, settings.embedding_model, max_wait=wait_cap())
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=text,
                 task_type="retrieval_document",
+                output_dimensionality=settings.embedding_dimensions,
                 request_options={"timeout": settings.gemini_timeout_seconds},
             )
             return result["embedding"]
 
-        return call_with_retry(
+        return call_gemini(
+            _call, description=f"Gemini embed ({settings.embedding_model})", generation=False
+        )
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """
+        Embed course chunks for indexing, ``embedding_batch_size`` per request.
+
+        One request per batch, each paced and retried on its own. On the free
+        tier every text counts as a request, so pacing weighs a batch by its
+        texts, and a batch is never larger than the per-minute allowance (nor
+        than the API's 100).
+        """
+        size = embedding_batch_limit(_EMBED_BATCH_LIMIT)
+        # Course chunks are only embedded by background ingestion: a 429 waits
+        # out the window and retries, within the background wait limit.
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), size):
+            vectors.extend(
+                self._embed_batch(texts[start:start + size], "retrieval_document", background=True)
+            )
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embed a search query; queries use the query task type, chunks the document one."""
+        return self._embed_batch([text], "retrieval_query")[0]
+
+    def _embed_batch(
+        self, texts: list[str], task_type: str, background: bool | None = None
+    ) -> list[list[float]]:
+        import google.generativeai as genai
+
+        def _call() -> list[list[float]]:
+            # Weighed by texts: each one counts against the per-minute quota.
+            throttle(
+                EMBED, settings.embedding_model, weight=len(texts), max_wait=wait_cap(background)
+            )
+            result = genai.embed_content(
+                model=settings.embedding_model,
+                content=texts,
+                task_type=task_type,
+                # The same size for chunks and queries: a query embedded at the
+                # model's default (3072 for gemini-embedding-001) cannot be
+                # compared with chunks indexed at 768.
+                output_dimensionality=settings.embedding_dimensions,
+                request_options={"timeout": settings.gemini_timeout_seconds},
+            )
+            vectors = result["embedding"]
+            if len(vectors) != len(texts):
+                raise ValueError(
+                    f"Gemini returned {len(vectors)} embeddings for {len(texts)} texts"
+                )
+            return vectors
+
+        return call_gemini(
             _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini embed ({settings.embedding_model})",
+            description=f"Gemini embed x{len(texts)} ({settings.embedding_model})",
+            generation=False,
+            background=background,
         )
 
 
@@ -156,6 +193,8 @@ class GeminiFlashClient:
         import google.generativeai as genai
 
         def _call() -> str:
+            # Every attempt is a request; background jobs may wait longer for a slot.
+            throttle(GENERATE, self._model_name, max_wait=wait_cap())
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,
@@ -167,13 +206,8 @@ class GeminiFlashClient:
             )
             return response.text
 
-        return call_with_retry(
-            _call,
-            attempts=settings.gemini_max_attempts,
-            base_delay=settings.gemini_retry_base_delay,
-            max_delay=settings.gemini_retry_max_delay,
-            retry_on=_GEMINI_TRANSIENT,
-            description=f"Gemini Flash generate ({self._model_name})",
+        return call_gemini(
+            _call, description=f"Gemini Flash generate ({self._model_name})", generation=True
         )
 
 

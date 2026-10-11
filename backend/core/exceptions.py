@@ -94,6 +94,25 @@ class DomainError(Exception):
     """
 
 
+#: What a person is told when the AI provider is rate-limiting or over quota.
+AI_BUSY_MESSAGE = "The AI service is busy. Please try again in a minute."
+
+
+class AIServiceBusy(Exception):
+    """
+    The AI provider refused or timed out for capacity reasons (a 429, a quota,
+    a timeout) and waiting within the allowed time did not help.
+
+    ``str()`` is always the plain AI_BUSY_MESSAGE, so wherever it is shown it
+    never carries the provider's own text. ``reason`` says what happened, for
+    logs and the stored ingestion error only.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(AI_BUSY_MESSAGE)
+        self.reason = reason
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all global exception handlers on the FastAPI application."""
 
@@ -106,6 +125,20 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=400,
             content={"error": "bad_request", "detail": str(exc)},
+            headers=_correlation_headers(rid),
+        )
+
+    @app.exception_handler(AIServiceBusy)
+    async def ai_busy_handler(request: Request, exc: AIServiceBusy) -> JSONResponse:
+        # 503 with fixed wording: the provider's own text (quota names, retry
+        # delays) stays in the log, never in the response.
+        with bind_request_id(request) as rid:
+            logger.warning(
+                "AI service busy on %s %s: %s", request.method, request.url.path, exc.reason
+            )
+        return JSONResponse(
+            status_code=503,
+            content={"error": "ai_busy", "detail": AI_BUSY_MESSAGE},
             headers=_correlation_headers(rid),
         )
 

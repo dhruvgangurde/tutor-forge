@@ -591,7 +591,7 @@ async def submit_assessment(
         status="pending_grading",
         message=(
             "Your submission was received. "
-            "AI grading is in progress — your instructor must review before grades are released."
+            "AI grading is in progress — your teacher must review before grades are released."
         ),
     )
 

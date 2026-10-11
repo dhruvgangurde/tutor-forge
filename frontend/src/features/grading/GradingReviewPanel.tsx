@@ -149,7 +149,7 @@ export function GradingReviewPanel({ submissionId, onFinalized }: GradingReviewP
           </span>
         </div>
         <p className="score-summary-note">
-          Instructor review required — this score is not released to the student until you
+          Teacher review required — this score is not released to the student until you
           approve or override it.
         </p>
       </div>

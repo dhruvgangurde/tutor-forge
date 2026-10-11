@@ -33,7 +33,13 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_pro_model: str = "gemini-2.5-pro"
     gemini_flash_model: str = "gemini-2.5-flash"
-    embedding_model: str = "text-embedding-004"
+    # text-embedding-004 is retired; gemini-embedding-001 returns 3072
+    # dimensions unless asked for fewer, so the size is set explicitly and used
+    # for indexing and querying alike. Existing 768-dimension collections stay
+    # the right size (but see retrieval/service.py: a different model is still
+    # refused, because its vectors are not comparable).
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dimensions: int = 768
 
     # ── ChromaDB ──────────────────────────────────────────────────────────────
     # Path is relative to the working directory (backend/) when uvicorn is launched.
@@ -94,6 +100,12 @@ class Settings(BaseSettings):
     # Re-measure if the embedding model changes; the number is scale-specific.
     groundedness_threshold_ollama: float = 0.57
 
+    # ── Tutor ─────────────────────────────────────────────────────────────────
+    # How much retrieved course text one tutor turn may put in front of the
+    # model, in approximate tokens (RetrievalService.build_context_window uses
+    # 4 characters per token). Chunks are added best-first until it is spent.
+    tutor_context_token_budget: int = 3000
+
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
@@ -125,6 +137,21 @@ class Settings(BaseSettings):
     gemini_retry_base_delay: float = 0.5     # seconds; first backoff
     gemini_retry_max_delay: float = 8.0      # seconds; backoff ceiling
     gemini_timeout_seconds: float = 30.0     # per-request deadline
+    # Longest wait for one interactive Gemini call (tutor chat, hints, query
+    # embedding): across its retries, and separately while waiting for a pacing
+    # slot. A 429 is not retried here: it fails fast as "The AI service is busy".
+    gemini_max_wait_seconds: float = 60.0
+    # The same limit for every background job: course ingestion (embedding and
+    # outline), assessment generation and grading. Nobody waits on a page, so a
+    # 429 waits at least a full one-minute window and retries, within this.
+    gemini_ingest_max_wait_seconds: float = 300.0
+    # Client-side pacing (core/throttle.py), per model, in requests per minute.
+    # Defaults are safe for the free tier; 0 turns pacing off.
+    gemini_generate_rpm: int = 5
+    gemini_embed_rpm: int = 90
+    # Course chunks embedded per request (the API maximum is 100). A 165-chunk
+    # upload is two requests, not 165.
+    embedding_batch_size: int = 100
 
     # ── Background job recovery (F4-minimal) ──────────────────────────────────
     # A job left in an in-flight state (assessment "generating", ingestion

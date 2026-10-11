@@ -8,11 +8,11 @@ Responsibilities:
   2. _run_grading_graph()     — async wrapper; catches exceptions; marks Submission
   3. get_grading_detail()     — load GradeRecommendation + parsed rationale for API
   4. list_grading_queue()     — teacher queue of submissions needing review
-  5. finalize_grade()         — write FinalGrade + GradeAuditRecord (instructor action)
+  5. finalize_grade()         — write FinalGrade + GradeAuditRecord (teacher action)
 
 Architecture constraints:
   - The BackgroundTask owns its own DB session (never shares with the HTTP request).
-  - GradeRecommendation is the agent's output; FinalGrade is instructor-only.
+  - GradeRecommendation is the agent's output; FinalGrade is teacher-only.
   - No grade is released to the student until finalize_grade() is called.
   - Temperature = 0 is enforced inside GeminiProClient.generate_deterministic().
 """
@@ -198,6 +198,7 @@ async def _run_grading_graph(
     """
     from agents.grading.graph import build_grading_graph
     from core.database import AsyncSessionFactory
+    from core.gemini_calls import background_work
 
     async with AsyncSessionFactory() as db:
         try:
@@ -223,7 +224,10 @@ async def _run_grading_graph(
                 "error": None,
             }
 
-            final_state = await graph.ainvoke(initial_state)
+            # A background job: a 429 waits out the window and retries instead
+            # of failing fast as it would for a tutor reply (core/gemini_calls.py).
+            with background_work():
+                final_state = await graph.ainvoke(initial_state)
 
             if final_state.get("status") == "failed":
                 logger.error(
@@ -443,7 +447,7 @@ async def finalize_grade(
     Write FinalGrade + GradeAuditRecord in a single atomic transaction.
 
     This is the ONLY path to a released grade — enforcing the
-    'instructor approval required before grade release' constraint.
+    'teacher approval required before grade release' constraint.
 
     Raises ValueError on:
       - No pending recommendation for this submission

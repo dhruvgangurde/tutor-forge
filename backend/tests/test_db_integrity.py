@@ -117,3 +117,58 @@ def test_fk_indexes_declared():
 def test_submission_unique_constraint_declared():
     names = {c.name for c in Submission.__table__.constraints if c.name}
     assert "uq_submissions_assessment_student" in names
+
+
+# ── 0007: tutoring_sessions.anchor_message_id ─────────────────────────────────
+
+def test_tutoring_anchor_column_declared():
+    """Nullable FK to tutoring_messages.id, ON DELETE SET NULL, indexed."""
+    from db.models import TutoringSession
+
+    column = TutoringSession.__table__.c.anchor_message_id
+    assert column.nullable is True
+    (fk,) = column.foreign_keys
+    assert fk.target_fullname == "tutoring_messages.id"
+    assert fk.ondelete == "SET NULL"
+    assert fk.constraint.name == "fk_tutoring_sessions_anchor_message_id"
+    indexes = {ix.name: [c.name for c in ix.columns] for ix in TutoringSession.__table__.indexes}
+    assert indexes["ix_tutoring_sessions_anchor_message_id"] == ["anchor_message_id"]
+
+
+def test_tutoring_relationships_still_resolve_with_two_fk_paths():
+    """messages <-> session must keep using session_id, not the new anchor FK."""
+    from sqlalchemy.orm import configure_mappers
+
+    from db.models import TutoringMessage, TutoringSession
+
+    configure_mappers()
+    assert [c.name for c in TutoringSession.messages.property.local_columns] == ["id"]
+    assert [c.name for c in TutoringMessage.session.property.local_columns] == ["session_id"]
+
+
+def test_migration_0007_revision_chain_and_names():
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "db" / "migrations" / "versions" / "0007_tutoring_anchor.py"
+    spec = importlib.util.spec_from_file_location("mig0007", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0007_tutoring_anchor"
+    assert module.down_revision == "0006_revoked_tokens"
+    # The migration creates exactly the names the ORM declares.
+    assert module._FK == "fk_tutoring_sessions_anchor_message_id"
+    assert module._INDEX == "ix_tutoring_sessions_anchor_message_id"
+    assert callable(module.upgrade) and callable(module.downgrade)
+
+
+def test_migrations_have_a_single_head():
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "db" / "migrations"))
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0007_tutoring_anchor"]

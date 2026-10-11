@@ -850,7 +850,7 @@ async def persist_recommendation_node(
     Architecture constraint:
       This node writes ONLY GradeRecommendation — never FinalGrade.
       FinalGrade is exclusively written by grading/service.finalize_grade()
-      after explicit instructor action.
+      after explicit teacher action.
 
     Transaction:
       - GradeRecommendation INSERT

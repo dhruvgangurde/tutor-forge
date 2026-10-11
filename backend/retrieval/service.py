@@ -16,6 +16,7 @@ refuse to generate an LLM response if it returns False. This is the hard
 constraint that prevents hallucination (AC-02: 0 out-of-corpus leakage).
 """
 
+import logging
 import uuid
 from typing import TYPE_CHECKING
 
@@ -29,10 +30,29 @@ if TYPE_CHECKING:
 
 _COLLECTION_PREFIX = "course_"
 
+_log = logging.getLogger(__name__)
+
 
 def _collection_name(course_id: uuid.UUID) -> str:
     """Deterministic Chroma collection name for a course."""
     return f"{_COLLECTION_PREFIX}{str(course_id).replace('-', '_')}"
+
+
+class EmbeddingMismatch(RuntimeError):
+    """
+    A course collection was embedded with a different provider, model or vector
+    size than the one now configured.
+
+    Vectors from different embedding models are not comparable even when their
+    sizes match, so querying such a collection would return meaningless matches
+    or, when the sizes differ, a Chroma error. This says what differs instead.
+    The fix is to upload the course again under the current configuration.
+    """
+
+
+#: Legacy collections (no embedding metadata) already warned about, so the log
+#: says it once per collection per process rather than on every question.
+_warned_legacy: set[str] = set()
 
 
 class RetrievalService:
@@ -75,8 +95,83 @@ class RetrievalService:
             metadata={
                 "course_id": str(course_id),
                 "hnsw:space": "cosine",
+                # Which embedding made these vectors, so a later query with a
+                # different one fails clearly instead of matching nonsense.
+                **self._embedding_identity(),
             },
         )
+
+    # ── Embedding identity ────────────────────────────────────────────────────
+
+    def _embedding_identity(self) -> dict[str, str | int]:
+        """
+        Provider, embedding model and vector size of the configured embedding
+        client, as collection metadata. Empty when the client does not say
+        (a test double), which is then treated like a legacy collection.
+        """
+        model = getattr(self._gemini, "embedding_model_name", None)
+        if not isinstance(model, str) or not model:
+            return {}
+        identity: dict[str, str | int] = {
+            "embedding_provider": settings.llm_provider,
+            "embedding_model": model,
+        }
+        dimensions = getattr(self._gemini, "embedding_dimensions", None)
+        if isinstance(dimensions, int) and dimensions > 0:
+            identity["embedding_dim"] = dimensions
+        return identity
+
+    def _check_embedding_identity(self, collection, name: str) -> dict:
+        """
+        Fail with EmbeddingMismatch when the collection was embedded by another
+        provider or model. Returns the collection's metadata.
+        """
+        meta = collection.metadata or {}
+        current = self._embedding_identity()
+        if "embedding_model" in meta and current:
+            stored = (meta.get("embedding_provider"), meta.get("embedding_model"))
+            active = (current["embedding_provider"], current["embedding_model"])
+            if stored != active:
+                raise EmbeddingMismatch(
+                    f"Collection {name} was embedded with {stored[0]}/{stored[1]} but the "
+                    f"configured embedding is {active[0]}/{active[1]}. Upload the course "
+                    "again to re-index it."
+                )
+        return meta
+
+    @staticmethod
+    def _stored_vector_size(collection) -> int | None:
+        """The size of one stored vector, or None if the collection is empty."""
+        peek = collection.get(limit=1, include=["embeddings"])
+        vectors = peek.get("embeddings")
+        if vectors is None or len(vectors) == 0:
+            return None
+        return len(vectors[0])
+
+    def _check_vector_size(self, collection, meta: dict, name: str, size: int) -> None:
+        """
+        Fail with EmbeddingMismatch when ``size`` differs from the collection's
+        vectors. Legacy collections (no embedding metadata) are checked against
+        one stored vector and logged, never refused for that alone.
+        """
+        expected = meta.get("embedding_dim")
+        if not isinstance(expected, int) or expected <= 0:
+            expected = self._stored_vector_size(collection)
+            if "embedding_model" not in meta and name not in _warned_legacy:
+                _warned_legacy.add(name)
+                _log.warning(
+                    "[EMBEDDING-LEGACY] collection=%s has no embedding metadata; checked "
+                    "the size of one stored vector only (%s). Upload the course again to "
+                    "record its embedding.",
+                    name,
+                    expected,
+                )
+        if expected is not None and size != expected:
+            raise EmbeddingMismatch(
+                f"Collection {name} holds {expected}-dimension vectors but the configured "
+                f"embedding produced {size}. Check EMBEDDING_DIMENSIONS, or upload the "
+                "course again to re-index it."
+            )
 
     def delete_course_collection(self, course_id: uuid.UUID) -> None:
         """Delete the ChromaDB collection for a course (e.g. on course removal)."""
@@ -113,6 +208,7 @@ class RetrievalService:
         )
 
         collection = self._chroma.get_collection(collection_name)
+        meta = self._check_embedding_identity(collection, collection_name)
 
         documents = [c.text for c in chunks]
         logger.info(
@@ -122,7 +218,9 @@ class RetrievalService:
             settings.embedding_model,
         )
 
-        embeddings = [self._gemini.embed(doc) for doc in documents]
+        # One request per batch, not per chunk: a 165-chunk upload used to
+        # make 165 calls and trip the provider's per-minute limit.
+        embeddings = self._gemini.embed_documents(documents)
         if embeddings:
             logger.info(
                 "[ADD-CHUNKS-EMBEDDING-COMPLETE] course_id=%s chunks=%d embedding_dim=%d",
@@ -130,6 +228,7 @@ class RetrievalService:
                 len(embeddings),
                 len(embeddings[0]),
             )
+            self._check_vector_size(collection, meta, collection_name, len(embeddings[0]))
 
         ids = [c.chunk_id or str(uuid.uuid4()) for c in chunks]
         metadatas = [
@@ -176,11 +275,13 @@ class RetrievalService:
         result = RetrievalResult(query=query)
         collection_name = _collection_name(course_id)
 
+        # Counts and scores only: the query is what the student typed, and the
+        # chunks are course text, so neither belongs in the log.
         logger.info(
-            "[RETRIEVE-START] course_id=%s collection_name=%s query=%r top_k=%d",
+            "[RETRIEVE-START] course_id=%s collection_name=%s query_chars=%d top_k=%d",
             course_id,
             collection_name,
-            query,
+            len(query),
             top_k,
         )
 
@@ -201,12 +302,15 @@ class RetrievalService:
             # Collection doesn't exist — return empty result; is_grounded() will be False
             return result
 
+        # Checked before the query is embedded, so a mismatch costs no API call.
+        meta = self._check_embedding_identity(collection, collection_name)
+
         # Embed query
-        query_embedding = self._gemini.embed(query)
+        query_embedding = self._gemini.embed_query(query)
+        self._check_vector_size(collection, meta, collection_name, len(query_embedding))
         logger.info(
-            "[RETRIEVE-QUERY-EMBEDDED] course_id=%s query=%r embedding_dim=%d",
+            "[RETRIEVE-QUERY-EMBEDDED] course_id=%s embedding_dim=%d",
             course_id,
-            query,
             len(query_embedding),
         )
 
@@ -222,9 +326,8 @@ class RetrievalService:
         distances = response.get("distances", [[]])[0]
 
         logger.info(
-            "[RETRIEVE-RESPONSE] course_id=%s query=%r results=%d",
+            "[RETRIEVE-RESPONSE] course_id=%s results=%d",
             course_id,
-            query,
             len(docs),
         )
 
@@ -234,15 +337,11 @@ class RetrievalService:
             page_or_slide = meta.get("page_or_slide")
 
             logger.info(
-                "[RETRIEVE-RESULT-%d] rank=%d distance=%.4f confidence=%.4f "
-                "source=%s page=%s text_preview=%r",
+                "[RETRIEVE-RESULT-%d] rank=%d distance=%.4f confidence=%.4f",
                 idx,
                 idx,
                 dist,
                 confidence,
-                source_file,
-                page_or_slide,
-                doc[:150].replace("\n", " "),
             )
 
             chunk = Chunk(
@@ -255,9 +354,8 @@ class RetrievalService:
             result.confidence_scores.append(confidence)
 
         logger.info(
-            "[RETRIEVE-COMPLETE] course_id=%s query=%r top_score=%.4f chunks=%d",
+            "[RETRIEVE-COMPLETE] course_id=%s top_score=%.4f chunks=%d",
             course_id,
-            query,
             result.top_score if not result.is_empty() else 0.0,
             len(result.chunks),
         )

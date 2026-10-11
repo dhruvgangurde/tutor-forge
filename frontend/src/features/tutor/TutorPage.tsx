@@ -21,9 +21,9 @@ export function TutorPage() {
   const sessions = useSessions()
   const session = sessions.data?.find((s) => s.id === sessionId)
 
-  // Derive hint level from messages
-  const hintLevel =
-    messages && messages.length > 0 ? Math.max(...messages.map((m) => m.hint_level), 0) : 0
+  // The ladder level is the backend's: a new question resets it and a reply
+  // keeps it. The highest level in the history (used before) never reset.
+  const hintLevel = session?.current_hint_level ?? 0
   // A hint needs a question to build on; the backend 400s without one.
   const hasQuestion = (messages ?? []).some((m) => m.role === 'student')
 

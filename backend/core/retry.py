@@ -20,6 +20,15 @@ from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
+
+def _first_line(exc: BaseException) -> str:
+    """
+    The first line of an error, for a log line. Provider errors run on with
+    quota details and documentation links; the first line says what happened.
+    """
+    text = str(exc).strip()
+    return text.splitlines()[0][:300] if text else type(exc).__name__
+
 T = TypeVar("T")
 
 
@@ -33,6 +42,10 @@ def call_with_retry(
     description: str = "operation",
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[], float] = random.random,
+    delay_hint: Callable[[BaseException], float | None] | None = None,
+    max_total_wait: float | None = None,
+    stop_if: Callable[[BaseException], bool] | None = None,
+    attempts_for: Callable[[BaseException], int | None] | None = None,
 ) -> T:
     """
     Call ``fn`` up to ``attempts`` times, retrying only on ``retry_on`` errors.
@@ -42,30 +55,66 @@ def call_with_retry(
     in ``retry_on`` propagates immediately (not retried). When the final attempt
     fails, the last exception is re-raised unchanged.
 
+    Optional hooks, all off by default:
+
+    - ``delay_hint(exc)``: the wait the server asked for (a 429's retry delay).
+      The retry never comes sooner than that; retrying inside the window only
+      spends more of the quota it is waiting for.
+    - ``max_total_wait``: seconds of sleeping allowed across all retries. A wait
+      that would pass it is not started; the last exception is re-raised.
+    - ``stop_if(exc)``: re-raise at once, e.g. a daily quota no wait can fix.
+    - ``attempts_for(exc)``: a lower attempt cap for this kind of failure, e.g.
+      a timed-out generation is tried at most twice.
+
     Raises:
         ValueError: if ``attempts < 1``.
     """
     if attempts < 1:
         raise ValueError("attempts must be >= 1")
 
+    waited = 0.0
     for attempt in range(1, attempts + 1):
         try:
             return fn()
         except retry_on as exc:
-            if attempt >= attempts:
+            limit = attempts
+            if attempts_for is not None:
+                limit = min(attempts, attempts_for(exc) or attempts)
+            if stop_if is not None and stop_if(exc):
                 logger.error(
-                    "%s failed after %d attempt(s): %s", description, attempts, exc
+                    "%s failed and will not be retried: %s", description, _first_line(exc)
+                )
+                raise
+            if attempt >= limit:
+                logger.error(
+                    "%s failed after %d attempt(s): %s", description, attempt, _first_line(exc)
                 )
                 raise
             backoff = min(max_delay, base_delay * (2 ** (attempt - 1)))
             delay = backoff * (0.5 + jitter())
+            hint = delay_hint(exc) if delay_hint is not None else None
+            if hint is not None:
+                delay = max(delay, hint)
+            if max_total_wait is not None and waited + delay > max_total_wait:
+                logger.error(
+                    "%s failed (attempt %d/%d); the next wait of %.1fs would pass the "
+                    "%.0fs limit, giving up: %s",
+                    description,
+                    attempt,
+                    limit,
+                    delay,
+                    max_total_wait,
+                    _first_line(exc),
+                )
+                raise
+            waited += delay
             logger.warning(
                 "%s failed (attempt %d/%d); retrying in %.2fs: %s",
                 description,
                 attempt,
                 attempts,
                 delay,
-                exc,
+                _first_line(exc),
             )
             sleep(delay)
 

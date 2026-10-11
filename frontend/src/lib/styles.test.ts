@@ -108,6 +108,25 @@ describe('restyle colour rules', () => {
   })
 })
 
+describe('tabs and tables (fix round 1)', () => {
+  it('keeps every tab inside the tab list box, so it draws no stray vertical scrollbar', () => {
+    // The list scrolls sideways (overflow-x: auto forces overflow-y: auto); a
+    // tab with a negative bottom margin overflowed it by 1px.
+    expect(blocks(css).find((b) => b.selector === '.tabs')!.body).toMatch(/overflow-x:\s*auto/)
+    const tab = blocks(css).find((b) => b.selector === '.tab')!
+    expect(tab.body).not.toMatch(/margin(-bottom)?:[^;]*-\d/)
+  })
+
+  it('does not light up rows of a read-only table on hover', () => {
+    const readonly = blocks(css).find((b) => b.selector === '.data-table-readonly tbody tr:hover td')!
+    expect(readonly.body).toMatch(/background:\s*transparent/)
+    // It must come after the general hover rule it overrides (same specificity).
+    expect(css.indexOf('.data-table-readonly tbody tr:hover td')).toBeGreaterThan(
+      css.indexOf('.data-table tbody tr:hover td')
+    )
+  })
+})
+
 describe('motion, text size and fonts (phase 6)', () => {
   const reduceBlocks = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
     .map((m) => m[1])

@@ -12,6 +12,8 @@ can act on. The raw message stays in the database for debugging.
 
 from __future__ import annotations
 
+from core.exceptions import AI_BUSY_MESSAGE
+
 _DEFAULT = "Processing the course materials failed. Try uploading the course again."
 
 # (prefix of the stored message, what the teacher is told)
@@ -36,6 +38,7 @@ _REASONS: tuple[tuple[str, str], ...] = (
         "No chapters could be found in these materials. Check that the files "
         "contain course text and upload them again.",
     ),
+    ("AI service busy", AI_BUSY_MESSAGE),
     (
         "Ingestion did not complete",
         "Processing was interrupted before it finished. Upload the course again.",

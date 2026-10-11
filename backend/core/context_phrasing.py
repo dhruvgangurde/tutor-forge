@@ -118,8 +118,11 @@ def strip_context_references(text: str) -> str:
         return text
 
     out = _NEGATION_RE.sub("the course material does not cover", text)
-    out = _SUBJECT_RE.sub("", out)
-    out = _QUALIFIER_RE.sub("", out)
+    # Sentence-aware: a phrase that opened a later sentence used to leave
+    # "difference., potential difference is..." behind.
+    starts_upper = text[:1].isupper()
+    out = _remove_keeping_sentence_case(_SUBJECT_RE, out, capitalise_start=starts_upper)
+    out = _remove_keeping_sentence_case(_QUALIFIER_RE, out, capitalise_start=starts_upper)
 
     # Tidy the seams the removals leave behind.
     out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
@@ -133,3 +136,154 @@ def strip_context_references(text: str) -> str:
     if out and out[0].islower() and text[:1].isupper():
         out = out[0].upper() + out[1:]
     return out
+
+
+# ── Tutor only: narrating the source ──────────────────────────────────────────
+#
+# The tutor opened nearly every turn with "the course material states / mentions
+# / says". The student already sees the cited sources under the reply, so the
+# narration is noise. Kept out of strip_context_references on purpose: that one
+# also cleans assessment stems, which this change is not about.
+
+#: The course, its material and its lectures, by name: "the course", "our
+#: course material", "the course notes", "the lecture slides", "your lecture
+#: notes".
+_COURSE_SUFFIX = r"(?:\s+(?:materials?|notes|content|slides|readings?))"
+_LECTURE = r"(?:the|your|our|this)\s+lectures?(?:\s+(?:notes|slides))?"
+#: The article is optional here, as before ("based on course notes").
+_COURSE = (
+    r"(?:(?:(?:the|your|our|this)\s+)?course" + _COURSE_SUFFIX + r"?|" + _LECTURE + r")\b"
+)
+#: With an article, for "from ...": "from course to course" is left alone.
+_COURSE_NAMED = (
+    r"(?:(?:the|your|our|this)\s+course" + _COURSE_SUFFIX + r"?|" + _LECTURE + r")\b"
+)
+#: Material only, for a closing "in ...": "covered in the course." is ordinary
+#: English, "as you saw in the course notes." is narration.
+_COURSE_MATERIAL = (
+    r"(?:(?:the|your|our|this)\s+course" + _COURSE_SUFFIX + r"|" + _LECTURE + r")\b"
+)
+#: Singular and plural: "the lecture slides say", "the passages show".
+_NARRATING_VERB = (
+    r"(?:states?|says|say|mentions?|notes?|explains?|describes?|indicates?|shows?|"
+    r"tells?\s+us|points?\s+out)"
+)
+
+#: "the course material states that X" -> "X". The claim is kept. Not before
+#: how / why / what...: "the lecture explains how charges move" keeps no claim.
+_SOURCE_SUBJECT_RE = re.compile(
+    r"\b" + _COURSE + r"\s+" + _NARRATING_VERB + r"\s+(?:that\s+)?"
+    r"(?!(?:how|why|what|when|where|which|whether|who)\b)",
+    re.IGNORECASE,
+)
+
+#: "according to the course material, X" / "based on the course material, X" /
+#: "as the course mentions, X" / "as mentioned in the course material" /
+#: "the key idea from the course material about..." / "X, as you saw in the
+#: lecture notes." -> removed.
+_SOURCE_QUALIFIER_RE = re.compile(
+    r"\s*,?\s*(?:"
+    r"(?:according\s+to|based\s+on|as\s+per)\s+" + _COURSE
+    + r"|from\s+" + _COURSE_NAMED
+    + r"|as\s+" + _COURSE + r"\s+" + _NARRATING_VERB
+    + r"|as\s+(?:stated|mentioned|described|explained|noted|shown|given|outlined)\s+in\s+"
+    + _COURSE
+    + r"|in\s+" + _COURSE_MATERIAL + r"(?=\s*[,.?!])"
+    + r")",
+    re.IGNORECASE,
+)
+
+#: The material by other names. "the text", "the reading", "the section" and
+#: "the material" are only removed in the narrating forms below, never on
+#: sight: in a literature course "the text" can be the novel itself.
+_SOURCE = (
+    r"(?:the|this)\s+(?:passages?|text|reading|section|excerpt|extract|materials?|notes|"
+    r"document|sources?)\b"
+)
+
+#: "according to the passage, X" / "X, as described in the text" / "X in the
+#: reading." / "based on the description of <...>" (to the end of its clause) /
+#: "based on the description?" /
+#: a sentence-final "in this context" -> removed.
+_SOURCE_NOUN_QUALIFIER_RE = re.compile(
+    r"\s*,?\s*(?:"
+    r"(?:according\s+to|based\s+on|as\s+per|per|from)\s+" + _SOURCE
+    + r"|as\s+(?:stated|described|mentioned|explained|noted|shown|given|outlined)\s+in\s+" + _SOURCE
+    + r"|in\s+" + _SOURCE + r"(?=\s*[,.?!])"
+    + r"|(?:according\s+to|based\s+on)\s+the\s+description\s+of\b[^,.?!\n]*"
+    # "...means based on the description?": the bare form, only where it opens
+    # or closes a clause, so "write a description of..." is never touched.
+    + r"|(?:according\s+to|based\s+on|from|in|using|given)\s+the\s+description"
+    + r"(?:\s+(?:provided|given|above))?(?!\s+of\b)(?=\s*[,.?!])"
+    + r"|in\s+this\s+context(?=\s*[?.])"
+    + r")",
+    re.IGNORECASE,
+)
+
+#: "the passage says that X" -> "X". The claim is kept. Not before how / why /
+#: what...: "the section explains how charges move" has no claim left to keep.
+_SOURCE_NOUN_SUBJECT_RE = re.compile(
+    r"\b" + _SOURCE + r"\s+(?:" + _NARRATING_VERB + r"|suggests|defines)\s+(?:that\s+)?"
+    r"(?!(?:how|why|what|when|where|which|whether|who)\b)",
+    re.IGNORECASE,
+)
+
+#: For the detector only: the tutor talking about the person it is talking to.
+_THIRD_PERSON_RE = re.compile(r"\bthe\s+(?:student|learner)(?:'s)?\b", re.IGNORECASE)
+
+
+def strip_source_narration(text: str) -> str:
+    """Remove "the course material states that…" style narration, keeping the claim."""
+    if not text:
+        return text
+    out = text
+    for pattern in (
+        _SOURCE_QUALIFIER_RE,
+        _SOURCE_NOUN_QUALIFIER_RE,
+        _SOURCE_SUBJECT_RE,
+        _SOURCE_NOUN_SUBJECT_RE,
+    ):
+        out = _remove_keeping_sentence_case(pattern, out)
+    out = _SPACE_BEFORE_PUNCT_RE.sub(r"\1", out)
+    out = _WS_RE.sub(" ", out).strip()
+    return out
+
+
+def _remove_keeping_sentence_case(
+    pattern: re.Pattern, text: str, capitalise_start: bool = True
+) -> str:
+    """
+    Delete each match. When a match opened a sentence, capitalise what now
+    opens it and drop the comma a leading qualifier leaves behind
+    ("According to the course, like charges repel" -> "Like charges repel").
+
+    ``capitalise_start=False`` leaves the very start of the text as it was
+    written, for callers that also clean lowercase fragments.
+    """
+    out = ""
+    pos = 0
+    capitalise = False
+
+    def take(segment: str) -> str:
+        nonlocal capitalise
+        if capitalise and segment:
+            segment = segment[0].upper() + segment[1:]
+            capitalise = False
+        return segment
+
+    for m in pattern.finditer(text):
+        out += take(text[pos:m.start()])
+        pos = m.end()
+        kept = out.rstrip()
+        if not kept or kept[-1] in ".!?\n":
+            while pos < len(text) and text[pos] in ",;: ":
+                pos += 1
+            capitalise = bool(kept) or capitalise_start
+            if kept and out == kept:
+                out += " "  # the pattern ate the space after the previous sentence
+    return out + take(text[pos:])
+
+
+def refers_to_learner_in_third_person(text: str) -> bool:
+    """True when the reply calls the person it is talking to "the student"."""
+    return bool(text) and bool(_THIRD_PERSON_RE.search(text))

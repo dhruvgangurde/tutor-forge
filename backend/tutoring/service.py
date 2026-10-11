@@ -4,15 +4,19 @@ tutoring/service.py
 Business logic for Socratic tutoring sessions.
 
 Design:
-  - Sessions persist per student-course pair with a current_hint_level.
-  - Each /chat request resets hint_level to 0 (fresh Socratic question).
-  - Each /hint request increments hint_level (up to MAX_HINT_LEVEL=4, the
-    terminal Full Explanation rung) and regenerates guidance at that level.
-  - Both paths supply ``prior_question`` -- the most recent student turn that
-    carried real topical content -- so the tutor graph can retrieve on the
-    conversation's topic when the current message has none of its own. Without
-    it a contentless follow-up ("give me the answer") retrieved on itself,
-    scored below the groundedness bar, and was refused as out-of-corpus.
+  - Sessions persist per student-course pair with a current_hint_level and an
+    anchor: the student message holding the open learning question.
+  - A /chat message that is a NEW question is judged on its own text. If it is
+    grounded it becomes the anchor; if it is refused the anchor is cleared.
+    Either way the hint ladder resets to 0.
+  - Any other /chat message (a reply such as "no" or "I don't know", or a
+    follow-up such as "why?") is judged against the anchor, with the tutor's
+    last turn and the reply in the prompt. The ladder level is kept.
+  - Each /hint request retrieves on the anchor, never on the latest message,
+    and increments hint_level (up to MAX_HINT_LEVEL=4, the terminal Full
+    Explanation rung). With no grounded open question it is a 400, with no
+    model call and nothing saved; a hint never returns the out-of-corpus
+    refusal.
   - Both operations invoke the Tutor LangGraph synchronously (no BackgroundTasks).
   - Messages are persisted with role ("student" | "tutor") and citations (JSON).
 """
@@ -23,14 +27,15 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from agents.tutor.query_resolution import is_low_content
+from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
+from agents.tutor.query_resolution import TURN_NEW_QUESTION, classify_turn
 from db.models import Course, TutoringMessage, TutoringSession, User
 
 if TYPE_CHECKING:
@@ -40,42 +45,64 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: How far back to look for a substantive question. Small on purpose: the
-#: fallback is meant to recover the topic of the conversation the student is
-#: currently in, not to resurrect one from much earlier in the session.
-_PRIOR_QUESTION_LOOKBACK = 10
+#: Tie-break for messages with the same timestamp: the student's message comes
+#: first. On Windows the Python clock ticks every 15.6 ms, so a turn's two rows
+#: could share a timestamp and came back in either order.
+_STUDENT_FIRST = case((TutoringMessage.role == "student", 0), else_=1)
 
 
-async def _recent_student_messages(
-    session_id: uuid.UUID,
-    db: AsyncSession,
-    limit: int = _PRIOR_QUESTION_LOOKBACK,
-) -> list[TutoringMessage]:
-    """Return this session's student messages, most recent first."""
+def _now() -> datetime:
+    """Wall-clock time, taken in Python when the row is created.
+
+    Never a server-side now(): that is the transaction's start time, so every
+    row written in one request would tie again.
+    """
+    return datetime.now(UTC)
+
+
+async def _open_question(session: TutoringSession, db: AsyncSession) -> TutoringMessage | None:
+    """
+    The student message holding the open learning question, or None.
+
+    The stored anchor wins. Without one (sessions from before the anchor
+    existed, or after a new question was refused) it falls back to the most
+    recent student message the classifier calls a new question, else the
+    session's first student message. Whatever it returns still has to pass the
+    groundedness gate before anything is generated from it.
+    """
+    if session.anchor_message_id is not None:
+        anchored = await db.get(TutoringMessage, session.anchor_message_id)
+        if anchored is not None:
+            return anchored
+
+    result = await db.execute(
+        select(TutoringMessage)
+        .where(
+            TutoringMessage.session_id == session.id,
+            TutoringMessage.role == "student",
+        )
+        .order_by(TutoringMessage.created_at.asc())
+    )
+    students = list(result.scalars().all())
+    for msg in reversed(students):
+        if classify_turn(msg.content) == TURN_NEW_QUESTION:
+            return msg
+    return students[0] if students else None
+
+
+async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringMessage | None:
+    """The tutor's most recent turn that was not a refusal: what the student is replying to."""
     result = await db.execute(
         select(TutoringMessage)
         .where(
             TutoringMessage.session_id == session_id,
-            TutoringMessage.role == "student",
+            TutoringMessage.role == "tutor",
+            TutoringMessage.is_refusal.is_(False),
         )
         .order_by(TutoringMessage.created_at.desc())
-        .limit(limit)
+        .limit(1)
     )
-    return list(result.scalars().all())
-
-
-def _first_substantive(messages: list[TutoringMessage]) -> str | None:
-    """
-    Return the content of the most recent message carrying real topic signal.
-
-    Skipping the low-content ones matters: a student who types "give me the
-    answer" and then clicks hint would otherwise have that string become the
-    retrieval query for every subsequent hint in the session.
-    """
-    for msg in messages:
-        if not is_low_content(msg.content):
-            return msg.content
-    return None
+    return result.scalar_one_or_none()
 
 
 async def create_session(
@@ -129,22 +156,40 @@ async def send_chat_message(
     """
     Process a student's question and return a Socratic guiding response.
 
-    1. Resolves prior_question (last substantive student turn) for retrieval
-       fallback, BEFORE this message is persisted.
-    2. Builds TutorState with hint_level=0 (fresh chat resets hints).
-    3. Invokes Tutor graph in 'chat' mode.
-    4. Persists student message and tutor response.
-    5. Resets session.current_hint_level to 0.
+    1. Finds the open learning question and the tutor's last turn, BEFORE this
+       message is persisted, and classifies the message (new question or not).
+    2. Persists the student message at receipt (flushed, committed with the reply).
+    3. Builds TutorState: a new question starts at hint level 0; a reply or
+       follow-up keeps the current level and carries the open question.
+    4. Invokes Tutor graph in 'chat' mode.
+    5. Persists the tutor response, and moves the anchor and the ladder: a
+       grounded new question becomes the anchor, a refused one clears it.
     6. Returns final graph state.
     """
     from agents.tutor.graph import build_tutor_graph
     from agents.tutor.state import TutorState
 
     # Read the history BEFORE persisting this turn, so the current message can
-    # never be selected as its own "prior" question.
-    prior_question = _first_substantive(
-        await _recent_student_messages(session.id, db)
+    # never be selected as its own open question.
+    open_question = await _open_question(session, db)
+    is_new_question = open_question is None or classify_turn(question) == TURN_NEW_QUESTION
+    last_tutor = None if is_new_question else await _last_tutor_turn(session.id, db)
+
+    # Persist the student's message at receipt, stamped now. It used to be
+    # written after the reply, in the same flush, so it carried the reply's
+    # time. Flushed, not committed: if generation fails the request rolls back
+    # and no unanswered message is left behind.
+    student_msg = TutoringMessage(
+        session_id=session.id,
+        role="student",
+        content=question,
+        citations=None,
+        hint_level=0,
+        is_refusal=False,
+        created_at=_now(),
     )
+    db.add(student_msg)
+    await db.flush()
 
     # Build initial state — all keys must be present
     initial_state: TutorState = {
@@ -152,13 +197,15 @@ async def send_chat_message(
         "course_id": session.course_id,
         "student_id": session.student_id,
         "question": question,
-        "prior_question": prior_question,
+        "prior_question": None if is_new_question else open_question.content,
+        "tutor_last_message": last_tutor.content if last_tutor else None,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,
         "retrieval_result": None,
         "is_grounded": False,
-        "hint_level": 0,  # Fresh question resets hint level
+        # A new question starts a fresh ladder; a reply stays on the current rung.
+        "hint_level": 0 if is_new_question else session.current_hint_level,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
@@ -172,17 +219,7 @@ async def send_chat_message(
         mode="chat",
     )
     final_state = await graph.ainvoke(initial_state)
-
-    # Persist student message
-    student_msg = TutoringMessage(
-        session_id=session.id,
-        role="student",
-        content=question,
-        citations=None,
-        hint_level=0,
-        is_refusal=False,
-    )
-    db.add(student_msg)
+    grounded = bool(final_state.get("is_grounded"))
 
     # Persist tutor response. A grounded turn that declined to hand over the
     # answer (FR-03.3) is also a refusal from the UI's point of view -- it is
@@ -196,20 +233,29 @@ async def send_chat_message(
         citations=json.dumps(final_state.get("citations", [])),
         hint_level=0,
         is_refusal=is_refusal,
+        created_at=_now(),
     )
     db.add(tutor_msg)
 
-    # Reset hint level for this session (new question, fresh hints)
-    session.current_hint_level = 0
+    if is_new_question:
+        # A grounded new question opens a conversation about itself; a refused
+        # one leaves no open question, so a hint has nothing to build on.
+        session.anchor_message_id = student_msg.id if grounded else None
+        session.current_hint_level = 0
+    elif grounded and session.anchor_message_id is None:
+        # Older sessions: adopt the question found in the history once it has
+        # passed the gate, so later turns do not have to guess again.
+        session.anchor_message_id = open_question.id
 
     await db.commit()
 
     logger.info(
         "Tutor response sent: session_id=%s student_id=%s grounded=%s "
-        "query_source=%s refusal_kind=%s",
+        "turn_kind=%s query_source=%s refusal_kind=%s",
         session.id,
         session.student_id,
-        final_state.get("is_grounded"),
+        grounded,
+        final_state.get("turn_kind"),
         final_state.get("retrieval_query_source"),
         final_state.get("pedagogy_trace", {}).get("refusal_kind"),
     )
@@ -225,38 +271,38 @@ async def request_hint(
     langfuse: "Langfuse",
 ) -> dict:
     """
-    Escalate the hint level for the current question.
+    Escalate the hint level for the open learning question.
 
-    1. Loads this session's recent student messages.
-    2. Raises ValueError if no prior question exists.
-    3. Builds TutorState with question=<last student message> and
-       prior_question=<last SUBSTANTIVE student message>, hint_level=<current+1>.
-    4. Invokes Tutor graph in 'hint' mode.
-    5. Persists tutor hint message, updates session.current_hint_level.
-    6. Returns final graph state.
+    1. Finds the open learning question (the anchor), never the latest message.
+    2. Raises ValueError (a 400) if there is none.
+    3. Builds TutorState with question=<the open question>, hint_level=<current>.
+    4. Invokes Tutor graph in 'hint' mode; advance_hint_node adds one level.
+    5. If the gate refused the question, raises the same ValueError: nothing is
+       saved, the ladder does not move, and the out-of-corpus refusal is never
+       returned as a hint.
+    6. Otherwise persists the hint and updates session.current_hint_level.
 
-    Step 3 is what stops one bad message poisoning the rest of the session. The
-    question still defaults to the latest student turn, but if that turn is
-    contentless ("give me the answer"), query resolution falls back to
-    prior_question -- otherwise every subsequent hint click would retrieve on
-    that string, score below the bar, and refuse.
+    Anchoring is what keeps the ladder on the learning question. Hints used to
+    follow the latest student message with three topical words, so after
+    "because they have same charge?" all four rungs were about that reply and
+    never returned to "what is potential difference?".
     """
     from agents.tutor.graph import build_tutor_graph
     from agents.tutor.state import TutorState
 
-    recent = await _recent_student_messages(session.id, db)
-    if not recent:
-        raise ValueError("Ask a question before requesting a hint.")
-    last_student_msg = recent[0]
-    prior_question = _first_substantive(recent)
+    open_question = await _open_question(session, db)
+    if open_question is None:
+        raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
 
-    # Build initial state — question comes from student's last message
+    # The student's later replies are deliberately left out of the hint prompt:
+    # a hint is about the learning question, and a reply that drifted is
+    # exactly what used to drag the ladder off it.
     initial_state: TutorState = {
         "session_id": session.id,
         "course_id": session.course_id,
         "student_id": session.student_id,
-        "question": last_student_msg.content,
-        "prior_question": prior_question,
+        "question": open_question.content,
+        "prior_question": None,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,
@@ -277,6 +323,11 @@ async def request_hint(
     )
     final_state = await graph.ainvoke(initial_state)
 
+    if not final_state.get("is_grounded"):
+        # The gate refused before any model call. Report it as "ask a question
+        # first" rather than saving an out-of-corpus refusal as a hint.
+        raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
+
     # Persist tutor hint message
     hint_msg = TutoringMessage(
         session_id=session.id,
@@ -285,11 +336,14 @@ async def request_hint(
         citations=json.dumps(final_state.get("citations", [])),
         hint_level=final_state.get("hint_level", session.current_hint_level),
         is_refusal=bool(final_state.get("pedagogy_trace", {}).get("refused", False)),
+        created_at=_now(),
     )
     db.add(hint_msg)
 
     # Update session hint level to match final state
     session.current_hint_level = final_state.get("hint_level", session.current_hint_level)
+    if session.anchor_message_id is None:
+        session.anchor_message_id = open_question.id  # older session: keep what passed the gate
 
     await db.commit()
 
@@ -306,11 +360,11 @@ async def get_messages(
     session_id: uuid.UUID,
     db: AsyncSession,
 ) -> list[TutoringMessage]:
-    """Fetch all messages for a session in chronological order."""
+    """Fetch all messages for a session in chronological order, student first on a tie."""
     result = await db.execute(
         select(TutoringMessage)
         .where(TutoringMessage.session_id == session_id)
-        .order_by(TutoringMessage.created_at.asc())
+        .order_by(TutoringMessage.created_at.asc(), _STUDENT_FIRST)
     )
     return list(result.scalars().all())
 

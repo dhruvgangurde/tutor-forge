@@ -320,7 +320,8 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `GEMINI_API_KEY` | `""` | required for real LLM calls |
 | `GEMINI_PRO_MODEL` | `gemini-2.5-pro` | tutor, rubric, grading |
 | `GEMINI_FLASH_MODEL` | `gemini-2.5-flash` | assessment generation |
-| `EMBEDDING_MODEL` | `text-embedding-004` | |
+| `EMBEDDING_MODEL` / `EMBEDDING_DIMENSIONS` | `gemini-embedding-001` / `768` | size sent for indexing and querying; recorded on each course collection |
+| `EMBEDDING_BATCH_SIZE` | `100` | chunks per embedding request (API max 100) |
 | `CHROMA_PERSIST_PATH` | `data/chroma` | relative to `backend/` |
 | `JWT_SECRET_KEY` | `change-me-in-production` | prod boot guard rejects default / <32 chars |
 | `JWT_EXPIRE_MINUTES` / `JWT_REFRESH_EXPIRE_MINUTES` | `60` / `10080` (7 d) | |
@@ -328,7 +329,10 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `USE_MOCK_GEMINI` | `false` | mock clients, zero API quota |
 | `ENVIRONMENT` | `development` | `production` activates fail-closed guards |
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | `""` / `""` / cloud.langfuse.com | |
-| `GEMINI_MAX_ATTEMPTS` / `_RETRY_BASE_DELAY` / `_RETRY_MAX_DELAY` / `_TIMEOUT_SECONDS` | `4` / `0.5` / `8.0` / `30.0` | |
+| `GEMINI_MAX_ATTEMPTS` / `_RETRY_BASE_DELAY` / `_RETRY_MAX_DELAY` / `_TIMEOUT_SECONDS` | `4` / `0.5` / `8.0` / `30.0` | a 429 waits at least its retry delay; a timed-out generation retries once; a daily quota fails fast |
+| `GEMINI_GENERATE_RPM` / `GEMINI_EMBED_RPM` | `5` / `90` | client-side pacing per model (0 = off) |
+| `GEMINI_MAX_WAIT_SECONDS` | `60.0` | interactive calls (tutor chat, hints, query embedding); a 429 fails fast: 503 `ai_busy`, "The AI service is busy. Please try again in a minute." |
+| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0` | every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full window and retries |
 | `JOB_STALE_AFTER_SECONDS` | `1800` | orphaned-job reaper threshold |
 | `RATE_LIMIT_*` | enabled; auth 10/60 s, AI 20/60 s | |
 | `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` | 50 MB / 20 | oversized ⇒ 413 |

@@ -173,9 +173,120 @@ def is_pedagogy_skip_request(text: str) -> bool:
     return any(pattern in normalised for pattern in _SKIP_PEDAGOGY_PATTERNS)
 
 
+# ── Turn classification ───────────────────────────────────────────────────────
+#
+# A student message mid-conversation is usually not a new question. It is an
+# answer to the tutor's own question ("no", "I don't know", "because they have
+# the same charge?") or a short follow-up ("why?", "what about the worst case").
+# Judging those on their own text refused them: "umm, work is required to move
+# something" has plenty of words but scores below the bar, and "no" has none.
+# So each message is classified first, by fixed rules (no model call), and only
+# a NEW question is judged on its own text. Everything else is judged against
+# the open learning question.
+#
+# Residual risk, accepted: an off-topic message that is not phrased as a
+# question ("sourdough bread") inside an open conversation is answered in that
+# conversation, from its course chunks only, with an instruction to ignore the
+# off-topic part and steer back. Retrieval scores cannot separate these cases
+# (see the measurements above).
+
+TURN_NEW_QUESTION = "new_question"
+TURN_FOLLOW_UP = "follow_up"
+TURN_REPLY = "reply"
+
+#: First words that make a message a question or a request. Includes the
+#: imperative openers ("tell me about…", "explain…") and the auxiliaries that
+#: open yes/no questions, so "tell me about sourdough bread" is a new question
+#: and is judged — and refused — on its own text.
+_QUESTION_OPENERS = frozenset({
+    "what", "whats", "what's", "why", "how", "who", "whom", "whose", "when",
+    "where", "which",
+    "tell", "explain", "define", "describe", "show", "give", "list", "solve",
+    "calculate", "derive", "compare",
+    "is", "are", "does", "do", "can", "could",
+})
+
+#: Skipped at the start of a message before looking for an opener.
+_INTERJECTIONS = frozenset({
+    "umm", "um", "uh", "uhh", "hmm", "hm", "ok", "okay", "well", "oh", "hey",
+    "hi", "so", "and", "please", "sorry",
+})
+
+#: Openers that ask about the conversation already under way, not a new topic.
+_FOLLOW_UP_PREFIXES = ("what about", "how about", "what if", "why not", "what else", "how come")
+
+#: A pronoun right after the opener points back at the conversation:
+#: "is it because…", "does that mean…", "how does it…".
+_REFERRING_WORDS = frozenset({
+    "it", "its", "it's", "that", "that's", "this", "they", "them", "these",
+    "those", "there",
+})
+
+
+def _leading_words(text: str) -> list[str]:
+    words = _WORD_RE.findall((text or "").lower())
+    while words and words[0] in _INTERJECTIONS:
+        words.pop(0)
+    return words
+
+
+def classify_turn(text: str) -> str:
+    """
+    Classify a student message as a new question, a follow-up, or a reply.
+
+    - new question: starts with a question word or request verb and names a
+      topic of its own ("what is potential difference?", "tell me about pizza").
+    - follow-up: a question about the conversation already under way ("why?",
+      "what about the worst case", "is it because of the charge?", "give me the
+      answer").
+    - reply: anything else, i.e. an answer or a non-answer to the tutor's own
+      question ("no", "I don't know", "because they have same charge?").
+
+    The caller treats any message as a new question when there is no open
+    learning question yet.
+    """
+    words = _leading_words(text)
+    if not words or words[0] not in _QUESTION_OPENERS:
+        return TURN_REPLY
+    joined = " ".join(words)
+    if any(joined.startswith(prefix) for prefix in _FOLLOW_UP_PREFIXES):
+        return TURN_FOLLOW_UP
+    if any(w in _REFERRING_WORDS for w in words[1:3]):
+        return TURN_FOLLOW_UP
+    if not topical_words(joined):
+        return TURN_FOLLOW_UP
+    return TURN_NEW_QUESTION
+
+
+#: Replies that say "I can't answer that" rather than attempting an answer.
+#: Matched on the normalised message, exactly or as a prefix.
+_NON_ANSWER_EXACT = frozenset({
+    "no", "nope", "nah", "not really", "maybe", "umm", "um", "hmm", "idk",
+    "dunno", "i dunno", "no idea", "no clue", "not sure", "i forgot",
+})
+_NON_ANSWER_PREFIXES = (
+    "i dont know", "i don't know", "dont know", "don't know", "i do not know",
+    "idk", "no idea", "not sure", "im not sure", "i'm not sure", "i am not sure",
+    "i have no idea", "i dont remember", "i don't remember", "i cant remember",
+    "i can't remember", "im lost", "i'm lost", "im stuck", "i'm stuck",
+)
+
+
+def is_non_answer(text: str) -> bool:
+    """True when a reply says the student doesn't know, rather than answering."""
+    normalised = " ".join(_leading_words(_normalise(text)))
+    if not normalised:
+        return True
+    if normalised in _NON_ANSWER_EXACT:
+        return True
+    return any(normalised.startswith(prefix) for prefix in _NON_ANSWER_PREFIXES)
+
+
 # ── Query resolution ──────────────────────────────────────────────────────────
 
 #: ``retrieval_query_source`` values recorded on the state for observability.
+#: "prior_turn" means retrieval ran on the open learning question, which is an
+#: earlier turn of the conversation.
 SOURCE_MESSAGE = "message"
 SOURCE_PRIOR_TURN = "prior_turn"
 
@@ -187,14 +298,17 @@ def resolve_retrieval_query(
     """
     Return ``(query, source)`` — the text to retrieve on, and where it came from.
 
-    Substitutes the prior substantive question when the current message carries
-    no topic of its own. Substitution, not concatenation: see the module
-    docstring for the measurement that rules concatenation out.
+    ``prior_question`` is the open learning question of the conversation, if
+    there is one. Any message that is not a new question (a reply or a
+    follow-up) is retrieved on it instead of on its own text. Substitution, not
+    concatenation: see the module docstring for the measurement that rules
+    concatenation out.
 
-    With no usable prior turn (the first message of a session) the message is
+    With no open question (the first message of a session) the message is
     used as-is, so a session that opens with "give me the answer" is still
-    correctly judged out-of-corpus.
+    correctly judged out-of-corpus. A new question is always judged on its own
+    text, which keeps the off-topic controls refused mid-conversation.
     """
-    if prior_question and is_low_content(question):
+    if prior_question and classify_turn(question) != TURN_NEW_QUESTION:
         return prior_question, SOURCE_PRIOR_TURN
     return question, SOURCE_MESSAGE

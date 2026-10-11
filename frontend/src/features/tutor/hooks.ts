@@ -43,6 +43,9 @@ export function useSendChat(sessionId: string) {
     mutationFn: (question: string) => sendChat(sessionId, question),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tutor.messages(sessionId) })
+      // The session's hint level lives in the sessions list (exact: the key
+      // is also the prefix of every messages key).
+      queryClient.invalidateQueries({ queryKey: queryKeys.tutor.sessions(), exact: true })
     },
   })
 }
@@ -54,6 +57,7 @@ export function useRequestHint(sessionId: string) {
     mutationFn: () => requestHint(sessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tutor.messages(sessionId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.tutor.sessions(), exact: true })
     },
   })
 }

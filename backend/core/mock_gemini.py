@@ -462,6 +462,18 @@ class MockGeminiProClient:
         """Deterministic bag-of-words mock embedding — see _token_hash_embed."""
         return _token_hash_embed(text)
 
+    #: Recorded on new collections (retrieval/service.py) so a course embedded
+    #: by the mock is never silently queried with a real model, or vice versa.
+    embedding_model_name = "mock-token-hash"
+    embedding_dimensions = _MOCK_EMBED_DIM
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Provider-neutral batch form; the mock has no task types."""
+        return [self.embed(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)
+
 
 class MockGeminiFlashClient:
     """Mock Gemini Flash client for high-throughput operations."""
@@ -491,3 +503,15 @@ class MockGeminiFlashClient:
     def embed(self, text: str) -> list[float]:
         """Deterministic bag-of-words mock embedding — see _token_hash_embed."""
         return _token_hash_embed(text)
+
+    #: Recorded on new collections (retrieval/service.py) so a course embedded
+    #: by the mock is never silently queried with a real model, or vice versa.
+    embedding_model_name = "mock-token-hash"
+    embedding_dimensions = _MOCK_EMBED_DIM
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        """Provider-neutral batch form; the mock has no task types."""
+        return [self.embed(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed(text)

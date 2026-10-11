@@ -203,6 +203,7 @@ class TutoringSession(Base):
     __table_args__ = (
         Index("ix_tutoring_sessions_student_id", "student_id"),
         Index("ix_tutoring_sessions_course_id", "course_id"),
+        Index("ix_tutoring_sessions_anchor_message_id", "anchor_message_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -213,12 +214,29 @@ class TutoringSession(Base):
         UUID(as_uuid=True), ForeignKey("courses.id", ondelete="CASCADE"), nullable=False
     )
     current_hint_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # The student question the current conversation is about: replies and hint
+    # requests are judged and answered against it. Null until a question has
+    # been grounded, and again after a new question is refused. use_alter
+    # because tutoring_messages already points back at this table.
+    anchor_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "tutoring_messages.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_tutoring_sessions_anchor_message_id",
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     student: Mapped["User"] = relationship("User", back_populates="tutoring_sessions")
     course: Mapped["Course"] = relationship("Course", back_populates="tutoring_sessions")
     messages: Mapped[list["TutoringMessage"]] = relationship(
-        "TutoringMessage", back_populates="session", cascade="all, delete-orphan"
+        "TutoringMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        foreign_keys="TutoringMessage.session_id",
     )
 
 
@@ -240,7 +258,7 @@ class TutoringMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     session: Mapped["TutoringSession"] = relationship(
-        "TutoringSession", back_populates="messages"
+        "TutoringSession", back_populates="messages", foreign_keys=[session_id]
     )
 
 

@@ -38,6 +38,13 @@ describe('Finalized grades list', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
+  it('marks the table read-only, so rows get no hover highlight', () => {
+    state = { data: [ROW], isLoading: false, isError: false, error: null }
+    render(<FinalizedGrades />)
+    expect(screen.getByRole('table')).toHaveClass('data-table-readonly')
+    expect(screen.getAllByRole('row')[1]).not.toHaveClass('clickable-row')
+  })
+
   it('says so when nothing has been finalized', () => {
     state = { data: [], isLoading: false, isError: false, error: null }
     render(<FinalizedGrades />)

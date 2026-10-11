@@ -22,7 +22,7 @@ import { useToast } from '../../hooks/useToast'
  */
 export function SessionsPage() {
   const navigate = useNavigate()
-  const { data: sessions, isLoading, isError, error } = useSessions()
+  const { data: sessions, isLoading, isError, error, refetch } = useSessions()
   const createSession = useCreateSession()
   const [showModal, setShowModal] = useState(false)
   const { showToast } = useToast()
@@ -67,7 +67,7 @@ export function SessionsPage() {
       )}
 
       {isLoading && <SkeletonCards label="Loading sessions…" count={3} />}
-      {isError && <ErrorBanner message={getErrorMessage(error)} />}
+      {isError && <ErrorBanner message={getErrorMessage(error)} onRetry={() => void refetch()} />}
 
       {!isLoading && !isError && sessions && sessions.length === 0 && (
         <EmptyState label="No tutoring sessions yet. Start your first session!" />

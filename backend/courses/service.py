@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.exceptions import AIServiceBusy
 from courses.schemas import ChapterWithConcepts, ConceptSummary, CourseStructure, CourseSummary
 from db.models import Chapter, Concept, Course, IngestionJob, User
 
@@ -72,6 +73,7 @@ async def _run_ingestion(
     from agents.ingestion.graph import build_ingestion_graph
     from agents.ingestion.state import IngestionState
     from core.database import AsyncSessionFactory
+    from core.gemini_calls import background_work
 
     async with AsyncSessionFactory() as db:
         # Update job status to running
@@ -98,7 +100,10 @@ async def _run_ingestion(
                 "status": "running",
                 "error": None,
             }
-            final_state = await graph.ainvoke(initial_state)
+            # A background job: a 429 waits out the window and retries instead
+            # of failing fast as it would for a tutor reply (core/gemini_calls.py).
+            with background_work():
+                final_state = await graph.ainvoke(initial_state)
 
             # Nodes can fail gracefully (return status="failed") without
             # raising — the conditional edges route straight to END in that
@@ -119,8 +124,19 @@ async def _run_ingestion(
                     db=err_db,
                     course_id=course_id,
                     job_id=job_id,
-                    error_message=str(exc),
+                    error_message=_ingestion_error_message(exc),
                 )
+
+
+def _ingestion_error_message(exc: Exception) -> str:
+    """
+    What is stored on the failed job. A busy AI provider gets the "AI service
+    busy" prefix that courses/failure.py turns into a plain sentence for the
+    teacher; the provider's own error text is not stored for it.
+    """
+    if isinstance(exc, AIServiceBusy):
+        return f"AI service busy: {exc.reason}"
+    return str(exc)
 
 
 async def _mark_course_and_job_failed(

@@ -15,7 +15,7 @@ import json
 import logging
 import uuid
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -1257,13 +1257,18 @@ class TestHintLadderPrompts:
     def test_low_rungs_forbid_the_answer(self):
         ladder = self._ladder()
         for level in (0, 1):
-            assert "do not give the student the answer" in ladder[level].lower()
+            assert "do not give them the answer" in ladder[level].lower()
+        # The rungs talk about the learner as "them", never "the student", which
+        # the model echoed back ("Given that the student is considering…").
+        for level, text in ladder.items():
+            assert "the student" not in text.lower().replace('"the student"', ""), level
 
     def test_terminal_rung_requires_the_answer(self):
         text = self._ladder()[4].lower()
         assert "full explanation" in text
         assert "state the answer plainly" in text
         # The absolute that made every rung read the same must be gone up here.
+        assert "do not give them the answer" not in text
         assert "do not give the student the answer" not in text
 
     def test_directness_is_stated_at_every_level(self):
@@ -1537,8 +1542,9 @@ async def test_each_rung_sends_a_different_and_escalating_instruction(
         assert f"HINT LEVEL {level}" in text
 
     # 3. Directness escalates: the low rungs withhold, the top rung does not.
-    assert "Do not give the student the answer" in systems[0]
-    assert "Do not give the student the answer" in systems[1]
+    assert "Do not give them the answer" in systems[0]
+    assert "Do not give them the answer" in systems[1]
+    assert "Do not give them the answer" not in systems[4]
     assert "STOP short of" in systems[2]
     assert "do not withhold" in systems[4].lower()
     assert "State the answer plainly" in systems[4]
@@ -1572,7 +1578,8 @@ async def test_terminal_rung_instruction_is_distinct_from_level_three(
     # Level 3 still frames itself as a hint; level 4 must not ask a question
     # in place of the answer.
     assert "near-answer" in level_3
-    assert "Do not ask the student a guiding question in place of the answer" in level_4
+    assert "Do not ask a guiding question in place of the answer" in level_4
+    assert "Do not ask a guiding question in place of the answer" not in level_3
 
 
 @pytest.mark.asyncio
@@ -1649,39 +1656,752 @@ async def test_decline_is_recorded_as_a_refusal_in_the_transcript(
 
 
 @pytest.mark.asyncio
-async def test_hint_after_an_off_topic_question_refuses_rather_than_falling_back(
+async def test_hint_after_an_off_topic_question_is_a_400_not_a_refusal(
     client, student_token, ready_course_id
 ):
     """
-    Found during live verification, pinned here so it stays deliberate.
+    Replaces test_hint_after_an_off_topic_question_refuses_rather_than_falling_back.
 
-    Query resolution falls back only for CONTENTLESS messages. An off-topic
-    question has plenty of topical content, so it stays the active question and
-    the hint button correctly reports it as out-of-corpus — the student is not
-    silently given hints about a different, earlier topic they did not ask
-    about. Typing a new on-topic question starts a fresh ladder, which is the
-    same rule /chat already applies by resetting current_hint_level.
-
-    The contrast with test_hint_after_answer_request_uses_the_substantive_question
-    is the point: "give me the answer" has no topic and falls back; "what is the
-    best recipe for sourdough bread?" has one and does not.
+    An off-topic NEW question is refused and leaves no open question, so the
+    hint button has nothing to build on. It used to answer with the
+    out-of-corpus refusal as if it were a hint; it is now a 400 with
+    NO_OPEN_QUESTION_FOR_HINT. What the old test guarded still holds: the hint
+    does not inherit the earlier topic, makes no model call, and does not
+    advance the ladder. Additionally nothing is saved.
     """
+    from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
+
     off_topic = "What is the best recipe for sourdough bread?"
     retrieval = _make_query_scoring_retrieval()
     gemini = _install_tutor_mocks(retrieval)
+    auth = {"Authorization": f"Bearer {student_token}"}
     try:
         session_id = await _new_session(client, student_token, ready_course_id)
         await _chat(client, student_token, session_id, _ON_TOPIC)
         await _chat(client, student_token, session_id, off_topic)
         calls_before = gemini.generate.call_count
+        before = (await client.get(f"/tutor/sessions/{session_id}/messages", headers=auth)).json()
+        resp = await _hint(client, student_token, session_id)
+        after = (await client.get(f"/tutor/sessions/{session_id}/messages", headers=auth)).json()
+        sessions = (await client.get("/tutor/sessions", headers=auth)).json()
+    finally:
+        _clear_tutor_mocks()
+
+    assert resp.status_code == 400, resp.text
+    assert resp.json() == {"detail": NO_OPEN_QUESTION_FOR_HINT}
+    assert NO_OPEN_QUESTION_FOR_HINT == "Ask a question about the course before requesting a hint."
+    assert not _is_out_of_corpus(resp.text), "a hint never returns the out-of-corpus refusal"
+    assert retrieval.queries_seen[-1] == off_topic, "must not inherit the earlier topic"
+    assert gemini.generate.call_count == calls_before, "AC-02: no LLM call on a refusal"
+    assert after == before, "nothing is saved"
+    # The ladder does not advance.
+    (session,) = [s for s in sessions if s["id"] == session_id]
+    assert session["current_hint_level"] == 0
+
+
+# ── Config: the tutor's context budget comes from settings ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tutor_context_budget_comes_from_settings(client, student_token, ready_course_id):
+    """The retrieved-text budget was a literal 3000 in the node; it is config now."""
+    from core.config import Settings, settings
+
+    assert Settings().tutor_context_token_budget == 3000
+    retrieval = _make_mock_retrieval(grounded=True)
+    saved = settings.tutor_context_token_budget
+    settings.tutor_context_token_budget = 1234
+    app.dependency_overrides[get_retrieval_service] = lambda: retrieval
+    app.dependency_overrides[get_gemini_pro] = lambda: _make_mock_gemini_pro()
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        settings.tutor_context_token_budget = saved
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 200, resp.text
+    assert retrieval.build_context_window.call_args.kwargs["token_budget"] == 1234
+
+
+# ── Message order and timestamps (fix round: tutor conversation) ──────────────
+
+
+@pytest.mark.asyncio
+async def test_messages_sharing_a_timestamp_list_the_student_first(client, student_token, ready_course_id):
+    """
+    A turn's two rows used to share one timestamp (Windows clock: 15.6 ms), and
+    ordering by created_at alone returned them in either order, so a reply could
+    display above the message it answered.
+    """
+    from db.models import TutoringMessage
+
+    session_id = await _new_session(client, student_token, ready_course_id)
+    tie = datetime(2026, 10, 8, 21, 33, 31, tzinfo=UTC)
+    async with _TestSessionFactory() as db:
+        # Inserted reply-first, so insertion order cannot rescue the result.
+        db.add(TutoringMessage(session_id=uuid.UUID(session_id), role="tutor", content="reply", created_at=tie))
+        db.add(TutoringMessage(session_id=uuid.UUID(session_id), role="student", content="no", created_at=tie))
+        await db.commit()
+
+    resp = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert resp.status_code == 200
+    assert [(m["role"], m["content"]) for m in resp.json()] == [("student", "no"), ("tutor", "reply")]
+
+
+@pytest.mark.asyncio
+async def test_student_message_is_stamped_when_it_arrives_not_with_the_reply(
+    client, student_token, ready_course_id
+):
+    """The student's row carried the reply's time; it must carry its own."""
+    import time
+
+    from sqlalchemy import select
+
+    from db.models import TutoringMessage
+
+    gemini = _make_mock_gemini_pro()
+
+    def _slow_reply(*args, **kwargs):
+        time.sleep(0.08)  # generation takes a while; the student's time must not move
+        return "What do you think a difference in potential means?"
+
+    gemini.generate.side_effect = _slow_reply
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+    assert resp.status_code == 200, resp.text
+
+    async with _TestSessionFactory() as db:
+        rows = (
+            await db.execute(select(TutoringMessage).where(TutoringMessage.session_id == uuid.UUID(session_id)))
+        ).scalars().all()
+    by_role = {m.role: m for m in rows}
+    gap = (by_role["tutor"].created_at - by_role["student"].created_at).total_seconds()
+    assert gap >= 0.05, f"student stamped {gap:.3f}s before the reply; expected the generation time"
+
+
+@pytest.mark.asyncio
+async def test_failed_generation_leaves_no_unanswered_student_message(
+    client, student_token, ready_course_id
+):
+    """Saving at receipt must not strand a message when the reply fails."""
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.side_effect = RuntimeError("model unavailable")
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        try:
+            resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+            assert resp.status_code >= 500
+        except RuntimeError:
+            pass  # the test transport may re-raise instead of returning the 500
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert messages.json() == []
+
+
+@pytest.mark.asyncio
+async def test_busy_ai_on_chat_is_a_plain_503_and_saves_nothing(client, student_token, ready_course_id):
+    """A rate-limited provider must not show its own text or strand the message."""
+    from core.exceptions import AI_BUSY_MESSAGE, AIServiceBusy
+
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.side_effect = AIServiceBusy(
+        "Gemini Pro generate (gemini-flash-lite-latest): rate limited; the server asked to wait 20s"
+    )
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        resp = await _chat(client, student_token, session_id, "What is the Socratic method?")
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "ai_busy", "detail": AI_BUSY_MESSAGE}
+    assert "rate limited" not in resp.text and "gemini" not in resp.text.lower()
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert messages.json() == []
+
+
+@pytest.mark.asyncio
+async def test_busy_ai_on_hint_is_a_plain_503_and_keeps_the_ladder(client, student_token, ready_course_id):
+    from core.exceptions import AI_BUSY_MESSAGE, AIServiceBusy
+
+    gemini = _make_mock_gemini_pro()
+    app.dependency_overrides[get_retrieval_service] = lambda: _make_mock_retrieval(grounded=True)
+    app.dependency_overrides[get_gemini_pro] = lambda: gemini
+    app.dependency_overrides[get_langfuse_client] = lambda: _make_mock_langfuse()
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        assert (await _chat(client, student_token, session_id, "What is the Socratic method?")).status_code == 200
+        gemini.generate.side_effect = AIServiceBusy("Gemini Pro generate: daily quota reached")
+        resp = await _hint(client, student_token, session_id)
+    finally:
+        for dep in (get_retrieval_service, get_gemini_pro, get_langfuse_client):
+            app.dependency_overrides.pop(dep, None)
+
+    assert resp.status_code == 503
+    assert resp.json() == {"error": "ai_busy", "detail": AI_BUSY_MESSAGE}
+    assert "quota" not in resp.text
+    messages = await client.get(
+        f"/tutor/sessions/{session_id}/messages",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert [m["hint_level"] for m in messages.json()] == [0, 0]  # no hint was saved
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Replies judged in the conversation; hints anchored to the learning question
+#
+# Replays the audited session "what is potential difference?" (Ollama, bar 0.57).
+# Scores are illustrative but on the right side of the bar for each case: the
+# replies all score below it on their own text, which is what refused them.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_PD = "what is potential difference?"
+_PD_SCORES = {
+    _PD: 0.70,
+    "no": 0.40,
+    "umm, work is required to move something from one plcae to other": 0.50,
+    "i dont know": 0.35,
+    "because they have same charge?": 0.62,
+    "tell me about sourdough bread": 0.45,
+    "What is electric current?": 0.68,
+}
+
+
+def _pd_retrieval():
+    return _make_query_scoring_retrieval(_PD_SCORES)
+
+
+class TestTurnClassification:
+    """Fixed rules, no model call: only a new question is judged on its own text."""
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            _PD,
+            _ON_TOPIC,
+            "Tell me about pizza",
+            "tell me about sourdough bread",
+            "What is the best recipe for sourdough bread?",
+            "Who won the 1998 football world cup?",
+            "explain ohms law",
+            "Define voltage",
+            "can you tell me about sourdough bread",
+            "Is voltage the same as potential difference?",
+            "umm, what is electric potential?",
+        ],
+    )
+    def test_new_questions(self, message):
+        from agents.tutor.query_resolution import TURN_NEW_QUESTION, classify_turn
+
+        assert classify_turn(message) == TURN_NEW_QUESTION
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "why?",
+            "what about the worst case",
+            "give me the answer",
+            "can you explain more",
+            "is it because of the charge?",
+            "does that mean it is energy per charge?",
+            "how does it work",
+        ],
+    )
+    def test_follow_ups(self, message):
+        from agents.tutor.query_resolution import TURN_FOLLOW_UP, classify_turn
+
+        assert classify_turn(message) == TURN_FOLLOW_UP
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "no",
+            "i dont know",
+            "I don't know",
+            "umm, work is required to move something from one plcae to other",
+            "because they have same charge?",
+            "work is needed for changing the position of two charged bodies",
+            "just tell me",
+            "sourdough bread",
+            "",
+        ],
+    )
+    def test_replies(self, message):
+        from agents.tutor.query_resolution import TURN_REPLY, classify_turn
+
+        assert classify_turn(message) == TURN_REPLY
+
+    @pytest.mark.parametrize(
+        "message, expected",
+        [
+            ("no", True),
+            ("No.", True),
+            ("i dont know", True),
+            ("I don't know what that means", True),
+            ("umm not sure", True),
+            ("idk", True),
+            ("umm, work is required to move something from one plcae to other", False),
+            ("because they have same charge?", False),
+            ("yes", False),
+        ],
+    )
+    def test_non_answers(self, message, expected):
+        from agents.tutor.query_resolution import is_non_answer
+
+        assert is_non_answer(message) is expected
+
+
+def test_reply_instruction_steers_back_and_never_answers_off_topic_parts():
+    from agents.tutor.prompts import reply_instruction
+
+    for non_answer in (False, True):
+        text = reply_instruction(non_answer)
+        assert "Ignore anything in their reply that is unrelated to THE QUESTION" in text
+        assert "Never answer an\noff-topic part" in text or "Never answer an off-topic part" in text
+        assert "steer back to THE QUESTION" in text
+        assert "ONLY on the provided course context" in text
+    assert "smaller, simpler first step" in reply_instruction(True)
+    assert "smaller, simpler first step" not in reply_instruction(False)
+
+
+@pytest.mark.asyncio
+async def test_replies_to_the_tutors_question_are_tutored_not_refused(
+    client, student_token, ready_course_id
+):
+    """Point 1: "no", "umm, work is…" and "i dont know" all got the refusal."""
+    from agents.tutor.prompts import reply_instruction
+    from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE
+
+    retrieval = _pd_retrieval()
+    gemini = _install_tutor_mocks(retrieval)
+    replies = ["no", "umm, work is required to move something from one plcae to other", "i dont know"]
+    results = []
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        first = await _chat(client, student_token, session_id, _PD)
+        assert first.json()["is_grounded"] is True
+        for reply in replies:
+            resp = await _chat(client, student_token, session_id, reply)
+            results.append((reply, resp, gemini.generate.call_args, retrieval.queries_seen[-1]))
+    finally:
+        _clear_tutor_mocks()
+
+    for reply, resp, call, query in results:
+        data = resp.json()
+        assert resp.status_code == 200, resp.text
+        assert data["is_grounded"] is True, reply
+        assert not _is_out_of_corpus(data["response"]), reply
+        assert query == _PD, f"{reply!r} must be judged against the open question"
+        prompt, system = call.args[0], call.kwargs["system_instruction"]
+        assert f"<<UNTRUSTED THEIR REPLY>>\n{reply}\n" in prompt
+        assert f"<<UNTRUSTED THE QUESTION>>\n{_PD}\n" in prompt
+        assert "<<UNTRUSTED YOUR LAST MESSAGE>>" in prompt
+        # The system instruction is fixed text only: no student text reaches it.
+        non_answer = reply in ("no", "i dont know")
+        assert system == reply_instruction(non_answer) + "\n\n" + UNTRUSTED_CONTENT_NOTICE
+        assert ("smaller, simpler first step" in system) is non_answer, reply
+
+
+@pytest.mark.asyncio
+async def test_a_reply_still_passes_the_gate_before_the_model(client, student_token, ready_course_id):
+    """Invariant 1: retrieval and the groundedness check come before generation."""
+    retrieval = _pd_retrieval()
+    order: list[str] = []
+    real_retrieve, real_gate = retrieval.retrieve.side_effect, retrieval.is_grounded
+
+    def _retrieve(*args, **kwargs):
+        order.append("retrieve")
+        return real_retrieve(*args, **kwargs)
+
+    def _gate(result, *, threshold):
+        order.append("gate")
+        return real_gate(result, threshold=threshold)
+
+    retrieval.retrieve.side_effect = _retrieve
+    retrieval.is_grounded = _gate
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.side_effect = lambda *a, **k: order.append("generate") or "What is work?"
+    _install_tutor_mocks(retrieval, gemini=gemini)
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _chat(client, student_token, session_id, _PD)
+        order.clear()
+        await _chat(client, student_token, session_id, "no")
+    finally:
+        _clear_tutor_mocks()
+
+    assert order == ["retrieve", "gate", "generate"]
+
+
+@pytest.mark.asyncio
+async def test_off_topic_new_question_mid_conversation_is_still_refused(
+    client, student_token, ready_course_id
+):
+    """An imperative opener makes it a new question, judged — and refused — alone."""
+    retrieval = _pd_retrieval()
+    gemini = _install_tutor_mocks(retrieval)
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _chat(client, student_token, session_id, _PD)
+        calls_before = gemini.generate.call_count
+        resp = await _chat(client, student_token, session_id, "tell me about sourdough bread")
+    finally:
+        _clear_tutor_mocks()
+
+    data = resp.json()
+    assert data["is_grounded"] is False
+    assert _is_out_of_corpus(data["response"])
+    assert retrieval.queries_seen[-1] == "tell me about sourdough bread"
+    assert gemini.generate.call_count == calls_before
+
+
+async def _seed_history(session_id: str, rows: list[tuple[str, str, bool]]) -> None:
+    """Write (role, content, is_refusal) rows one second apart, as an older session would hold."""
+    from datetime import timedelta
+
+    from db.models import TutoringMessage
+
+    start = datetime(2026, 10, 8, 21, 33, 0, tzinfo=UTC)
+    async with _TestSessionFactory() as db:
+        for i, (role, content, refusal) in enumerate(rows):
+            db.add(TutoringMessage(
+                session_id=uuid.UUID(session_id), role=role, content=content,
+                is_refusal=refusal, created_at=start + timedelta(seconds=i),
+            ))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_hint_after_refused_replies_in_an_older_session_anchors_to_the_learning_question(
+    client, student_token, ready_course_id
+):
+    """
+    Point 2, on the audited history itself (no stored anchor yet): the hint used
+    the latest student message "umm, work is…", scored it alone and refused.
+    It now falls back to the last new question and hints on that.
+    """
+    from agents.tutor.prompts import OUT_OF_CORPUS_REFUSAL
+
+    retrieval = _pd_retrieval()
+    gemini = _install_tutor_mocks(retrieval)
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _seed_history(session_id, [
+            ("student", _PD, False),
+            ("tutor", "Can you recall what work has to do with moving a charge?", False),
+            ("student", "no", False),
+            ("tutor", OUT_OF_CORPUS_REFUSAL, True),
+            ("student", "umm, work is required to move something from one plcae to other", False),
+            ("tutor", OUT_OF_CORPUS_REFUSAL, True),
+        ])
+        resp = await _hint(client, student_token, session_id)
+        again = await _hint(client, student_token, session_id)
+    finally:
+        _clear_tutor_mocks()
+
+    for r, level in ((resp, 1), (again, 2)):
+        assert r.status_code == 200, r.text
+        assert not _is_out_of_corpus(r.json()["response"])
+        assert r.json()["hint_level"] == level
+    assert retrieval.queries_seen[-2:] == [_PD, _PD]
+    assert gemini.generate.call_count == 2
+    async with _TestSessionFactory() as db:
+        session = await db.get(TutoringSession, uuid.UUID(session_id))
+    assert session.anchor_message_id is not None, "the question that passed the gate is kept"
+
+
+@pytest.mark.asyncio
+async def test_older_session_with_no_new_question_falls_back_to_its_first_message(
+    client, student_token, ready_course_id
+):
+    retrieval = _make_query_scoring_retrieval({"potential difference": 0.66})
+    _install_tutor_mocks(retrieval)
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _seed_history(session_id, [
+            ("student", "potential difference", False),
+            ("tutor", "What do you already know about it?", False),
+            ("student", "no", False),
+        ])
         resp = await _hint(client, student_token, session_id)
     finally:
         _clear_tutor_mocks()
 
     assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert _is_out_of_corpus(data["response"])
-    assert retrieval.queries_seen[-1] == off_topic, "must not inherit the earlier topic"
-    assert gemini.generate.call_count == calls_before, "AC-02: no LLM call on a refusal"
-    # The ladder does not advance on a refused turn.
-    assert data["hint_level"] == 0
+    assert retrieval.queries_seen[-1] == "potential difference"
+
+
+@pytest.mark.asyncio
+async def test_hints_stay_on_the_learning_question_after_a_drifting_reply(
+    client, student_token, ready_course_id
+):
+    """
+    Point 4: after "because they have same charge?" every rung was about that
+    reply, never "what is potential difference?".
+    """
+    retrieval = _pd_retrieval()
+    gemini = _install_tutor_mocks(retrieval)
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _chat(client, student_token, session_id, _PD)
+        await _chat(client, student_token, session_id, "because they have same charge?")
+        await _chat(client, student_token, session_id, "i dont know")
+        hint_calls_start = gemini.generate.call_count
+        levels = [(await _hint(client, student_token, session_id)).json()["hint_level"] for _ in range(3)]
+    finally:
+        _clear_tutor_mocks()
+
+    assert levels == [1, 2, 3]
+    assert retrieval.queries_seen[-3:] == [_PD, _PD, _PD]
+    for call in gemini.generate.call_args_list[hint_calls_start:]:
+        prompt = call.args[0]
+        assert _PD in prompt
+        assert "because they have same charge?" not in prompt
+        assert "i dont know" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_replies_keep_the_hint_level_and_new_questions_reset_it(
+    client, student_token, ready_course_id
+):
+    retrieval = _pd_retrieval()
+    _install_tutor_mocks(retrieval)
+    auth = {"Authorization": f"Bearer {student_token}"}
+
+    async def level():
+        sessions = (await client.get("/tutor/sessions", headers=auth)).json()
+        return next(s for s in sessions if s["id"] == session_id)["current_hint_level"]
+
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        await _chat(client, student_token, session_id, _PD)
+        await _hint(client, student_token, session_id)
+        await _hint(client, student_token, session_id)
+        assert await level() == 2
+        await _chat(client, student_token, session_id, "no")
+        assert await level() == 2, "a reply keeps the rung"
+        assert (await _hint(client, student_token, session_id)).json()["hint_level"] == 3
+        await _chat(client, student_token, session_id, "What is electric current?")
+        assert await level() == 0, "a new question starts a fresh ladder"
+        assert (await _hint(client, student_token, session_id)).json()["hint_level"] == 1
+        assert retrieval.queries_seen[-1] == "What is electric current?"
+    finally:
+        _clear_tutor_mocks()
+
+
+@pytest.mark.asyncio
+async def test_anchor_follows_grounded_new_questions_and_clears_on_a_refused_one(
+    client, student_token, ready_course_id
+):
+    from sqlalchemy import select
+
+    from db.models import TutoringMessage
+
+    retrieval = _pd_retrieval()
+    _install_tutor_mocks(retrieval)
+
+    async def anchor_content():
+        async with _TestSessionFactory() as db:
+            session = await db.get(TutoringSession, uuid.UUID(session_id))
+            if session.anchor_message_id is None:
+                return None
+            msg = (await db.execute(
+                select(TutoringMessage).where(TutoringMessage.id == session.anchor_message_id)
+            )).scalar_one()
+            return msg.content
+
+    try:
+        session_id = await _new_session(client, student_token, ready_course_id)
+        assert await anchor_content() is None
+        await _chat(client, student_token, session_id, _PD)
+        assert await anchor_content() == _PD
+        await _chat(client, student_token, session_id, "no")
+        assert await anchor_content() == _PD, "a reply does not move the anchor"
+        await _chat(client, student_token, session_id, "tell me about sourdough bread")
+        assert await anchor_content() is None, "a refused new question leaves no open question"
+    finally:
+        _clear_tutor_mocks()
+
+
+# ── Answer quality: voice, narration, relevant chunks, full explanation ──────
+
+
+class TestTutorVoicePrompts:
+    """Point 5, as far as prompts can carry it; the sanitiser covers the rest."""
+
+    def _all_instructions(self):
+        from agents.tutor.prompts import HINT_LADDER, reply_instruction
+
+        return [*HINT_LADDER.values(), reply_instruction(False), reply_instruction(True)]
+
+    def test_every_instruction_speaks_to_you_and_forbids_narrating_sources(self):
+        for text in self._all_instructions():
+            assert 'Speak directly to the person you are tutoring as "you"' in text
+            assert 'Never call them "the student"' in text
+            assert 'never write "the course material states"' in text
+            assert "Never quote the material word for word" in text
+            assert "never repeat a passage that is cut off" in text
+            assert "never combine facts from unrelated passages" in text
+            # The line that taught the narration is gone.
+            assert "Say \"the course material doesn't cover that\" instead" not in text
+
+    def test_full_explanation_is_short_and_conversational(self):
+        from agents.tutor.prompts import HINT_LADDER
+
+        level_4 = HINT_LADDER[4]
+        assert "about 120 to" in level_4 and "200 words" in level_4
+        assert "No headings" in level_4
+        assert '"Conclusion"' in level_4 and '"Next steps"' in level_4
+        assert "do not compress" not in level_4
+
+    def test_reply_acknowledges_neutrally_unless_actually_correct(self):
+        from agents.tutor.prompts import reply_instruction
+
+        for text in (reply_instruction(False), reply_instruction(True)):
+            assert "Say a reply is correct only when it fully and accurately answers" in text
+            assert "If it is partly right, say which part is right and what is still missing" in text
+            assert "Do not open with praise" in text
+        assert "Do not praise it" in reply_instruction(True)
+
+
+class TestSourceNarration:
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            (
+                "The course mentions that like charges repel each other. What happens next?",
+                "Like charges repel each other. What happens next?",
+            ),
+            (
+                "According to the course material, potential difference is work per unit charge.",
+                "Potential difference is work per unit charge.",
+            ),
+            ("Like charges repel, according to the course material.", "Like charges repel."),
+            (
+                "Good start. The course material states that work is done when a charge moves.",
+                "Good start. Work is done when a charge moves.",
+            ),
+            ("As mentioned in the course notes, voltage is measured in volts.", "Voltage is measured in volts."),
+            (
+                "Given that the course says like charges repel, why would that take work?",
+                "Given that like charges repel, why would that take work?",
+            ),
+            # Seen in the Ollama replay after the first round of this fix.
+            (
+                "What is the exact definition of potential difference based on the course material?",
+                "What is the exact definition of potential difference?",
+            ),
+            (
+                "That's okay. Based on the course material, potential difference is related to work.",
+                "That's okay. Potential difference is related to work.",
+            ),
+            # Saying the course does not cover something is honest, not narration.
+            ("The course material does not cover that part.", "The course material does not cover that part."),
+            ("What do you think happens next?", "What do you think happens next?"),
+        ],
+    )
+    def test_strips_narration_and_keeps_the_claim(self, raw, expected):
+        from core.context_phrasing import strip_source_narration
+
+        assert strip_source_narration(raw) == expected
+
+    def test_detects_third_person_learner(self):
+        from core.context_phrasing import refers_to_learner_in_third_person
+
+        assert refers_to_learner_in_third_person("Given that the student is considering charges")
+        assert refers_to_learner_in_third_person("the learner's answer")
+        assert not refers_to_learner_in_third_person("You are close.")
+
+
+def _node_state(scores, provider_threshold_chunks):
+    from dataclasses import asdict
+
+    from retrieval.models import Chunk
+
+    chunks = [
+        Chunk(text=text, source_file="physics.pdf", page_or_slide=i + 1, course_id=uuid.UUID(int=0))
+        for i, text in enumerate(provider_threshold_chunks)
+    ]
+    return {
+        "session_id": uuid.uuid4(),
+        "question": _PD,
+        "hint_level": 3,
+        "retrieval_result": {"query": _PD, "chunks": [asdict(c) for c in chunks], "confidence_scores": scores},
+        "pedagogy_trace": {},
+    }
+
+
+def test_only_passages_that_clear_the_bar_reach_the_model_and_the_citations():
+    """Point 5: a low-scoring three-phase-load passage was stitched into the answer."""
+    from agents.tutor.nodes import generate_guiding_question_node
+    from core.config import settings
+    from retrieval.service import RetrievalService
+
+    texts = [
+        "Potential difference is the work done per unit charge between two points.",
+        "Moving a charge against an electric field requires work.",
+        "In a balanced three-phase load the phase currents have the same magnitude.",
+    ]
+    retrieval = RetrievalService.__new__(RetrievalService)  # real context and citation builders
+    gemini = _make_mock_gemini_pro()
+    saved = settings.llm_provider
+    settings.llm_provider = "ollama"
+    try:
+        bar = settings.active_groundedness_threshold  # 0.57 by default; a local .env may differ
+        scores = [bar + 0.14, bar + 0.03, bar - 0.16]
+        out = generate_guiding_question_node(_node_state(scores, texts), retrieval, gemini)
+    finally:
+        settings.llm_provider = saved
+
+    prompt = gemini.generate.call_args.args[0]
+    assert texts[0] in prompt and texts[1] in prompt
+    assert "three-phase" not in prompt
+    assert [c["page_or_slide"] for c in out["citations"]] == [1, 2]
+
+
+def test_tutor_output_is_cleaned_of_narration_and_third_person_is_logged(caplog):
+    from agents.tutor.nodes import generate_guiding_question_node
+
+    gemini = _make_mock_gemini_pro()
+    gemini.generate.return_value = (
+        "The course mentions that like charges repel. Given that the student is "
+        "considering charges, what would moving them closer take?"
+    )
+    retrieval = _make_mock_retrieval(grounded=True)
+    with caplog.at_level(logging.WARNING, logger="agents.tutor.nodes"):
+        out = generate_guiding_question_node(
+            _node_state([0.9], ["Like charges repel."]), retrieval, gemini
+        )
+
+    assert out["response"].startswith("Like charges repel. Given that")
+    assert "course mentions" not in out["response"]
+    assert any("rule=third_person_learner" in r.getMessage() for r in caplog.records)

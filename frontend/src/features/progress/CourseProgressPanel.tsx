@@ -53,7 +53,7 @@ export function CourseProgressPanel({ courseId }: CourseProgressPanelProps) {
           </span>
         </div>
         <p className="score-summary-note">
-          Only grades your instructor has reviewed and released are counted here.
+          Only grades your teacher has reviewed and released are counted here.
         </p>
       </div>
 

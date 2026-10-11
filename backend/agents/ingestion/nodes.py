@@ -86,11 +86,10 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                 for page_num, page in enumerate(pdf.pages, start=1):
                     text = page.extract_text() or ""
                     if text.strip():
-                        # Log first 500 chars of extracted text
-                        preview = text[:500].replace("\n", "\\n")
+                        # Lengths only: the extracted text is course content.
                         logger.debug(
-                            "[INGESTION] PDF page extracted: file=%s page=%d len=%d preview=%r",
-                            filename, page_num, len(text), preview
+                            "[INGESTION] PDF page extracted: course_id=%s page=%d len=%d",
+                            course_id, page_num, len(text)
                         )
                         parsed.append({
                             "source_file": filename,
@@ -108,10 +107,9 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                         texts.append(shape.text.strip())
                 if texts:
                     combined_text = "\n".join(texts)
-                    preview = combined_text[:500].replace("\n", "\\n")
                     logger.debug(
-                        "[INGESTION] PPTX slide extracted: file=%s slide=%d len=%d preview=%r",
-                        filename, slide_num, len(combined_text), preview
+                        "[INGESTION] PPTX slide extracted: course_id=%s slide=%d len=%d",
+                        course_id, slide_num, len(combined_text)
                     )
                     parsed.append({
                         "source_file": filename,
@@ -121,10 +119,9 @@ def parse_content_node(state: IngestionState) -> IngestionState:
 
         else:  # text/plain
             text = raw.decode("utf-8", errors="replace")
-            preview = text[:500].replace("\n", "\\n")
             logger.debug(
-                "[INGESTION] TXT file extracted: file=%s len=%d preview=%r",
-                filename, len(text), preview
+                "[INGESTION] TXT file extracted: course_id=%s len=%d",
+                course_id, len(text)
             )
             parsed.append({
                 "source_file": filename,
@@ -459,16 +456,15 @@ def _build_hierarchy_ollama(
             chapters = hierarchy["chapters"]
             logger.info(
                 "[INGESTION] Hierarchy extracted (%s attempt): course_id=%s chapters=%d "
-                "total_concepts=%d titles=%r",
+                "total_concepts=%d",
                 label, course_id, len(chapters),
                 sum(len(ch["concepts"]) for ch in chapters),
-                [ch["title"] for ch in chapters],
             )
             return {**state, "hierarchy": hierarchy}
         logger.warning(
             "[INGESTION] %s hierarchy response was not usable JSON: course_id=%s "
-            "response_chars=%d first_300=%r",
-            label, course_id, len(raw), raw[:300],
+            "response_chars=%d",
+            label, course_id, len(raw),
         )
 
     return {
@@ -521,19 +517,18 @@ def build_hierarchy_node(
         for p in state["parsed_content"]
     )[:32_000]  # ~8k tokens; Gemini Pro context window is much larger
 
-    # Log the combined content that will be sent to LLM
-    content_preview = combined[:500].replace("\n", "\\n")
+    # Lengths, counts and ids only in these logs: the content, the prompt, the
+    # model's reply and the outline are all course text.
     logger.info(
-        "[INGESTION] build_hierarchy_node: course_id=%s combined_content_chars=%d preview=%r",
-        course_id, len(combined), content_preview
+        "[INGESTION] build_hierarchy_node: course_id=%s combined_content_chars=%d",
+        course_id, len(combined)
     )
 
     prompt = _HIERARCHY_PROMPT.format(content=combined)
 
-    # Log the exact prompt being sent
     logger.debug(
-        "[INGESTION] build_hierarchy_node: prompt_chars=%d first_500_chars=%r",
-        len(prompt), prompt[:500].replace("\n", "\\n")
+        "[INGESTION] build_hierarchy_node: course_id=%s prompt_chars=%d",
+        course_id, len(prompt)
     )
 
     logger.info(
@@ -545,10 +540,6 @@ def build_hierarchy_node(
     logger.info(
         "[INGESTION] gemini_pro.generate() response received: course_id=%s response_chars=%d",
         course_id, len(raw)
-    )
-    logger.debug(
-        "[INGESTION] Raw Gemini response (first 1000 chars): %r",
-        raw[:1000].replace("\n", "\\n")
     )
 
     # Strip markdown code fences if Gemini wraps the JSON
@@ -562,8 +553,8 @@ def build_hierarchy_node(
         hierarchy = json.loads(raw)
     except json.JSONDecodeError as exc:
         logger.error(
-            "[INGESTION] JSON parse error for course_id=%s: %s\nRaw response: %r",
-            course_id, exc, raw[:500]
+            "[INGESTION] JSON parse error for course_id=%s at char %d; response_chars=%d",
+            course_id, exc.pos, len(raw)
         )
         return {**state, "status": "failed",
                 "error": f"Hierarchy JSON parse error: {exc}"}
@@ -576,13 +567,10 @@ def build_hierarchy_node(
         course_id, len(chapters), total_concepts
     )
 
-    # Log chapter/concept names for verification
     for ch_idx, ch in enumerate(chapters):
-        ch_name = ch.get("title", "")
-        concepts = [c.get("name", "") for c in ch.get("concepts", [])]
         logger.debug(
-            "[INGESTION] Chapter %d: %r concepts=%r",
-            ch_idx, ch_name, concepts
+            "[INGESTION] Chapter %d: course_id=%s concepts=%d",
+            ch_idx, course_id, len(ch.get("concepts", []))
         )
 
     return _require_chapters({**state, "hierarchy": hierarchy})
@@ -661,12 +649,10 @@ def chunk_and_embed_node(
                 )
                 chunks.append(chunk)
 
-                # Log first chunk from this page as verification
                 if chunk_index == 0:
                     logger.debug(
-                        "[INGESTION] First chunk from file=%s page=%d: %r",
-                        page['source_file'], page['page_or_slide'],
-                        chunk_text[:100].replace("\n", "\\n")
+                        "[INGESTION] First chunk: course_id=%s page=%s chars=%d",
+                        course_id, page['page_or_slide'], len(chunk_text)
                     )
 
                 chunk_index += 1
@@ -731,8 +717,8 @@ async def persist_to_db_node(
         chapter_count += 1
 
         logger.debug(
-            "[INGESTION] Chapter inserted: course_id=%s chapter_id=%s title=%r",
-            course_id, chapter.id, ch_title
+            "[INGESTION] Chapter inserted: course_id=%s chapter_id=%s",
+            course_id, chapter.id
         )
 
         concept_map: dict[str, uuid.UUID] = {}
@@ -752,8 +738,8 @@ async def persist_to_db_node(
             concept_count += 1
 
             logger.debug(
-                "[INGESTION] Concept inserted: course_id=%s chapter=%r concept_id=%s name=%r",
-                course_id, ch_title, concept.id, c_name
+                "[INGESTION] Concept inserted: course_id=%s chapter_id=%s concept_id=%s",
+                course_id, chapter.id, concept.id
             )
 
         # Prerequisite links (second pass after all concept IDs are known)
@@ -766,8 +752,8 @@ async def persist_to_db_node(
                     )
                     db.add(link)
                     logger.debug(
-                        "[INGESTION] Prerequisite link created: %r → %r",
-                        c_data["name"], prereq_name
+                        "[INGESTION] Prerequisite link created: course_id=%s %s -> %s",
+                        course_id, concept_map[c_data["name"]], concept_map[prereq_name]
                     )
 
     logger.info(

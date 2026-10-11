@@ -114,6 +114,7 @@ async def _run_assessment_graph(
     from agents.assessment.graph import build_assessment_graph
     from agents.assessment.state import AssessmentState
     from core.database import AsyncSessionFactory
+    from core.gemini_calls import background_work
 
     async with AsyncSessionFactory() as db:
         try:
@@ -141,7 +142,10 @@ async def _run_assessment_graph(
                 "status": "running",
                 "error": None,
             }
-            final_state = await graph.ainvoke(initial_state)
+            # A background job: a 429 waits out the window and retries instead
+            # of failing fast as it would for a tutor reply (core/gemini_calls.py).
+            with background_work():
+                final_state = await graph.ainvoke(initial_state)
 
             # Handle graceful failure: if graph returns with status="failed",
             # persist the error to database so frontend receives feedback
