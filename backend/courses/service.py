@@ -73,6 +73,7 @@ async def _run_ingestion(
     from agents.ingestion.graph import build_ingestion_graph
     from agents.ingestion.state import IngestionState
     from core.database import AsyncSessionFactory
+    from core.gemini_calls import background_work
 
     async with AsyncSessionFactory() as db:
         # Update job status to running
@@ -99,7 +100,10 @@ async def _run_ingestion(
                 "status": "running",
                 "error": None,
             }
-            final_state = await graph.ainvoke(initial_state)
+            # A background job: a 429 waits out the window and retries instead
+            # of failing fast as it would for a tutor reply (core/gemini_calls.py).
+            with background_work():
+                final_state = await graph.ainvoke(initial_state)
 
             # Nodes can fail gracefully (return status="failed") without
             # raising — the conditional edges route straight to END in that

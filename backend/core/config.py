@@ -137,13 +137,13 @@ class Settings(BaseSettings):
     gemini_retry_base_delay: float = 0.5     # seconds; first backoff
     gemini_retry_max_delay: float = 8.0      # seconds; backoff ceiling
     gemini_timeout_seconds: float = 30.0     # per-request deadline
-    # Longest wait for one Gemini call: across its retries (honouring the retry
-    # delay a 429 asks for), and separately while waiting for a rate-limit slot.
-    # Past it the call fails with "The AI service is busy" instead of hanging.
+    # Longest wait for one interactive Gemini call (tutor chat, hints, query
+    # embedding): across its retries, and separately while waiting for a pacing
+    # slot. A 429 is not retried here: it fails fast as "The AI service is busy".
     gemini_max_wait_seconds: float = 60.0
-    # The same limit for background course ingestion, where nobody is waiting
-    # on a page: embedding a large upload on the free tier can need a few
-    # one-minute windows. Interactive calls (tutor, hints) keep the 60s above.
+    # The same limit for every background job: course ingestion (embedding and
+    # outline), assessment generation and grading. Nobody waits on a page, so a
+    # 429 waits at least a full one-minute window and retries, within this.
     gemini_ingest_max_wait_seconds: float = 300.0
     # Client-side pacing (core/throttle.py), per model, in requests per minute.
     # Defaults are safe for the free tier; 0 turns pacing off.

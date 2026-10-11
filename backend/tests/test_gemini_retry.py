@@ -338,12 +338,16 @@ def scripted(monkeypatch):
 
 
 def test_gemini_429_waits_at_least_the_delay_the_server_asked_for(scripted):
+    from core.gemini_calls import background_work
     from main import GeminiFlashClient
 
     _ScriptedModel.script = [_quota_error(20)]
     client = GeminiFlashClient(api_key="test-key", model="gemini-flash-lite-latest")
 
-    assert client.generate("hello") == "generated text"
+    # Background work retries a 429; an interactive call fails fast instead
+    # (tests/test_gemini_quota.py).
+    with background_work():
+        assert client.generate("hello") == "generated text"
     assert _ScriptedModel.calls == 2
     assert len(scripted) == 1 and scripted[0] >= 20.0
 
@@ -374,19 +378,21 @@ def test_retry_after_header_is_honoured():
     assert retry_delay_seconds(gexc.TooManyRequests("slow down", response=_Response())) == 17.0
 
 
-def test_gemini_429_gives_up_as_busy_when_the_wait_would_pass_the_cap(scripted):
+def test_gemini_429_gives_up_as_busy_when_the_wait_would_pass_the_cap(scripted, monkeypatch):
     from core.config import settings
     from core.exceptions import AI_BUSY_MESSAGE, AIServiceBusy
+    from core.gemini_calls import background_work
     from main import GeminiFlashClient
 
-    settings.gemini_max_wait_seconds = 30.0
+    # Background work waits at least a full 60s window per 429, within its cap.
+    monkeypatch.setattr(settings, "gemini_ingest_max_wait_seconds", 90.0)
     _ScriptedModel.script = [_quota_error(20), _quota_error(20), _quota_error(20)]
     client = GeminiFlashClient(api_key="test-key", model="gemini-flash-lite-latest")
 
-    with pytest.raises(AIServiceBusy) as caught:
+    with background_work(), pytest.raises(AIServiceBusy) as caught:
         client.generate("hello")
-    assert _ScriptedModel.calls == 2          # one wait of 20s fitted, the next did not
-    assert scripted == [pytest.approx(20.0, abs=1.0)]
+    assert _ScriptedModel.calls == 2          # one 60s wait fitted, the next did not
+    assert scripted == [pytest.approx(60.0, abs=1.0)]
     assert str(caught.value) == AI_BUSY_MESSAGE
     assert "quota" not in str(caught.value).lower()
     assert "rate limited" in caught.value.reason

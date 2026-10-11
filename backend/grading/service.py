@@ -198,6 +198,7 @@ async def _run_grading_graph(
     """
     from agents.grading.graph import build_grading_graph
     from core.database import AsyncSessionFactory
+    from core.gemini_calls import background_work
 
     async with AsyncSessionFactory() as db:
         try:
@@ -223,7 +224,10 @@ async def _run_grading_graph(
                 "error": None,
             }
 
-            final_state = await graph.ainvoke(initial_state)
+            # A background job: a 429 waits out the window and retries instead
+            # of failing fast as it would for a tutor reply (core/gemini_calls.py).
+            with background_work():
+                final_state = await graph.ainvoke(initial_state)
 
             if final_state.get("status") == "failed":
                 logger.error(

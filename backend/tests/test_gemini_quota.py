@@ -222,9 +222,12 @@ def test_a_429_with_no_usable_hint_waits_a_full_window_not_a_backoff(defaults, f
             raise _rate_limited(empty_detail=True)
         return {"embedding": [[1.0, 0.0]]}
 
+    from core.gemini_calls import background_work
+
     monkeypatch.setattr(genai, "embed_content", flaky)
     defaults.gemini_embed_rpm = 0  # pacing off: the limiter cannot help here
-    _client().embed_query("q")
+    with background_work():  # interactive calls fail fast on a 429 instead
+        _client().embed_query("q")
     assert calls[1] - calls[0] >= 60.0
 
 
@@ -314,3 +317,189 @@ def test_the_same_429s_on_an_interactive_query_give_up_as_busy(defaults, fake_ti
     client.embed_query("first question")             # answered
     with pytest.raises(AIServiceBusy):
         client.embed_query("second question")        # 18.67s + ~1s + 59s would pass 60s
+
+
+# ── 4. A 429 is never retried inside the same window ──────────────────────────
+#
+# Interactive calls (tutor chat, hints, query embedding) fail fast as busy.
+# Background work (ingestion, assessment generation, grading) waits at least a
+# full window, longer if the server asks, within gemini_ingest_max_wait_seconds.
+
+_SHORT_HINT = "396.356914ms"
+
+
+class _OneRateLimitAPI:
+    """genai.embed_content stand-in: one 429 with a short hint, then answers."""
+
+    def __init__(self, fake_time):
+        self.time = fake_time
+        self.calls: list[float] = []
+
+    def embed_content(self, **kwargs):
+        self.calls.append(self.time.now)
+        if len(self.calls) == 1:
+            raise _rate_limited(text_hint=_SHORT_HINT, empty_detail=True)
+        content = kwargs["content"]
+        vectors = [[1.0, 0.0] for _ in (content if isinstance(content, list) else [content])]
+        return {"embedding": vectors if isinstance(content, list) else vectors[0]}
+
+
+class _OneRateLimitModel:
+    """genai.GenerativeModel stand-in: one 429 with a short hint, then answers."""
+
+    calls: list[float] = []  # noqa: RUF012 - reset per test
+    clock = None
+
+    def __init__(self, *_a, **_k):
+        pass
+
+    def generate_content(self, *_a, **_k):
+        _OneRateLimitModel.calls.append(_OneRateLimitModel.clock())
+        if len(_OneRateLimitModel.calls) == 1:
+            raise _rate_limited(text_hint=_SHORT_HINT, empty_detail=True)
+
+        class _Response:
+            text = "graded"
+
+        return _Response()
+
+
+@pytest.fixture
+def one_429_model(monkeypatch, fake_time):
+    import google.generativeai as genai
+
+    _OneRateLimitModel.calls = []
+    _OneRateLimitModel.clock = fake_time.clock
+    monkeypatch.setattr(genai, "GenerativeModel", _OneRateLimitModel)
+    return _OneRateLimitModel
+
+
+def test_interactive_query_429_with_a_short_hint_fails_fast(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    from core.exceptions import AIServiceBusy
+
+    api = _OneRateLimitAPI(fake_time)
+    monkeypatch.setattr(genai, "embed_content", api.embed_content)
+
+    with pytest.raises(AIServiceBusy) as caught:
+        _client().embed_query("what is potential difference?")
+    assert len(api.calls) == 1                      # no retry inside the window
+    assert fake_time.elapsed == 0                   # and no wait
+    assert "rate limited" in caught.value.reason
+
+
+def test_background_query_429_with_a_short_hint_waits_a_full_window(defaults, fake_time, monkeypatch):
+    import google.generativeai as genai
+
+    from core.gemini_calls import background_work
+
+    api = _OneRateLimitAPI(fake_time)
+    monkeypatch.setattr(genai, "embed_content", api.embed_content)
+
+    with background_work():
+        _client().embed_query("what is potential difference?")
+    assert len(api.calls) == 2
+    assert api.calls[1] - api.calls[0] >= 60.0
+
+
+def test_interactive_generation_429_fails_fast(defaults, fake_time, one_429_model):
+    from core.exceptions import AIServiceBusy
+
+    with pytest.raises(AIServiceBusy):
+        _client().generate("tutor turn")
+    assert len(one_429_model.calls) == 1
+
+
+def test_background_grading_call_429_waits_a_full_window(defaults, fake_time, one_429_model):
+    from core.gemini_calls import background_work
+
+    with background_work():
+        assert _client().generate_deterministic("grade this answer") == "graded"
+    assert len(one_429_model.calls) == 2
+    assert one_429_model.calls[1] - one_429_model.calls[0] >= 60.0
+
+
+def test_background_wait_is_bounded_by_the_background_cap(defaults, fake_time, one_429_model, monkeypatch):
+    from core.config import settings
+    from core.exceptions import AIServiceBusy
+    from core.gemini_calls import background_work
+
+    monkeypatch.setattr(settings, "gemini_ingest_max_wait_seconds", 30.0)
+    with background_work(), pytest.raises(AIServiceBusy):
+        _client().generate("outline")             # a full window (60s) would pass 30s
+    assert len(one_429_model.calls) == 1
+
+
+def test_background_work_does_not_leak_outside_its_block():
+    from core.gemini_calls import background_work, in_background
+
+    assert not in_background()
+    with background_work():
+        assert in_background()
+    assert not in_background()
+
+
+# The three job runners, taken before conftest's autouse stub replaces them.
+from assessments.service import _run_assessment_graph as _real_run_assessment
+from courses.service import _run_ingestion as _real_run_ingestion
+from grading.service import _run_grading_graph as _real_run_grading
+
+
+def _fake_session(monkeypatch):
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, MagicMock
+
+    import core.database
+
+    db = MagicMock()
+    db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=None)))
+    db.commit = AsyncMock()
+
+    @asynccontextmanager
+    async def session():
+        yield db
+
+    monkeypatch.setattr(core.database, "AsyncSessionFactory", session)
+
+
+def _recording_graph(seen):
+    from unittest.mock import MagicMock
+
+    from core.gemini_calls import in_background
+
+    async def ainvoke(_state):
+        seen.append(in_background())
+        return {"status": "complete"}
+
+    graph = MagicMock()
+    graph.ainvoke = ainvoke
+    return lambda **kwargs: graph
+
+
+@pytest.mark.asyncio
+async def test_every_background_job_runs_its_graph_as_background_work(monkeypatch):
+    import uuid
+    from unittest.mock import MagicMock
+
+    import agents.assessment.graph as assessment_graph
+    import agents.grading.graph as grading_graph
+    import agents.ingestion.graph as ingestion_graph
+
+    seen: list[bool] = []
+    _fake_session(monkeypatch)
+    monkeypatch.setattr(ingestion_graph, "build_ingestion_graph", _recording_graph(seen))
+    monkeypatch.setattr(assessment_graph, "build_assessment_graph", _recording_graph(seen))
+    monkeypatch.setattr(grading_graph, "build_grading_graph", _recording_graph(seen))
+
+    await _real_run_ingestion(
+        course_id=uuid.uuid4(), job_id=uuid.uuid4(), files=[],
+        retrieval_service=MagicMock(), gemini_pro=MagicMock(),
+    )
+    await _real_run_assessment(
+        assessment_id=uuid.uuid4(), course_id=uuid.uuid4(), teacher_id=uuid.uuid4(), config={},
+        retrieval_service=MagicMock(), gemini_flash=MagicMock(), langfuse=MagicMock(),
+    )
+    await _real_run_grading(submission_id=uuid.uuid4(), course_id=uuid.uuid4(), app_state=MagicMock())
+
+    assert seen == [True, True, True]

@@ -331,8 +331,8 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `LANGFUSE_PUBLIC_KEY` / `_SECRET_KEY` / `_HOST` | `""` / `""` / cloud.langfuse.com | |
 | `GEMINI_MAX_ATTEMPTS` / `_RETRY_BASE_DELAY` / `_RETRY_MAX_DELAY` / `_TIMEOUT_SECONDS` | `4` / `0.5` / `8.0` / `30.0` | a 429 waits at least its retry delay; a timed-out generation retries once; a daily quota fails fast |
 | `GEMINI_GENERATE_RPM` / `GEMINI_EMBED_RPM` | `5` / `90` | client-side pacing per model (0 = off) |
-| `GEMINI_MAX_WAIT_SECONDS` | `60.0` | past it: 503 `ai_busy`, "The AI service is busy. Please try again in a minute." |
-| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0` | the same limit for background ingestion embedding; interactive calls keep 60 s |
+| `GEMINI_MAX_WAIT_SECONDS` | `60.0` | interactive calls (tutor chat, hints, query embedding); a 429 fails fast: 503 `ai_busy`, "The AI service is busy. Please try again in a minute." |
+| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0` | every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full window and retries |
 | `JOB_STALE_AFTER_SECONDS` | `1800` | orphaned-job reaper threshold |
 | `RATE_LIMIT_*` | enabled; auth 10/60 s, AI 20/60 s | |
 | `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` | 50 MB / 20 | oversized ⇒ 413 |

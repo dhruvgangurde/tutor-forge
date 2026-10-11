@@ -145,8 +145,8 @@ npm run dev                # → http://localhost:5173
 | `EMBEDDING_BATCH_SIZE`    | `100`                    | Course chunks per embedding request (API maximum 100)                                                                                   |
 | `GEMINI_GENERATE_RPM`     | `5`                      | Client-side pacing per generation model, requests per minute (0 = off); safe for the free tier                                          |
 | `GEMINI_EMBED_RPM`        | `90`                     | Client-side pacing per embedding model, requests per minute (0 = off)                                                                   |
-| `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one Gemini call (429 retries or a pacing slot) before the user sees "The AI service is busy"                           |
-| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0`           | The same limit for background course ingestion (embedding a large upload can take a few one-minute windows)                             |
+| `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one interactive Gemini call (tutor chat, hints, query embedding); a 429 there fails fast as "The AI service is busy"   |
+| `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0`           | The same limit for every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full minute and retries |
 | `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                                            |
 | `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                                        |
 | `CORS_ALLOWED_ORIGINS`    | `http://localhost:5173`  | Comma-separated allowed frontend origins (no wildcard)                                                                                    |

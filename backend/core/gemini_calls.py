@@ -13,8 +13,11 @@ request against the quota.
 
 Now
 ---
-- A 429 is retried no sooner than the delay the server asked for, and only
-  while the total wait stays within ``settings.gemini_max_wait_seconds``.
+- A 429 is never retried inside the same window. An interactive call (tutor
+  chat, hints, query embedding) fails fast. Background work (ingestion,
+  assessment generation, grading; see background_work()) waits at least a
+  full window, longer if the server asks, within
+  ``settings.gemini_ingest_max_wait_seconds``.
 - A daily quota fails at once: no wait inside a request can fix it.
 - A timed-out generation is retried at most once.
 - When it gives up for any of those reasons, the caller gets AIServiceBusy,
@@ -26,7 +29,9 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from core.config import settings
 from core.exceptions import AIServiceBusy
@@ -158,17 +163,50 @@ def retry_delay_seconds(exc: BaseException) -> float | None:
 
 def rate_limit_wait(exc: BaseException) -> float | None:
     """
-    How long to wait before retrying a failed call, or None to use the backoff.
+    How long background work waits before retrying, or None to use the backoff.
 
-    A 429 waits at least what the server asked for. With no usable hint (an
-    empty retry_delay, or none at all) it waits a whole pacing window: a short
-    backoff would land inside the same window and spend quota on a request
-    that cannot succeed, as the free tier counts rejected requests too.
+    A 429 waits at least one whole pacing window, longer if the server asks.
+    The free tier counts rejected requests too, so a retry inside the same
+    window spends quota on a request that cannot succeed: a live upload was told
+    "retry in 396ms", retried, and was then told "retry in 59s".
     """
     if not isinstance(exc, _RATE_LIMITED):
         return None
     delay = retry_delay_seconds(exc)
-    return delay if delay is not None else WINDOW_SECONDS
+    return max(delay or 0.0, WINDOW_SECONDS)
+
+
+# ── Background work ───────────────────────────────────────────────────────────
+#
+# Course ingestion, assessment generation and grading run as background jobs:
+# nobody is waiting on a page, so a 429 may wait out the window and retry. A
+# tutor reply or hint has someone waiting, so a 429 fails fast as busy instead.
+# The job runners mark their graph run with background_work(); LangGraph runs
+# sync nodes in worker threads with a copy of the context, so the mark reaches
+# every Gemini call the job makes.
+
+_BACKGROUND: ContextVar[bool] = ContextVar("gemini_background_work", default=False)
+
+
+@contextmanager
+def background_work() -> Iterator[None]:
+    """Treat every Gemini call made inside this block as background work."""
+    token = _BACKGROUND.set(True)
+    try:
+        yield
+    finally:
+        _BACKGROUND.reset(token)
+
+
+def in_background() -> bool:
+    return _BACKGROUND.get()
+
+
+def wait_cap(background: bool | None = None) -> float:
+    """The longest a call may wait: 300s for background work, 60s otherwise."""
+    if background is None:
+        background = in_background()
+    return settings.gemini_ingest_max_wait_seconds if background else settings.gemini_max_wait_seconds
 
 
 def is_daily_quota(exc: BaseException) -> bool:
@@ -201,16 +239,25 @@ def call_gemini[T](
     *,
     description: str,
     generation: bool,
-    max_wait: float | None = None,
+    background: bool | None = None,
 ) -> T:
     """
     Run one Gemini request with retries, as described in the module docstring.
 
     ``generation`` limits a timed-out generation to one retry; embeddings keep
-    the normal attempt count. ``max_wait`` caps the total retry wait; it
-    defaults to the interactive ``gemini_max_wait_seconds``, and background
-    ingestion passes ``gemini_ingest_max_wait_seconds``.
+    the normal attempt count. ``background`` (default: inside background_work())
+    decides what a 429 does: background work waits at least a full window and
+    retries within ``gemini_ingest_max_wait_seconds``; an interactive call
+    fails fast as busy, never retrying inside the window.
     """
+    if background is None:
+        background = in_background()
+
+    def give_up(exc: BaseException) -> bool:
+        if is_daily_quota(exc):
+            return True
+        return not background and isinstance(exc, _RATE_LIMITED)
+
     try:
         return call_with_retry(
             fn,
@@ -221,8 +268,8 @@ def call_gemini[T](
             description=description,
             sleep=lambda seconds: time.sleep(seconds),
             delay_hint=rate_limit_wait,
-            max_total_wait=settings.gemini_max_wait_seconds if max_wait is None else max_wait,
-            stop_if=is_daily_quota,
+            max_total_wait=wait_cap(background),
+            stop_if=give_up,
             attempts_for=(lambda exc: 2 if is_timeout(exc) else None) if generation else None,
         )
     except GEMINI_TRANSIENT as exc:

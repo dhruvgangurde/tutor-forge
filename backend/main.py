@@ -38,7 +38,7 @@ from core.config import assert_safe_production_config, legacy_env_warnings, sett
 from core.exceptions import register_exception_handlers
 from core.logging import RequestIdMiddleware, configure_logging
 from core.ratelimit import RateLimitMiddleware
-from core.gemini_calls import call_gemini
+from core.gemini_calls import call_gemini, wait_cap
 from core.security_headers import SecurityHeadersMiddleware
 from core.throttle import EMBED, GENERATE, embedding_batch_limit, throttle
 
@@ -68,7 +68,8 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> str:
-            throttle(GENERATE, self._model_name)  # every attempt is a request
+            # Every attempt is a request; background jobs may wait longer for a slot.
+            throttle(GENERATE, self._model_name, max_wait=wait_cap())
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,
@@ -102,7 +103,7 @@ class GeminiProClient:
         import google.generativeai as genai
 
         def _call() -> list[float]:
-            throttle(EMBED, settings.embedding_model)
+            throttle(EMBED, settings.embedding_model, max_wait=wait_cap())
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=text,
@@ -126,13 +127,12 @@ class GeminiProClient:
         than the API's 100).
         """
         size = embedding_batch_limit(_EMBED_BATCH_LIMIT)
-        # Course ingestion runs in the background, so it may wait longer for
-        # quota than a tutor reply may.
-        cap = settings.gemini_ingest_max_wait_seconds
+        # Course chunks are only embedded by background ingestion: a 429 waits
+        # out the window and retries, within the background wait limit.
         vectors: list[list[float]] = []
         for start in range(0, len(texts), size):
             vectors.extend(
-                self._embed_batch(texts[start:start + size], "retrieval_document", max_wait=cap)
+                self._embed_batch(texts[start:start + size], "retrieval_document", background=True)
             )
         return vectors
 
@@ -141,13 +141,15 @@ class GeminiProClient:
         return self._embed_batch([text], "retrieval_query")[0]
 
     def _embed_batch(
-        self, texts: list[str], task_type: str, max_wait: float | None = None
+        self, texts: list[str], task_type: str, background: bool | None = None
     ) -> list[list[float]]:
         import google.generativeai as genai
 
         def _call() -> list[list[float]]:
             # Weighed by texts: each one counts against the per-minute quota.
-            throttle(EMBED, settings.embedding_model, weight=len(texts), max_wait=max_wait)
+            throttle(
+                EMBED, settings.embedding_model, weight=len(texts), max_wait=wait_cap(background)
+            )
             result = genai.embed_content(
                 model=settings.embedding_model,
                 content=texts,
@@ -169,7 +171,7 @@ class GeminiProClient:
             _call,
             description=f"Gemini embed x{len(texts)} ({settings.embedding_model})",
             generation=False,
-            max_wait=max_wait,
+            background=background,
         )
 
 
@@ -191,7 +193,8 @@ class GeminiFlashClient:
         import google.generativeai as genai
 
         def _call() -> str:
-            throttle(GENERATE, self._model_name)  # every attempt is a request
+            # Every attempt is a request; background jobs may wait longer for a slot.
+            throttle(GENERATE, self._model_name, max_wait=wait_cap())
             model = genai.GenerativeModel(
                 self._model_name,
                 system_instruction=system_instruction or None,
