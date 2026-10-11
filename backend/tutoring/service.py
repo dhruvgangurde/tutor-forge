@@ -67,8 +67,9 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
     The stored anchor wins. Without one (sessions from before the anchor
     existed, or after a new question was refused) it falls back to the most
     recent student message the classifier calls a new question, else the
-    session's first student message. Whatever it returns still has to pass the
-    groundedness gate before anything is generated from it.
+    session's first student message -- unless the tutor refused that message,
+    in which case there is no open question (None). Whatever it returns still
+    has to pass the groundedness gate before anything is generated from it.
     """
     if session.anchor_message_id is not None:
         anchored = await db.get(TutoringMessage, session.anchor_message_id)
@@ -77,17 +78,28 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
 
     result = await db.execute(
         select(TutoringMessage)
-        .where(
-            TutoringMessage.session_id == session.id,
-            TutoringMessage.role == "student",
-        )
-        .order_by(TutoringMessage.created_at.asc())
+        .where(TutoringMessage.session_id == session.id)
+        .order_by(TutoringMessage.created_at.asc(), _STUDENT_FIRST)
     )
-    students = list(result.scalars().all())
+    messages = list(result.scalars().all())
+    students = [m for m in messages if m.role == "student"]
+
+    def was_refused(student_msg: TutoringMessage) -> bool:
+        """True when the tutor's answer to this message was a refusal."""
+        after = messages[messages.index(student_msg) + 1:]
+        reply = next((m for m in after if m.role == "tutor"), None)
+        return reply is not None and reply.is_refusal
+
+    # A refused question is never the open question. It used to be picked up
+    # here once its refusal had cleared the anchor, so every later reply,
+    # however on-topic, was judged against it and refused too. With no open
+    # question the message is judged on its own text instead.
     for msg in reversed(students):
         if classify_turn(msg.content) == TURN_NEW_QUESTION:
-            return msg
-    return students[0] if students else None
+            return None if was_refused(msg) else msg
+    if students and not was_refused(students[0]):
+        return students[0]
+    return None
 
 
 async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringMessage | None:
