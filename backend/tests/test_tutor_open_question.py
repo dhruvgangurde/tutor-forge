@@ -1,3 +1,6 @@
+# The tutoring fixtures are imported by name from tests/test_tutoring.py and
+# requested as test parameters, which ruff reads as redefinitions.
+# ruff: noqa: F811
 """
 tests/test_tutor_open_question.py
 ---------------------------------
