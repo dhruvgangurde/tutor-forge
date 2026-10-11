@@ -57,6 +57,7 @@ from agents.assessment.validation import (
     question_problems,
 )
 from core.context_phrasing import strip_context_references
+from core.exceptions import NoUsableQuestions
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from progress.tagging import load_course_concepts, tag_question_at_generation
 
@@ -96,9 +97,10 @@ _DEFAULT_TYPE_MIX: dict[str, int] = {
 # Each pass = one additional LLM call, so cap to control latency.
 _MAX_DISTRACTOR_IMPROVEMENTS = 3
 
-#: The existing failure text when no question comes back, reused when every
-#: question fails validation twice.
 _NO_QUESTIONS_ERROR = "LLM returned an empty question list."
+#: Shown to the teacher when every question fails validation twice. A fixed,
+#: plain message (core/exceptions.py): never the model's output.
+_NO_USABLE_QUESTIONS_ERROR = str(NoUsableQuestions())
 _VALID_TYPES = frozenset({"mcq", "short_answer", "numeric"})
 
 
@@ -719,7 +721,7 @@ def generate_questions_node(
         gemini_flash=gemini_flash,
     )
     if not question_list:
-        return _failed_state(state, _NO_QUESTIONS_ERROR)
+        return _failed_state(state, _NO_USABLE_QUESTIONS_ERROR)
 
     # ── Normalise and extract state arrays ────────────────────────────────────
     questions_out: list[dict] = []

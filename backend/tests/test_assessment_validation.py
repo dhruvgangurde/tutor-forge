@@ -244,11 +244,25 @@ def test_an_unusable_regeneration_drops_the_slot(regen):
     assert [q["stem"] for q in result["questions"]] == ["Explain partition."]
 
 
-def test_every_question_failing_returns_the_existing_error():
+def test_every_question_failing_returns_the_plain_message():
     result, _ = _run({"questions": [_VAGUE]}, [{"question": _VAGUE}])
     assert result["status"] == "failed"
-    assert result["error"] == "LLM returned an empty question list."
+    assert result["error"] == (
+        "I couldn't write good questions from this material this time. "
+        "Please try again, or choose a different topic."
+    )
     assert result["questions"] == []
+
+
+def test_the_all_failed_message_is_a_client_safe_domain_error():
+    from core.exceptions import NO_USABLE_QUESTIONS_MESSAGE, DomainError, NoUsableQuestions
+
+    err = NoUsableQuestions()
+    assert isinstance(err, DomainError)
+    assert str(err) == NO_USABLE_QUESTIONS_MESSAGE
+    result, _ = _run({"questions": [_VAGUE]}, [{"question": _VAGUE}])
+    assert result["error"] == NO_USABLE_QUESTIONS_MESSAGE
+    assert _VAGUE["stem"] not in result["error"]
 
 
 def test_passing_questions_make_no_extra_call():
