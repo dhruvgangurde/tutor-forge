@@ -97,11 +97,12 @@ it). Live is never run by pytest. The offline run is a pytest gate
 
 ## What is NOT measured here, and why
 
-- **Grading out-of-corpus leakage.** The grading agent has no groundedness gate
-  at all (`docs/BUG-AUDIT-2026-08-15.md` Critical #2 — confirmed still open: no
-  `is_grounded` call exists anywhere in `agents/grading/`). There is no gate
-  decision to probe, so the leakage suite covers the tutor and assessment agents
-  only and says so in the report rather than reporting a vacuous pass.
+- **Grading out-of-corpus leakage.** The grading agent now has a groundedness
+  gate (`check_evidence_groundedness_node` in `agents/grading/nodes.py`, the same
+  `RetrievalService.is_grounded()` and threshold as the tutor): a short answer
+  whose evidence is below the bar is not graded and is flagged for teacher
+  review. The groundedness suite does not probe that gate yet; it covers the
+  tutor and assessment agents only.
 - **Teacher acceptance rate.** The brief's ≥80% target is measured by a human
   teacher accepting or overriding AI recommendations. The suite here measures a
   *proxy* — agreement between the AI's recommended score and a labeled expected
