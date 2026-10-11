@@ -22,7 +22,8 @@ suite measures both paths and reports the difference rather than assuming
 either is correct.
 
 Scope: the tutor and assessment agents share this gate. The grading agent has
-none (BUG-AUDIT Critical #2, still open), so grading contributes no number here.
+its own (check_evidence_groundedness_node, same is_grounded and threshold), but
+this suite does not probe it yet, so grading contributes no number here.
 """
 
 from __future__ import annotations
@@ -143,11 +144,11 @@ async def run() -> SuiteResult:
         notes.append(f"Corpora absent, probes skipped: {sorted(skipped_corpora)}")
     notes.append(
         "SCOPE: this number covers the tutor and assessment agents, which share "
-        "RetrievalService.is_grounded. The GRADING agent has no groundedness gate "
-        "at all (docs/BUG-AUDIT-2026-08-15.md Critical #2 - re-confirmed open: no "
-        "is_grounded call exists anywhere in agents/grading/). There is no gate "
-        "decision to probe there, so grading contributes no leakage number and "
-        "this criterion is NOT fully covered for the system as a whole."
+        "RetrievalService.is_grounded. The GRADING agent has its own gate "
+        "(check_evidence_groundedness_node in agents/grading/nodes.py: an answer "
+        "whose evidence is below the bar is not graded and is flagged for teacher "
+        "review), but this suite does not probe it yet, so grading contributes no "
+        "leakage number and this criterion is NOT fully covered for the system as a whole."
     )
 
     # ── Threshold sweep ───────────────────────────────────────────────────────
