@@ -159,7 +159,7 @@ class OllamaClient:
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
-            except Exception:  # noqa: BLE001 - error body is best-effort
+            except Exception:  # noqa: BLE001, S110 - error body is best-effort
                 pass
             if exc.code == 429 or exc.code >= 500:
                 raise OllamaTransientError(
