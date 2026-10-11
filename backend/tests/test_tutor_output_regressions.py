@@ -325,3 +325,27 @@ def test_fallback_after_a_real_attempt_keeps_the_verdict():
         "That's not quite right. The maximum element is not simply the first one. "
         + GUARD_FALLBACK_QUESTION
     )
+
+
+# ── Phase B (Gemini replay): a wrong attempt corrected by stating the answer ──
+
+
+def test_live_correction_keeps_the_verdict_and_drops_the_stated_fact():
+    out = _run(
+        "That is not quite right, because it does not start at 0 and it moves when an element is "
+        "less than or equal to the pivot. Look at what happens to that index and the elements when "
+        "you find a value that is less than or equal to the pivot.",
+        reply="i think i starts at 0 and moves right whenever an element is bigger than the pivot",
+        hint_level=0,
+        question="how does the partition function keep track of the smaller elements?",
+        course_chunks=[
+            (
+                "int partition(int arr[], int low, int high) { int pivot = arr[high]; "
+                "int i = low - 1; for (int j = low; j < high; j++) { if (arr[j] <= pivot) "
+                "{ i++; swap(arr[i], arr[j]); } } }"
+            )
+        ],
+    )
+    assert out.startswith("That is not quite right.")
+    assert "because" not in out
+    assert "does not start at 0" not in out

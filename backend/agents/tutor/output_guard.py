@@ -83,6 +83,7 @@ RULE_PRONOUN_STATEMENT = "pronoun_statement"
 RULE_BACK_REFERENCE = "back_reference"
 RULE_FORMULA = "formula"
 RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
+RULE_VERDICT_REASON = "verdict_reason"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -510,6 +511,28 @@ def _is_verdict(text: str) -> bool:
     return bool(_VERDICT_RE.search(_plain(text).lstrip(" \"'")))
 
 
+# ── 3b. A verdict keeps its words, not its reason ─────────────────────────────
+#
+# "That is not quite right, because it does not start at 0 and it moves when an
+# element is less than or equal to the pivot." The verdict is useful feedback on
+# a real attempt; the reason after it was the answer. Below Hint 3 the reason
+# clause goes and the verdict stays.
+
+_REASON_SPLIT_RE = re.compile(
+    r"\s*(?:,\s*(?:because|since|as)\b|;|\s[—–-]\s|:)\s*", re.IGNORECASE
+)
+
+
+def _cut_reason(sentence: str) -> str:
+    """The verdict alone, when the sentence is a verdict followed by its reason."""
+    if _is_question(sentence):
+        return sentence
+    parts = _REASON_SPLIT_RE.split(sentence, maxsplit=1)
+    if len(parts) < 2 or not parts[1].strip() or not _is_verdict(parts[0]):
+        return sentence
+    return parts[0].rstrip(" ,;:.!") + "."
+
+
 # ── 4. Worked-example leakage ─────────────────────────────────────────────────
 
 _REF = (
@@ -766,7 +789,6 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     """Return the guarded reply and the names of the rules that changed it."""
     text, dropped = _tidy(text or "")
     lines = _parse(text)
-    original = _sentences(lines)  # before any rule, to find the untouched opening
     tripped: list[str] = [RULE_FRAGMENT] if dropped else []
     reply_words = _content_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
     student_numbers = _numbers(turn.question) | _numbers(turn.student_reply or "")
@@ -807,6 +829,15 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
             tripped.append(rule)
         if cut_back:
             tripped.append(RULE_BACK_REFERENCE)
+
+    # 3b. On a reply to a real attempt below Hint 3, a verdict keeps its words
+    # and loses its reason ("That is not quite right, because <the answer>").
+    if low_rung and turn.path == PATH_REPLY and not turn.is_non_answer:
+        run(RULE_VERDICT_REASON, _cut_reason)
+
+    # Taken after the verdict cut, so a shortened verdict still counts as the
+    # untouched opening the fallback may keep.
+    original = _sentences(lines)
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)

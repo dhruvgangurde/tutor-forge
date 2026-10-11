@@ -30,6 +30,7 @@ from agents.tutor.output_guard import (
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
     RULE_VERDICT_AFTER_NON_ANSWER,
+    RULE_VERDICT_REASON,
     TutorTurn,
     apply_guards,
     guard_tutor_reply,
@@ -165,8 +166,11 @@ def test_definition_is_removed_from_a_reply_below_hint_3():
         level=1,
         reply="is it about batteries?",
     )
-    assert out == "What do you think is being compared?"
-    assert RULE_STATES_ANSWER in tripped
+    # The verdict on the attempt stays; the definition after it does not
+    # (verdict_reason, Phase B T1).
+    assert out == "Not exactly. What do you think is being compared?"
+    assert "volts" not in out and "compares two points" not in out
+    assert RULE_VERDICT_REASON in tripped
 
 
 def test_definition_as_a_lead_in_to_a_question_is_cut():
@@ -1415,3 +1419,89 @@ def test_fallback_kept_text_logs_the_rule_name_only(caplog):
     joined = " ".join(messages).lower()
     for fragment in ("quite right", "maximum", "largest", "work through"):
         assert fragment not in joined
+
+
+# ── A verdict keeps its words, not its reason (levels 0-2, real attempts) ─────
+
+_PARTITION_Q = "how does the partition function keep track of the smaller elements?"
+_PARTITION_ATTEMPT = "i think i starts at 0 and moves right whenever an element is bigger than the pivot"
+_PARTITION_COURSE = (
+    "int partition(int arr[], int low, int high) { int pivot = arr[high]; int i = low - 1; "
+    "for (int j = low; j < high; j++) { if (arr[j] <= pivot) { i++; swap(arr[i], arr[j]); } } }"
+)
+
+
+def _verdict_guard(text, *, path=PATH_REPLY, level=0, reply=_PARTITION_ATTEMPT, non_answer=False):
+    return apply_guards(
+        text,
+        TutorTurn(
+            path=path,
+            hint_level=level,
+            question=_PARTITION_Q,
+            course_text=_PARTITION_COURSE,
+            student_reply=reply if path == PATH_REPLY else None,
+            is_non_answer=non_answer,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "sentence, verdict",
+    [
+        ("That is not quite right, because it moves when an element is smaller than the pivot.",
+         "That is not quite right."),
+        ("Not quite, since the index starts somewhere else.", "Not quite."),
+        ("That is not correct; the index starts one place earlier.", "That is not correct."),
+        ("That's not right - it moves on the smaller elements.", "That's not right."),
+        ("Not quite: it starts one position before low.", "Not quite."),
+    ],
+)
+def test_a_verdict_keeps_its_words_and_loses_its_reason(sentence, verdict):
+    out, tripped = _verdict_guard(sentence + " What decides when the index moves?")
+    assert out == verdict + " What decides when the index moves?"
+    assert RULE_VERDICT_REASON in tripped
+
+
+@pytest.mark.parametrize("level", [1, 2])
+def test_the_reason_is_cut_at_every_level_below_hint_3(level):
+    out, _ = _verdict_guard(
+        "That is not quite right, because it moves on smaller values. What decides when it moves?",
+        level=level,
+    )
+    assert out == "That is not quite right. What decides when it moves?"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Think about it, because the index matters here. What decides when it moves?",  # no verdict
+        "That is not quite right. What decides when the index moves?",                  # no reason
+        "Not quite, but what decides when the index moves?",                            # a question
+    ],
+)
+def test_other_sentences_are_left_alone(text):
+    assert _verdict_guard(text) == (text, [])
+
+
+@pytest.mark.parametrize(
+    "path, level, non_answer, reply",
+    [
+        (PATH_REPLY, 3, False, _PARTITION_ATTEMPT),   # Hint 3 may explain
+        (PATH_REPLY, 4, False, _PARTITION_ATTEMPT),
+        (PATH_NEW_QUESTION, 0, False, None),         # not a reply to an attempt
+        (PATH_HINT, 1, False, None),
+    ],
+)
+def test_the_reason_stays_outside_real_attempt_replies_below_hint_3(path, level, non_answer, reply):
+    text = "That is not quite right, because it moves on smaller values. What decides when it moves?"
+    _out, tripped = _verdict_guard(text, path=path, level=level, non_answer=non_answer, reply=reply)
+    assert RULE_VERDICT_REASON not in tripped
+
+
+def test_a_cut_verdict_still_counts_as_the_untouched_opening_for_the_fallback():
+    out, tripped = _verdict_guard(
+        "That is not quite right, because it does not start at 0 and it moves when an element is "
+        "smaller than the pivot."
+    )
+    assert out == "That is not quite right. " + GUARD_FALLBACK_QUESTION
+    assert tripped == [RULE_VERDICT_REASON, RULE_FALLBACK_KEPT_TEXT]
