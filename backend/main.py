@@ -19,29 +19,28 @@ Routers registered here (add each as the corresponding unit is built):
   - tutoring/router.py    (active)
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import chromadb
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langfuse import Langfuse
 
-from auth.router import router as auth_router
 from assessments.router import router as assessments_router
+from auth.router import router as auth_router
+from core.config import assert_safe_production_config, legacy_env_warnings, settings
+from core.exceptions import register_exception_handlers
+from core.gemini_calls import call_gemini, wait_cap
+from core.logging import RequestIdMiddleware, configure_logging
+from core.ratelimit import RateLimitMiddleware
+from core.security_headers import SecurityHeadersMiddleware
+from core.throttle import EMBED, GENERATE, embedding_batch_limit, throttle
 from courses.router import router as courses_router
 from grading.router import router as grading_router
 from health.router import router as health_router
-from tutoring.router import router as tutoring_router
 from progress.router import router as progress_router
-from core.config import assert_safe_production_config, legacy_env_warnings, settings
-from core.exceptions import register_exception_handlers
-from core.logging import RequestIdMiddleware, configure_logging
-from core.ratelimit import RateLimitMiddleware
-from core.gemini_calls import call_gemini, wait_cap
-from core.security_headers import SecurityHeadersMiddleware
-from core.throttle import EMBED, GENERATE, embedding_batch_limit, throttle
-
+from tutoring.router import router as tutoring_router
 
 # ── Gemini client wrappers ────────────────────────────────────────────────────
 # Imported here to keep lifespan readable; actual classes live in their own modules.
@@ -231,7 +230,7 @@ def _build_llm_clients() -> tuple[object, object]:
     provider = settings.llm_provider
 
     if provider == "mock":
-        from core.mock_gemini import MockGeminiProClient, MockGeminiFlashClient
+        from core.mock_gemini import MockGeminiFlashClient, MockGeminiProClient
         print("[INIT] LLM_PROVIDER=mock — deterministic in-process clients (no API quota usage)")
         return (
             MockGeminiProClient(
@@ -307,7 +306,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.langfuse = langfuse
 
     # 4. RetrievalService — depends on Chroma client and Gemini Pro for embedding
-    from retrieval.service import RetrievalService  # deferred to avoid circular import at module level
+    from retrieval.service import (
+        RetrievalService,  # deferred to avoid circular import at module level
+    )
     retrieval_service = RetrievalService(
         chroma_client=chroma_client,
         gemini_client=gemini_pro,
@@ -329,7 +330,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         async with AsyncSessionFactory() as recovery_db:
             await recover_stale_jobs(recovery_db)
-    except Exception:  # noqa: BLE001 - startup recovery must never block boot
+    except Exception:  # startup recovery must never block boot
         import logging
         logging.getLogger("main").exception("Startup job recovery failed (non-fatal)")
 
