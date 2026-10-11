@@ -51,8 +51,9 @@ from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
 from progress.tagging import load_course_concepts, tag_question_at_generation
 
 if TYPE_CHECKING:
-    from retrieval.service import RetrievalService
     from langfuse import Langfuse
+
+    from retrieval.service import RetrievalService
 
 logger = logging.getLogger(__name__)
 
@@ -232,7 +233,7 @@ def _failed_state(state: AssessmentState, error: str) -> AssessmentState:
 
 def retrieve_concepts_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> AssessmentState:
     """
     Retrieve semantically relevant course chunks for the requested topic.
@@ -257,10 +258,9 @@ def retrieve_concepts_node(
         result = retrieval_service.retrieve(course_id, topic, top_k=8)
     except Exception as exc:
         logger.exception(
-            "ChromaDB retrieval failed for course_id=%s topic=%r: %s",
+            "ChromaDB retrieval failed for course_id=%s topic=%r",
             course_id,
             topic,
-            exc,
         )
         logger.error(
             "[RETRIEVAL-ERROR] assessment_id=%s course_id=%s topic=%r exception=%s",
@@ -339,7 +339,7 @@ def retrieve_concepts_node(
 
 def check_groundedness_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
 ) -> AssessmentState:
     """
     Hard gate: refuse generation if the topic is not grounded in course material.
@@ -444,7 +444,7 @@ def refuse_node(state: AssessmentState) -> AssessmentState:
 
 def generate_questions_node(
     state: AssessmentState,
-    retrieval_service: "RetrievalService",
+    retrieval_service: RetrievalService,
     gemini_flash,
 ) -> AssessmentState:
     """
@@ -511,7 +511,7 @@ def generate_questions_node(
             system_instruction=ASSESSMENT_SYSTEM_INSTRUCTION + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
         )
     except Exception as exc:
-        logger.exception("Gemini Flash generation failed: %s", exc)
+        logger.exception("Gemini Flash generation failed")
         return _failed_state(state, f"LLM generation failed: {exc}")
 
     gen_ms = round((time.perf_counter() - t0) * 1000)
@@ -567,8 +567,7 @@ def generate_questions_node(
                     else:
                         q["options"] = candidate
                         mcq_improved += 1
-            except Exception:
-                # Non-fatal — keep original options on any failure
+            except Exception:  # noqa: BLE001, S110 - non-fatal: the original options stand
                 pass
 
     # ── Normalise and extract state arrays ────────────────────────────────────
@@ -685,7 +684,7 @@ def generate_questions_node(
 async def persist_assessment_node(
     state: AssessmentState,
     db,
-    langfuse: "Langfuse",
+    langfuse: Langfuse,
 ) -> AssessmentState:
     """
     UPDATE the placeholder Assessment row and INSERT Questions + RubricCriteria.
@@ -829,7 +828,7 @@ async def persist_assessment_node(
         )
         span.end()
         trace_id = span.trace_id
-    except Exception:  # noqa: BLE001 - tracing must never fail generation
+    except Exception:  # tracing must never fail generation
         # Loud on purpose. This call sat broken on the removed v2 API for an
         # entire major version because a bare warning hid it; observability
         # coverage is itself an acceptance criterion, so a dead trace is a
