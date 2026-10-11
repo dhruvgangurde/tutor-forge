@@ -522,10 +522,9 @@ def generate_questions_node(
     try:
         parsed = json.loads(cleaned)
     except json.JSONDecodeError as exc:
+        # Counts only: the response is generated questions and answers.
         logger.error(
-            "JSON parse error in Gemini response (first 500 chars): %r — %s",
-            cleaned[:500],
-            exc,
+            "JSON parse error in Gemini response (%d chars): %s", len(cleaned), exc
         )
         return _failed_state(state, f"LLM returned malformed JSON: {exc}")
 
@@ -559,10 +558,10 @@ def generate_questions_node(
                     leaked = _leaking_options(candidate, foreign)
                     if leaked:
                         logger.warning(
-                            "Distractor improvement REJECTED for %r: option(s) %r "
+                            "Distractor improvement REJECTED for question %d: %d option(s) "
                             "reproduce another question's answer in this batch.",
-                            q.get("stem", "")[:60],
-                            [x[:40] for x in leaked],
+                            question_list.index(q) + 1,
+                            len(leaked),
                         )
                     else:
                         q["options"] = candidate
@@ -599,9 +598,7 @@ def generate_questions_node(
         stem = strip_context_references(raw_stem)
         if stem != raw_stem:
             context_phrases_stripped += 1
-            logger.info(
-                "Stripped context framing from stem: %r -> %r", raw_stem[:70], stem[:70]
-            )
+            logger.info("Stripped context framing from the stem of question %d", idx + 1)
 
         raw_options = q.get("options")
         options = (
@@ -646,10 +643,10 @@ def generate_questions_node(
         if leaked:
             contaminated += 1
             logger.warning(
-                "[DISTRACTOR-CONTAMINATION] question %r carries option(s) %r that "
+                "[DISTRACTOR-CONTAMINATION] question %d carries %d option(s) that "
                 "answer a DIFFERENT question in this batch. Teacher review needed.",
-                questions_out[idx]["stem"][:60],
-                [x[:40] for x in leaked],
+                idx + 1,
+                len(leaked),
             )
 
     logger.info(
