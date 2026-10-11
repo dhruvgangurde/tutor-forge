@@ -81,7 +81,7 @@ _FILLER_WORDS = frozenset({
     "bit", "little", "much", "many",
     # contractions: the tokenizer keeps apostrophes, so these need listing in
     # both forms or "don't" counts as a topical word.
-    "dont", "don't", "cant", "can't", "im", "i'm", "its", "it's", "whats",
+    "dont", "don't", "cant", "can't", "im", "i'm", "it's",
     "what's", "thats", "that's", "doesnt", "doesn't", "didnt", "didn't",
     "wont", "won't", "isnt", "isn't", "ive", "i've", "id", "i'd", "ill",
     "i'll", "youre", "you're", "lets", "let's",
