@@ -301,8 +301,7 @@
       {
         "id": "G1-merge-complexity", "source": "synthetic",
         "question": {"question_type": "mcq", "stem": "What is the time complexity of merge sort in every case?", "options": ["O(n log n)", "O(n^2)", "O(n)", "O(log n)"], "correct_answer": "A", "bloom_level": "remember"},
-        "expected_problems": [],
-        "known_gap": "Validator false positive: the distractor 'O(log n)' is read as restating the key 'O(n log n)' (the same word set {o, log, n}, difflib ratio 0.89), so a good question would be regenerated."
+        "expected_problems": []
       },
       {
         "id": "G1-best-with-criterion", "source": "synthetic",

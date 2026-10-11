@@ -56,6 +56,8 @@ _RECALL_LEVELS = frozenset({"remember", "understand"})
 
 _LETTERS = "ABCD"
 _NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+#: Tokens that must match exactly: a complexity like "O(n log n)" and any number.
+_EXACT_RE = re.compile(r"\bO\s*\([^)]*\)|\d+(?:\.\d+)?", re.IGNORECASE)
 _VAGUE_RE = re.compile(
     r"\b(?:simplest|easiest|best(?![\s-]+case)|better|optimal|ideal|preferred|recommended|"
     r"most\s+(?:appropriate|suitable|common|important|efficient|effective|useful|likely))\b",
@@ -116,10 +118,17 @@ def _key_supported(key: str, evidence: list[str]) -> bool:
     return best >= QUESTION_CHECKS.key_support_share
 
 
+def _exact_tokens(text: str) -> list[str]:
+    return [re.sub(r"\s+", "", t).lower() for t in _EXACT_RE.findall(text)]
+
+
 def _restates(option: str, key: str) -> bool:
     a = " ".join(option.lower().split()).strip(" .")
     b = " ".join(key.lower().split()).strip(" .")
     if len(b) < QUESTION_CHECKS.restates_key_min_chars or _words(a) != _words(b):
+        return False
+    # "O(log n)" is not "O(n log n)", and 17 is not 71, whatever their words.
+    if _exact_tokens(a) != _exact_tokens(b):
         return False
     return difflib.SequenceMatcher(None, a, b).ratio() >= QUESTION_CHECKS.restates_key_ratio
 

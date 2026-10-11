@@ -94,6 +94,19 @@ def test_distinct_distractors_pass(options, key):
     assert question_problems(q, _EVIDENCE) == []
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        # Same word set {o, log, n} and ratio 0.89, but a different complexity.
+        ["O(n log n)", "O(n^2)", "O(n)", "O(log n)"],
+        ["17 elements left", "71 elements left", "7 elements left", "1 element left"],
+    ],
+)
+def test_complexities_and_numbers_must_match_exactly_to_restate_the_key(options):
+    q = _mcq("Which is it?", options, bloom="apply")
+    assert REASON_DISTRACTOR_RESTATES_KEY not in question_problems(q, _EVIDENCE)
+
+
 def test_a_recall_key_must_be_stated_in_the_passages():
     q = _mcq("Which element is the pivot?", ["The median of three", "The first one", "The middle one", "A random one"])
     assert question_problems(q, _EVIDENCE) == [REASON_UNSUPPORTED_KEY]
