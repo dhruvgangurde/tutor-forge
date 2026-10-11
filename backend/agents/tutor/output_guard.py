@@ -89,6 +89,7 @@ RULE_VERDICT_REASON = "verdict_reason"
 RULE_COURSE_CLAIM = "course_claim"
 RULE_DEFINITION_EXTRA = "definition_extra"
 RULE_REPEATED_QUESTION = "repeated_question"
+RULE_RESTATED_CORRECTION = "restated_correction"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -440,7 +441,12 @@ def _claim_words(text: str) -> set[str]:
 @dataclass(frozen=True)
 class _ClaimSignals:
     units: list[set[str]]   # claim words of each passage sentence, minus `ignore`
-    ignore: set[str]        # the question's words, the student's words, background
+    ignore: set[str]        # the question's words and background
+    # The student's words. They count toward a claim, but a claim needs some
+    # words of its own: "the index moves when an element is less than or equal
+    # to the pivot" told someone who wrote "pivot" still states the condition,
+    # while "Yes, i starts at low minus one" to someone who wrote that does not.
+    student: set[str] = field(default_factory=set)
 
 
 def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
@@ -454,16 +460,109 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
         share = TUTOR_GUARD.claim_background_share
         background = {w for w, n in counts.items() if n / len(units) >= share}
     student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
-    ignore = _claim_words(turn.question) | student | background
-    return _ClaimSignals([u - ignore for u in units], ignore)
+    ignore = _claim_words(turn.question) | background
+    return _ClaimSignals([u - ignore for u in units], ignore, student - ignore)
+
+
+def _course_claim_words(text: str, claims: _ClaimSignals) -> set[str]:
+    """
+    The words, not the student's, that make ``text`` a course claim: what it
+    shares with the passage sentence it claims. Empty when it is not one.
+    """
+    words = _claim_words(_SUBORDINATE_RE.sub("", _plain(text))) - claims.ignore
+    if len(words) < TUTOR_GUARD.claim_min_shared_words:
+        return set()
+    for unit in claims.units:
+        shared = words & unit
+        new = shared - claims.student
+        if (
+            len(shared) >= TUTOR_GUARD.claim_min_shared_words
+            and len(new) >= TUTOR_GUARD.claim_min_new_shared_words
+        ):
+            return new
+    return set()
 
 
 def _states_course_claim(text: str, claims: _ClaimSignals) -> bool:
-    words = _claim_words(_SUBORDINATE_RE.sub("", _plain(text))) - claims.ignore
-    least = TUTOR_GUARD.claim_min_shared_words
-    if len(words) < least:
-        return False
-    return any(len(words & unit) >= least for unit in claims.units)
+    return bool(_course_claim_words(text, claims))
+
+
+# ── 2g. A question that restates what was just removed ───────────────────────
+#
+# Seen live: the correction "the index moves right when an element is less than
+# or equal to the pivot" was followed by "What happens to the elements when that
+# index moves and you find an element less than or equal to the pivot?". Once
+# the correction goes, the question must not carry it either. Only the words
+# the cut correction shared with a passage sentence (and the student did not
+# write) count, so a question is judged against this reply's own correction.
+# Other removals (a definition, a course claim) are not used: their topic
+# words are what any good follow-up question asks about.
+
+_CLAUSE_BREAK_RE = re.compile(r"\s*[,;]\s*|\s+(?:and|while|so\s+that)\s+", re.IGNORECASE)
+
+
+def _removed_claim_words(removals: list[tuple[str, str]], claims: _ClaimSignals) -> set[str]:
+    in_course = set().union(*claims.units) if claims.units else set()
+    removed: set[str] = set()
+    for before, after in removals:
+        gone = _claim_words(_plain(before)) - _claim_words(_plain(after))
+        removed |= gone & in_course
+    return removed - claims.student - claims.ignore
+
+
+def _cut_restated_clause(question: str, removed: set[str], claims: _ClaimSignals) -> str | None:
+    """
+    The question without the trailing clauses that restate ``removed``, or
+    None if that leaves nothing. What is kept may still name one word of it
+    ("when the index moves"): one word is a noun, not the correction.
+    """
+    def restated(text: str) -> set[str]:
+        return (_claim_words(_plain(text)) - claims.student - claims.ignore) & removed
+
+    if len(restated(question)) < TUTOR_GUARD.claim_min_new_shared_words:
+        return question
+    body = question.rstrip().rstrip("?").rstrip()
+    for m in reversed(list(_CLAUSE_BREAK_RE.finditer(body))):
+        head = body[:m.start()].rstrip(" ,;")
+        if len(restated(head)) < TUTOR_GUARD.claim_min_new_shared_words and len(_content_words(head)) >= 2:
+            return head + "?"
+    return None
+
+
+# ── 2h. "this X" whose X was removed ──────────────────────────────────────────
+
+_DETERMINER_RE = re.compile(r"\b(this|that|these|those)(\s+)([A-Za-z][\w-]*)", re.IGNORECASE)
+
+
+def _fix_orphaned_determiners(
+    lines: list[_Line | None], removals: list[tuple[str, str]], tripped: list[str]
+) -> None:
+    """
+    "What happens to that index...?" after the sentence that introduced the
+    index was removed: the question keeps its own noun, as "the index". Only a
+    noun that was in removed text, and is not in what is left before it.
+    """
+    removed = set().union(*(_content_words(b) - _content_words(a) for b, a in removals))
+    seen: set[str] = set()
+    changed = False
+    for line in lines:
+        if line is None:
+            continue
+        for i, sentence in enumerate(line.sentences):
+            out, end = [], 0
+            for m in _DETERMINER_RE.finditer(sentence):
+                noun = _content_words(m.group(3))
+                earlier = seen | _content_words(sentence[:m.start()])
+                if noun and noun & removed and not noun & earlier:
+                    the = "The" if m.group(1)[0].isupper() else "the"
+                    out.append(sentence[end:m.start()] + the + m.group(2) + m.group(3))
+                    end = m.end()
+            if out:
+                changed = True
+                line.sentences[i] = "".join(out) + sentence[end:]
+            seen |= _content_words(line.sentences[i])
+    if changed:
+        tripped.append(RULE_BACK_REFERENCE)
 
 
 # ── 2f. One definition sentence on a "what is X?" opening ────────────────────
@@ -622,6 +721,7 @@ _VERDICT_RE = re.compile(
     r"start|question|point|answer|guess|attempt|thought|observation|instinct)\b"
     r"|\b(?:on\s+the\s+right\s+track|getting\s+(?:there|closer|warmer)|almost\s+there|nearly\s+there)\b"
     r"|\byou(?:'re|\s+are|\s+were)\s+(?:right|correct|close|wrong|incorrect|mistaken)\b"
+    r"|\b(?:partly|partially|half|somewhat|mostly)\s+(?:right|correct)\b"
     r"|\b(?:that'?s|that\s+is|it'?s|it\s+is|this\s+is)\s+(?:not\s+)?(?:quite\s+)?"
     r"(?:right|correct|incorrect|wrong|close|true|a\s+good|an\s+interesting|a\s+great)\b"
     r"|\bnot\s+quite\b"
@@ -640,19 +740,44 @@ def _is_verdict(text: str) -> bool:
 # element is less than or equal to the pivot." The verdict is useful feedback on
 # a real attempt; the reason after it was the answer. Below Hint 3 the reason
 # clause goes and the verdict stays.
+#
+# Seen live as well: "You are partly right about what happens, but the index
+# moves right when an element is less than or equal to the pivot, not when it
+# is bigger." The ", but" clause is the reason too. And a reason that negates
+# their own words ("not when it is bigger") says the attempt contradicts the
+# course, so "partly right" would mislead: it becomes "not quite right".
 
 _REASON_SPLIT_RE = re.compile(
-    r"\s*(?:,\s*(?:because|since|as)\b|;|\s[—–-]\s|:)\s*", re.IGNORECASE
+    r"\s*(?:,\s*(?:because|since|as|but)\b|;|\s[—–-]\s|:)\s*", re.IGNORECASE
 )
+_PARTIAL_VERDICT_RE = re.compile(r"\b(?:partly|partially|half|somewhat|mostly)\s+(?:right|correct)\b",
+                                 re.IGNORECASE)
+#: A negation and what follows it, up to the end of its clause.
+_NEGATED_RE = re.compile(r"(?:\bnot|n't|\bnever|\brather\s+than|\binstead\s+of)\b([^,;.!?]*)", re.IGNORECASE)
+#: Said instead of "partly right" when the attempt contradicts the course.
+NOT_QUITE_VERDICT = "That's not quite right."
 
 
-def _cut_reason(sentence: str) -> str:
+def _negates(reason: str, reply_words: set[str]) -> bool:
+    """The reason says "not <something they wrote>": their attempt is contradicted."""
+    return any(_content_words(m.group(1)) & reply_words for m in _NEGATED_RE.finditer(_plain(reason)))
+
+
+def _reason_clause(sentence: str) -> str:
+    """The reason after a verdict (what _cut_reason removes), or empty."""
+    parts = _REASON_SPLIT_RE.split(sentence, maxsplit=1)
+    return parts[1] if len(parts) == 2 else ""
+
+
+def _cut_reason(sentence: str, reply_words: set[str] = frozenset()) -> str:
     """The verdict alone, when the sentence is a verdict followed by its reason."""
     if _is_question(sentence):
         return sentence
     parts = _REASON_SPLIT_RE.split(sentence, maxsplit=1)
     if len(parts) < 2 or not parts[1].strip() or not _is_verdict(parts[0]):
         return sentence
+    if _PARTIAL_VERDICT_RE.search(_plain(parts[0])) and _negates(parts[1], reply_words):
+        return NOT_QUITE_VERDICT
     return parts[0].rstrip(" ,;:.!") + "."
 
 
@@ -919,6 +1044,9 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     low_rung = turn.hint_level <= MAX_ANSWER_GUARD_LEVEL
     signals = _answer_signals(turn, reply_words) if low_rung else None
 
+    # (rule, before, after) for every sentence an answer rule removed or shortened.
+    removals: list[tuple[str, str, str]] = []
+
     def run(rule: str, fix, *, answer: bool = False, with_previous: bool = False) -> None:
         """
         Apply ``fix`` to every sentence in order. ``with_previous`` also passes
@@ -938,6 +1066,8 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
                 previous = sentence
                 if new != sentence:
                     changed = True
+                    if answer:
+                        removals.append((rule, sentence, new or ""))
                 if not new:
                     pending = pending or answer
                     continue
@@ -956,7 +1086,7 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     # 3b. On a reply to a real attempt below Hint 3, a verdict keeps its words
     # and loses its reason ("That is not quite right, because <the answer>").
     if low_rung and turn.path == PATH_REPLY and not turn.is_non_answer:
-        run(RULE_VERDICT_REASON, _cut_reason)
+        run(RULE_VERDICT_REASON, lambda s: _cut_reason(s, reply_words), answer=True)
 
     # Taken after the verdict cut, so a shortened verdict still counts as the
     # untouched opening the fallback may keep.
@@ -1080,6 +1210,23 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
             )
 
         run(RULE_COURSE_CLAIM, spare_definition(no_claim_statement), answer=True)
+
+        # 2g. A question that says again the correction just cut from a verdict
+        # ("...when you find an element less than or equal to the pivot?")
+        # loses that clause, or goes when the clause cannot be cut.
+        corrections = [(_reason_clause(b), "") for rule, b, _ in removals if rule == RULE_VERDICT_REASON]
+        removed_claim = _removed_claim_words(corrections, claims)
+        if len(removed_claim) >= TUTOR_GUARD.claim_min_new_shared_words:
+            run(
+                RULE_RESTATED_CORRECTION,
+                lambda s: _cut_restated_clause(s, removed_claim, claims) if _is_question(s) else s,
+                answer=True,
+            )
+
+    # 2h. "this index" or "that boundary index" whose noun was only in a
+    # removed sentence or clause now points at nothing: it becomes "the index".
+    if removals:
+        _fix_orphaned_determiners(lines, [(b, a) for _, b, a in removals], tripped)
 
     # 2f. A definition opening is the one sentence and a question: any other
     # statement, however short ("It is measured in volts."), is a second fact.

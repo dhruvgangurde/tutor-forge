@@ -12,6 +12,7 @@ import logging
 import pytest
 
 from agents.tutor.output_guard import (
+    NOT_QUITE_VERDICT,
     PATH_HINT,
     PATH_NEW_QUESTION,
     PATH_REPLY,
@@ -27,6 +28,7 @@ from agents.tutor.output_guard import (
     RULE_NON_ANSWER_STATEMENT,
     RULE_ONE_QUESTION,
     RULE_PRONOUN_STATEMENT,
+    RULE_RESTATED_CORRECTION,
     RULE_SOURCE_REFERENCE,
     RULE_STATES_ANSWER,
     RULE_UNUSED_NUMBER,
@@ -188,7 +190,7 @@ def test_course_wording_without_a_defining_verb_is_still_caught():
         "Moving a charge between two points takes work done per unit charge, which gives "
         "the potential difference. What do you think that work depends on?"
     )
-    assert out == "What do you think that work depends on?"
+    assert out == "What do you think the work depends on?"  # "that work" was in the removed sentence
     assert RULE_STATES_ANSWER in tripped
 
 
@@ -1514,6 +1516,133 @@ def test_a_cut_verdict_still_counts_as_the_untouched_opening_for_the_fallback():
     )
     assert out == "That is not quite right. " + GUARD_FALLBACK_QUESTION
     assert tripped == [RULE_VERDICT_REASON, RULE_FALLBACK_KEPT_TEXT]
+
+
+
+# ── Gemini replay: "partly right, but <the answer>, not <their words>" ───────
+
+
+def test_a_but_clause_is_a_reason_too():
+    out, tripped = _verdict_guard(
+        "You're right that it scans the range, but it only moves on the smaller elements. "
+        "What decides when the index moves?"
+    )
+    assert out == "You're right that it scans the range. What decides when the index moves?"
+    assert RULE_VERDICT_REASON in tripped
+
+
+def test_partly_right_that_contradicts_their_words_becomes_not_quite_right():
+    out, tripped = _verdict_guard(
+        "You are partly right about what happens, but the index moves on smaller values, not when "
+        "it is bigger. What decides when the index moves?"
+    )
+    assert out == NOT_QUITE_VERDICT + " What decides when the index moves?"
+    assert "partly" not in out
+    assert RULE_VERDICT_REASON in tripped
+
+
+@pytest.mark.parametrize("verdict", ["You are partly right", "That's partially correct", "You're half right"])
+def test_partly_right_without_a_contradiction_keeps_its_words(verdict):
+    out, _ = _verdict_guard(verdict + ", but there is one more step to it. What decides when the index moves?")
+    assert out == verdict + ". What decides when the index moves?"
+
+
+def test_a_correction_with_their_words_still_counts_as_a_course_claim():
+    # "pivot" is theirs; "less" and "equal" (from "<=" in the code) are not.
+    out, tripped = _verdict_guard(
+        "Look again. The index moves right when an element is less than or equal to the pivot. "
+        "What does that tell you?"
+    )
+    assert "less than or equal" not in out
+    assert RULE_COURSE_CLAIM in tripped
+
+
+def test_their_own_words_alone_do_not_make_a_course_claim():
+    out, tripped = _verdict_guard(
+        "Yes, i starts at low minus one. What happens when j finds a small element?",
+        reply="i starts at low minus one",
+    )
+    assert out == "Yes, i starts at low minus one. What happens when j finds a small element?"
+    assert RULE_COURSE_CLAIM not in tripped
+
+
+def test_a_question_that_restates_the_cut_correction_loses_that_clause():
+    out, tripped = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "What happens to the elements when it moves and you find an element less than or equal to the pivot?"
+    )
+    assert out == "Not quite. What happens to the elements when it moves?"
+    assert RULE_RESTATED_CORRECTION in tripped
+
+
+def test_with_prose_passages_the_kept_clause_may_still_name_the_index():
+    # Course text in words, as in a lab guide: "index" is part of the
+    # correction too, but one shared word is a noun, not the correction.
+    # "what happens" belongs to the replaced verdict, not to the correction.
+    out, tripped = apply_guards(
+        "You are partly right about what happens, but the index moves right when an element is less "
+        "than or equal to the pivot, not when it is bigger. What happens to the elements when that "
+        "index moves and you find an element less than or equal to the pivot?",
+        TutorTurn(
+            path=PATH_REPLY,
+            hint_level=0,
+            question=_PARTITION_Q,
+            course_text=(
+                "The index i starts one position before low. The index moves right each time an "
+                "element is less than or equal to the pivot, and then the two elements are swapped."
+            ),
+            student_reply=_PARTITION_ATTEMPT,
+        ),
+    )
+    assert out == NOT_QUITE_VERDICT + " What happens to the elements when the index moves?"
+    assert RULE_RESTATED_CORRECTION in tripped
+
+
+def test_a_question_that_is_all_restatement_goes_and_the_verdict_stays():
+    out, tripped = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "Can you see why it moves for an element less than or equal to the pivot?"
+    )
+    assert out == "Not quite. " + GUARD_FALLBACK_QUESTION
+    assert RULE_RESTATED_CORRECTION in tripped and RULE_FALLBACK_KEPT_TEXT in tripped
+
+
+def test_a_question_using_the_corrections_words_once_is_kept():
+    text = "Not quite. What happens when an element is equal to the pivot?"
+    out, _ = _verdict_guard(
+        "Not quite, because it moves when an element is less than or equal to the pivot. "
+        "What happens when an element is equal to the pivot?"
+    )
+    assert out == text
+
+
+def test_that_index_becomes_the_index_when_its_sentence_was_removed():
+    out, tripped = _verdict_guard(
+        "Not quite, because the index moves when an element is less than or equal to the pivot. "
+        "What happens to that index next?"
+    )
+    assert out == "Not quite. What happens to the index next?"
+    assert RULE_BACK_REFERENCE in tripped
+
+
+def test_that_index_stays_when_the_index_is_still_mentioned_before_it():
+    out, _ = _verdict_guard(
+        "Not quite, because the index moves when an element is less than or equal to the pivot. "
+        "Think about the index again. What happens to that index next?"
+    )
+    assert out == "Not quite. Think about the index again. What happens to that index next?"
+
+
+def test_that_index_stays_when_nothing_was_removed():
+    text = "Not quite. Think about the index again. What happens to that index next?"
+    assert _verdict_guard(text) == (text, [])
+
+
+def test_the_reply_prompt_says_a_contradiction_is_not_partly_right():
+    from agents.tutor.prompts import reply_instruction
+
+    text = " ".join(reply_instruction(non_answer=False).split())
+    assert "says the opposite of the course on any point is not partly right" in text
 
 
 # ── Phase B (T2): a course claim in other words below Hint 3 ─────────────────

@@ -249,6 +249,9 @@ class TutorGuardThresholds:
     # shares this many words with one passage sentence is the course's answer
     # in other words. Live leaks shared 4 to 6; guiding sentences 0 to 2.
     claim_min_shared_words: int = 3
+    # Of those, at least this many must be words the student did not write:
+    # their own words count toward a claim, but cannot make one on their own.
+    claim_min_new_shared_words: int = 2
     # Words in at least this share of the passage sentences are background
     # ("pivot" in a sorting course), counted only with this many sentences.
     claim_background_share: float = 0.5

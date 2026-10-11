@@ -376,8 +376,8 @@ def test_live_new_question_lead_in_that_states_the_answer_is_removed():
         question=_PARTITION_Q,
         course_chunks=_PARTITION_CODE,
     )
-    assert out == (
-        "What happens to this index and the elements when you encounter a value that is less than or "
+    assert out == (  # "this index" was introduced by the removed lead-in
+        "What happens to the index and the elements when you encounter a value that is less than or "
         "equal to the pivot?"
     )
 
@@ -393,7 +393,7 @@ def test_live_hint_2_that_states_where_the_index_starts_is_cut_to_its_question()
         question=_PARTITION_Q,
         course_chunks=_PARTITION_CODE,
     )
-    assert out == "What action do you take with that boundary index before swapping elements?"
+    assert out == "What action do you take with the boundary index before swapping elements?"
     assert "one position before" not in out
 
 
@@ -409,6 +409,25 @@ def test_course_claim_is_logged_by_name_only(caplog):
     assert "[TUTOR-GUARD] rule=course_claim path=new_question hint_level=0" in messages
     joined = " ".join(messages).lower()
     assert "low boundary" not in joined and "keep track" not in joined
+
+
+# ── Gemini replay: "partly right, but <the answer>, not <their words>" ────────
+
+
+def test_live_partly_right_correction_loses_the_fact_and_the_partly_right():
+    out = _run(
+        "You are partly right about what happens, but the index moves right when an element is less "
+        "than or equal to the pivot, not when it is bigger. What happens to the elements when that index "
+        "moves and you find an element less than or equal to the pivot?",
+        reply="i think i starts at 0 and moves right whenever an element is bigger than the pivot",
+        hint_level=0,
+        question=_PARTITION_Q,
+        course_chunks=_PARTITION_CODE,
+    )
+    # The attempt says the opposite of the course, so it is not "partly right";
+    # the condition is in neither sentence; "that index" no longer points at a
+    # removed sentence.
+    assert out == "That's not quite right. What happens to the elements when the index moves?"
 
 
 def test_hint_2_instruction_says_where_to_look_not_what_they_will_find():

@@ -25,6 +25,7 @@ from core.config import (
 def test_the_calibrated_values_are_unchanged():
     assert TUTOR_GUARD == TutorGuardThresholds(
         claim_min_shared_words=3,
+        claim_min_new_shared_words=2,
         claim_background_share=0.5,
         claim_min_sentences_for_background=4,
         definition_grounded_share=0.6,
