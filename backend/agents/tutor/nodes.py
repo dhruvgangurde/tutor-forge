@@ -61,6 +61,7 @@ from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
+    HINT_AFTER_LAST_MESSAGE,
     MAX_HINT_LEVEL,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
@@ -346,11 +347,16 @@ def generate_guiding_question_node(
     else:
         # Labelled "The question", not "Student question": the label was
         # echoed back as "the student" in the reply.
-        prompt = (
-            f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}\n\n"
-            f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}"
-        )
+        parts = [f"The question:\n{wrap_untrusted(topic, 'THE QUESTION')}"]
         system = system_instruction_for_level(hint_level, definition=definition)
+        # A hint sees what the tutor said last, so it can add to it instead of
+        # asking the same question again.
+        last = state.get("tutor_last_message") if is_hint else None
+        if last and hint_level < FULL_EXPLANATION_LEVEL:
+            parts.append(f"Your last message:\n{wrap_untrusted(last, 'YOUR LAST MESSAGE')}")
+            system += "\n" + HINT_AFTER_LAST_MESSAGE
+        parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
+        prompt = "\n\n".join(parts)
 
     raw_response = gemini_pro.generate(
         prompt,
@@ -404,6 +410,7 @@ def generate_guiding_question_node(
             student_reply=state["question"] if in_conversation else None,
             is_non_answer=bool(state.get("is_non_answer")),
             definition_allowed=definition,
+            previous_tutor_message=state.get("tutor_last_message") if (in_conversation or is_hint) else None,
         ),
     )
 

@@ -87,6 +87,7 @@ RULE_FALLBACK_KEPT_TEXT = "fallback_kept_text"
 RULE_VERDICT_REASON = "verdict_reason"
 RULE_COURSE_CLAIM = "course_claim"
 RULE_DEFINITION_EXTRA = "definition_extra"
+RULE_REPEATED_QUESTION = "repeated_question"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
 #: in Example 7,") is cut from the sentence instead of removing the sentence.
@@ -104,6 +105,7 @@ class TutorTurn:
     student_reply: str | None = None  # THEIR REPLY, on the reply path only
     is_non_answer: bool = False    # their reply was "no", "I don't know"...
     definition_allowed: bool = False  # a pure "what is X?" opening, not graded work
+    previous_tutor_message: str | None = None  # what the tutor said last (hint and reply paths)
 
 
 # ── Words ─────────────────────────────────────────────────────────────────────
@@ -484,6 +486,32 @@ def _definition_sentence(lines: list, turn: TutorTurn) -> str | None:
         return None
     grounded = len(words & _claim_words(turn.course_text)) / len(words)
     return first if grounded >= _DEFINITION_GROUNDED_SHARE else None
+
+
+# ── 5. No repeated question ───────────────────────────────────────────────────
+#
+# Seen live: Hint 1 asked "how do you use a chosen element to help organize the
+# rest of the values around it?" right after "how does the algorithm use a
+# chosen element to rearrange the other values around it?". A question that
+# shares most of its words with a question in the tutor's last message is the
+# same question again. The open question's own words are left out: every
+# question about the topic shares them. Only near-repeats are caught.
+
+_REPEAT_OVERLAP = 0.6
+_REPEAT_MIN_WORDS = 3
+
+
+def _previous_questions(turn: TutorTurn, topic: set[str]) -> list[set[str]]:
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", turn.previous_tutor_message or "")
+    words = [_content_words(_plain(s)) - topic for s in sentences if _is_question(s)]
+    return [w for w in words if len(w) >= _REPEAT_MIN_WORDS]
+
+
+def _repeats_question(question: str, previous: list[set[str]], topic: set[str]) -> bool:
+    words = _content_words(_plain(question)) - topic
+    if len(words) < _REPEAT_MIN_WORDS:
+        return False
+    return any(len(words & p) / min(len(words), len(p)) >= _REPEAT_OVERLAP for p in previous)
 
 
 def _non_answer_statement(statement: str, signals: _AnswerSignals) -> bool:
@@ -1064,6 +1092,19 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
             answer=True,
         )
 
+    # 5. No question asked again in other words, on a hint or after "no" / "I
+    # don't know". A reply to an attempt or to an off-topic message may ask
+    # the same question again on purpose, to steer back to it. The full
+    # explanation asks nothing, so it is left alone.
+    topic = _content_words(turn.question)
+    asks_again = turn.path == PATH_HINT or (turn.path == PATH_REPLY and turn.is_non_answer)
+    previous = _previous_questions(turn, topic) if asks_again else []
+    if previous and turn.hint_level < _FULL_EXPLANATION_LEVEL:
+        run(
+            RULE_REPEATED_QUESTION,
+            lambda s: None if _is_question(s) and _repeats_question(s, previous, topic) else s,
+        )
+
     # Repair any join the removals above left, then judge what is left.
     text, dropped = _tidy(_render(lines))
     if dropped and RULE_FRAGMENT not in tripped:
@@ -1077,8 +1118,10 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
     ):
         # A reply to a real attempt below Hint 3 keeps what it had already got
         # right ("That's not quite right.") and gains the fallback question,
-        # instead of losing the verdict along with the removed sentence.
-        if low_rung and turn.path == PATH_REPLY and not turn.is_non_answer:
+        # instead of losing the verdict along with the removed sentence. A
+        # hint that lost only its repeated question keeps its new pointer too.
+        hint_lost_repeat = turn.path == PATH_HINT and RULE_REPEATED_QUESTION in tripped
+        if low_rung and not turn.is_non_answer and (turn.path == PATH_REPLY or hint_lost_repeat):
             opening = _kept_opening(original, _sentences(lines))
             if opening:
                 tripped.append(RULE_FALLBACK_KEPT_TEXT)

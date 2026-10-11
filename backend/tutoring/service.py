@@ -355,6 +355,8 @@ async def request_hint(
     open_question = await _open_question(session, db)
     if open_question is None:
         raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
+    # What the tutor said last, so the hint adds to it instead of repeating it.
+    last_tutor = await _last_tutor_turn(session.id, db)
 
     # The student's later replies are deliberately left out of the hint prompt:
     # a hint is about the learning question, and a reply that drifted is
@@ -365,6 +367,7 @@ async def request_hint(
         "student_id": session.student_id,
         "question": open_question.content,
         "prior_question": None,
+        "tutor_last_message": last_tutor.content if last_tutor else None,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,

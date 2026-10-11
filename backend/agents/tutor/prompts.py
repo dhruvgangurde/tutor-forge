@@ -189,6 +189,15 @@ HINT_LADDER: dict[int, str] = {
 }
 
 
+#: Added to a hint below the full explanation when the tutor has already said
+#: something. Hint 1 used to ask the opening question again in other words.
+HINT_AFTER_LAST_MESSAGE = """\
+YOUR LAST MESSAGE is what you said last. Do not repeat it, and do not ask its
+question again in other words: add one new pointer that is more specific than
+anything it gave.
+"""
+
+
 #: The opening of a pure "what is X?" question (not one from graded work): one
 #: grounded definition sentence, then a question that makes them use it. Asking
 #: "what do you think X is?" of a word they have never met only stalls them.
