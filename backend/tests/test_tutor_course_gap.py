@@ -57,9 +57,19 @@ _LIVE_GAPS = [
 _GOOD = "The program reads the dimensions into an array, then calls matrixChain. What does that call return?"
 
 
-@pytest.mark.parametrize("text", _LIVE_GAPS[0:1] + _LIVE_GAPS[2:3] + [
+#: Shown live on 2026-10-12 as ordinary tutor turns, with citations, at the
+#: 0.62 bar (adjacent-06 and adjacent-07 in groundedness_calibration.json).
+_LIVE_MISSED_GAPS = [
+    "Provided, there is no mention or explanation of the travelling salesman problem.",
+    "I must inform you that this course does not cover how binary search works.",
+]
+
+
+@pytest.mark.parametrize("text", _LIVE_GAPS[0:1] + _LIVE_GAPS[2:3] + _LIVE_MISSED_GAPS + [
     "The course material does not cover this.",
     "That isn't covered in this course. What would you like to look at instead?",
+    "There is no mention or explanation of the travelling salesman problem.",
+    "That is not explained in the provided material.",
 ])
 def test_a_reply_that_only_says_the_course_does_not_cover_it(text):
     assert is_course_gap_reply(text)
@@ -71,6 +81,11 @@ def test_a_reply_that_only_says_the_course_does_not_cover_it(text):
         "The course doesn't cover recursion in general, but it does show the base case: it stops when "
         "low >= high. What happens to a range of one element?"
     ),
+    (
+        "There is no mention of negative edge weights in this step, so Dijkstra's greedy choice holds "
+        "here. Which vertex does it pick next?"
+    ),
+    "Unfortunately the pivot does not end at index 0. Where does one partition leave it?",
     "",
     None,
 ])

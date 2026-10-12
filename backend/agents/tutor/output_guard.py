@@ -1081,16 +1081,27 @@ def _tidy(text: str) -> tuple[str, bool]:
 _COURSE_GAP_RE = re.compile(
     r"\b(?:this|the|our)\s+course(?:\s+material)?\s+(?:doesn't|does\s+not|didn't|did\s+not|"
     r"won't|will\s+not|can't|cannot)\s+(?:cover|explain|address|include)"
-    r"|\b(?:not|isn't|aren't)\s+(?:covered|included|addressed)\s+(?:in|by)\s+(?:this|the)\s+course\b",
+    r"|\b(?:not|isn't|aren't)\s+(?:covered|included|addressed)\s+(?:in|by)\s+(?:this|the)\s+course\b"
+    # Missed live on 2026-10-12, shown as ordinary turns: "there is no mention or
+    # explanation of the travelling salesman problem" and "not explained in the
+    # provided material".
+    r"|\bthere(?:\s+is|'s)\s+no\s+(?:mention|explanation|information|discussion|coverage)"
+    r"(?:\s+or\s+\w+)?\s+of\b"
+    r"|\b(?:not|isn't|aren't)\s+(?:explained|covered|mentioned|discussed|described|included|addressed)"
+    r"\s+in\s+(?:this|the)\s+(?:provided\s+)?(?:course\s+)?(?:materials?|passages?|text|notes)\b",
     re.IGNORECASE,
 )
+
+#: Lead-ins that only soften a gap sentence: "I must inform you that this course
+#: does not cover how binary search works" names three topic words, not four.
+_GAP_FILLER = frozenset({"inform", "sorry", "unfortunately", "afraid", "provided"})
 
 
 def _gap_extra_words(sentence: str) -> int | None:
     """Content words beyond the "course doesn't cover" phrase, or None without one."""
     plain = _plain(sentence)
     m = _COURSE_GAP_RE.search(plain)
-    return len(_content_words(plain[: m.start()] + plain[m.end():])) if m else None
+    return len(_content_words(plain[: m.start()] + plain[m.end():]) - _GAP_FILLER) if m else None
 
 
 def _empty_gap_sentence(sentence: str) -> bool:
