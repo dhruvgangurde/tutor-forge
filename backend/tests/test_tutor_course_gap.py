@@ -192,3 +192,30 @@ async def test_api_chat_gap_is_persisted_as_a_refusal(client, student_token, rea
     assert reply.json()["response"] == COURSE_GAP_MESSAGE
     assert reply.json()["is_grounded"] is True
     assert messages.json()[-1]["is_refusal"] is True
+
+
+# ── A gap sentence the model glued to the rest of its reply ───────────────────
+
+
+@pytest.mark.parametrize("path, level", [("new_question", 0), ("hint", 2), ("reply", 0), ("hint", 4)])
+def test_an_empty_gap_sentence_glued_to_a_reply_is_removed(path, level):
+    # The live turn after "0/1 knapsack": the model wrote it like this itself.
+    out, tripped = apply_guards(
+        _LIVE_GAPS[1],
+        TutorTurn(path=path, hint_level=level, question="what is 0/1 knapsack?",
+                  course_text="The 0/1 knapsack problem takes each item whole or not at all.",
+                  student_reply="0/1 knapsack" if path == "reply" else None),
+    )
+    assert "doesn't cover" not in out
+    assert out.endswith("What do you already know about this topic, in your own words?")
+    assert "course_gap" in tripped
+
+
+def test_a_gap_sentence_that_names_what_is_missing_stays():
+    text = ("The course doesn't cover the C++ template syntax. The program calls matrixChain(p, n + 1). "
+            "What does that call return?")
+    out, tripped = apply_guards(
+        text, TutorTurn(path="hint", hint_level=4, question="matrix chain code",
+                        course_text="It calls matrixChain(p, n + 1) and prints cost[1][n]."),
+    )
+    assert out == text and "course_gap" not in tripped

@@ -1086,6 +1086,23 @@ _COURSE_GAP_RE = re.compile(
 )
 
 
+def _gap_extra_words(sentence: str) -> int | None:
+    """Content words beyond the "course doesn't cover" phrase, or None without one."""
+    plain = _plain(sentence)
+    m = _COURSE_GAP_RE.search(plain)
+    return len(_content_words(plain[: m.start()] + plain[m.end():])) if m else None
+
+
+def _empty_gap_sentence(sentence: str) -> bool:
+    """
+    "This course doesn't cover that part." and nothing more: it names no part,
+    so it only contradicts the course check. "The course doesn't cover the C++
+    template syntax." names what is missing, as the retry asks, and stays.
+    """
+    extra = _gap_extra_words(sentence)
+    return extra is not None and extra <= 1
+
+
 def is_course_gap_reply(text: str | None) -> bool:
     """
     The reply says the course does not cover it and nothing else of substance:
@@ -1099,9 +1116,8 @@ def is_course_gap_reply(text: str | None) -> bool:
         # "...doesn't cover recursion in general, but it does show the base
         # case: ..." says the gap and then teaches; only a sentence with
         # nothing much beyond the gap phrase counts.
-        plain = _plain(sentence)
-        m = _COURSE_GAP_RE.search(plain)
-        return bool(m) and len(_content_words(plain[: m.start()] + plain[m.end():])) <= 3
+        extra = _gap_extra_words(sentence)
+        return extra is not None and extra <= 3
 
     gap = [s for s in sentences if bare_gap(s)]
     others = [s for s in sentences if s not in gap]
@@ -1227,6 +1243,12 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
+
+    # 0. No empty "this course doesn't cover that part" glued to the rest of
+    # a reply: the course check has just found the topic. (A reply that is
+    # only that is asked again in agents/tutor/nodes.py.)
+    if any(not _empty_gap_sentence(s) for s in _sentences(lines)):
+        run(RULE_COURSE_GAP, lambda s: None if _empty_gap_sentence(s) else s)
 
     # 1a. No progress they have not made.
     run(RULE_PROGRESS_CLAIM, lambda s: _without_progress_claim(s, turn, reply_words))
