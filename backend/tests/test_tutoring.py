@@ -1624,8 +1624,9 @@ async def test_hint_prompt_topic_is_the_resolved_question(
         _clear_tutor_mocks()
 
     prompt = gemini.generate.call_args.args[0]
-    assert _ON_TOPIC in prompt
-    assert "give me the answer" not in prompt
+    assert f"<<UNTRUSTED THE QUESTION>>\n{_ON_TOPIC}\n" in prompt
+    # The drifted message may appear in the conversation block, never as the topic.
+    assert "<<UNTRUSTED THE QUESTION>>\ngive me the answer" not in prompt
 
 
 @pytest.mark.asyncio
@@ -1998,7 +1999,7 @@ async def test_replies_to_the_tutors_question_are_tutored_not_refused(
     client, student_token, ready_course_id
 ):
     """Point 1: "no", "umm, work is…" and "i dont know" all got the refusal."""
-    from agents.tutor.prompts import reply_instruction
+    from agents.tutor.prompts import MEMORY_RULES, reply_instruction
     from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE
 
     retrieval = _pd_retrieval()
@@ -2027,7 +2028,8 @@ async def test_replies_to_the_tutors_question_are_tutored_not_refused(
         assert "<<UNTRUSTED YOUR LAST MESSAGE>>" in prompt
         # The system instruction is fixed text only: no student text reaches it.
         non_answer = reply in ("no", "i dont know")
-        assert system == reply_instruction(non_answer) + "\n\n" + UNTRUSTED_CONTENT_NOTICE
+        # The conversation so far adds its rules; nothing else changes.
+        assert system == reply_instruction(non_answer) + "\n" + MEMORY_RULES + "\n\n" + UNTRUSTED_CONTENT_NOTICE
         assert ("smaller, simpler first step" in system) is non_answer, reply
 
 
@@ -2184,9 +2186,10 @@ async def test_hints_stay_on_the_learning_question_after_a_drifting_reply(
     assert retrieval.queries_seen[-3:] == [_PD, _PD, _PD]
     for call in gemini.generate.call_args_list[hint_calls_start:]:
         prompt = call.args[0]
-        assert _PD in prompt
-        assert "because they have same charge?" not in prompt
-        assert "i dont know" not in prompt
+        assert f"<<UNTRUSTED THE QUESTION>>\n{_PD}\n" in prompt
+        # The replies may appear in the conversation block, never as the topic.
+        assert "<<UNTRUSTED THE QUESTION>>\nbecause they have same charge?" not in prompt
+        assert "<<UNTRUSTED THE QUESTION>>\ni dont know" not in prompt
 
 
 @pytest.mark.asyncio
