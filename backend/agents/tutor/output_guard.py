@@ -818,6 +818,13 @@ _PARTIAL_VERDICT_RE = re.compile(r"\b(?:partly|partially|half|somewhat|mostly)\s
 _NEGATED_RE = re.compile(r"(?:\bnot|n't|\bnever|\brather\s+than|\binstead\s+of)\b([^,;.!?]*)", re.IGNORECASE)
 #: Said instead of "partly right" when the attempt contradicts the course.
 NOT_QUITE_VERDICT = "That's not quite right."
+#: A verdict that credits part of the attempt, as opposed to a correction.
+_NEAR_MISS_RE = re.compile(
+    r"^(?:close|nearly|almost|good\s+start|(?:partly|partially|mostly|half)\s+(?:right|correct)|"
+    r"(?:that's|that\s+is|you're|you\s+are)\s+(?:close|nearly\s+there|almost\s+there|"
+    r"(?:partly|partially|mostly)\s+(?:right|correct)|on\s+the\s+right\s+track))\b",
+    re.IGNORECASE,
+)
 
 
 def _negates(reason: str, reply_words: set[str]) -> bool:
@@ -840,6 +847,15 @@ def _cut_reason(sentence: str, reply_words: set[str] = frozenset()) -> str:
         return sentence
     if _PARTIAL_VERDICT_RE.search(_plain(parts[0])) and _negates(parts[1], reply_words):
         return NOT_QUITE_VERDICT
+    # Behind a near-miss verdict, a reason in their own words names the part
+    # they got right and gives nothing away: "Close: the size does depend on
+    # the knapsack size and the number of items" stays. A correction's reason
+    # is the answer even when most of its words are theirs ("not quite right,
+    # because it moves when an element is SMALLER than the pivot"), so only a
+    # near-miss verdict keeps one.
+    reason = _content_words(_plain(parts[1]))
+    if _NEAR_MISS_RE.match(_plain(parts[0]).lstrip(" \"'")) and reason and _overlap(reason, reply_words) >= 0.6:
+        return sentence
     return parts[0].rstrip(" ,;:.!") + "."
 
 

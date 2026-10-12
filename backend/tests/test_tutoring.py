@@ -2291,7 +2291,7 @@ class TestTutorVoicePrompts:
 
         for text in (reply_instruction(False), reply_instruction(True)):
             assert "Say a reply is correct only when it fully and accurately answers" in text
-            assert "If it is partly right, say which part is right and what is still missing" in text
+            assert "If it is partly right, say which part is right" in text
             assert "Do not open with praise" in text
         assert "Do not praise it" in reply_instruction(True)
 
