@@ -311,6 +311,9 @@ def retrieve_evidence_node(
     return {**state, "evidence_per_question": evidence_per_question}
 
 
+#: Shown to the teacher when the grading call fails; the error itself is only logged.
+_GRADING_FAILED_FEEDBACK = "Automatic grading could not finish for this answer. Please review it yourself."
+
 # ── Node 2b: check_evidence_groundedness_node ─────────────────────────────────
 
 def check_evidence_groundedness_node(
@@ -679,7 +682,7 @@ def grade_responses_node(
         t0 = time.perf_counter()
         try:
             raw = gemini_pro.generate_deterministic(prompt, system_instruction=GRADING_SYSTEM_INSTRUCTION)
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "Gemini Pro grading call failed for question %s",
                 resp["question_id"],
@@ -691,7 +694,7 @@ def grade_responses_node(
                     "description": c["description"],
                     "score": 0.0,
                     "max_points": c["max_points"],
-                    "feedback": f"LLM grading failed: {exc}. Pending manual review.",
+                    "feedback": _GRADING_FAILED_FEEDBACK,
                     "citations": [],
                 }
                 for c in rubric_criteria

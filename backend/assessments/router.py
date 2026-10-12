@@ -23,7 +23,7 @@ Authorization:
 
 Error handling:
   - HTTPException is raised only in the router layer.
-  - Business logic raises ValueError; core/exceptions.py converts to 400.
+  - A ValueError no route catches is a 500 with a fixed message (core/exceptions.py).
 """
 
 import json

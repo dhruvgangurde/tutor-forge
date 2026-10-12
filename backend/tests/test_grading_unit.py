@@ -867,6 +867,23 @@ class TestGradingGroundednessGate:
         )
         assert out["evidence_grounded"] == [True]
 
+    def test_a_failed_grading_call_stores_a_fixed_sentence_not_provider_text(self):
+        """
+        The feedback used to be f"LLM grading failed: {exc}", so the provider's
+        own error text was stored and shown to the teacher.
+        """
+        from unittest.mock import MagicMock
+
+        _, grade = self._nodes()
+        gemini = MagicMock()
+        gemini.generate_deterministic.side_effect = RuntimeError("quota exceeded for key AIzaSECRET")
+        evidence = [[{"text": "t", "source_file": "f.pdf", "page_or_slide": 1, "confidence": 0.95}]]
+        out = grade(self._state([self._short_answer()], evidence), gemini_pro=gemini)
+
+        feedback = out["criterion_results"][0][0]["feedback"]
+        assert feedback == "Automatic grading could not finish for this answer. Please review it yourself."
+        assert "AIza" not in repr(out)
+
     def test_blank_answer_is_not_reported_as_an_evidence_failure(self):
         # A skipped question scores 0 on its own terms. Calling that "we could
         # not ground it" would send the teacher hunting for a corpus problem.
