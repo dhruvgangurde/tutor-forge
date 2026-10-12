@@ -26,17 +26,16 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from auth.service import require_student
-from courses.enrollment import is_enrolled
 from core.dependencies import (
     get_db_session,
     get_gemini_pro,
     get_langfuse_client,
     get_retrieval_service,
 )
-from db.models import TutoringMessage, TutoringSession, User
+from courses.enrollment import is_enrolled
+from db.models import TutoringSession, User
 from tutoring.schemas import (
     ChatRequest,
     Citation,
@@ -275,7 +274,7 @@ async def get_session_messages(
     student: User = Depends(require_student),
 ) -> list[TutoringMessageOut]:
     """Return all messages in a session, in chronological order."""
-    session = await _require_student_owns_session(session_id, student, db)
+    await _require_student_owns_session(session_id, student, db)
 
     messages = await get_messages(session_id, db)
 
