@@ -182,7 +182,7 @@ _SOURCE_SUBJECT_RE = re.compile(
 #: "given that" is a conjunction and stays.
 _PROVIDED = (
     r"(?:\s+(?:provided|supplied|given(?!\s+that\b))"
-    r"(?:\s+by\s+(?:your|the|our)\s+(?:teacher|instructor))?)?"
+    r"(?:\s+by\s+(?:your|the|our)\s+teacher)?)?"
 )
 
 #: "according to the course material, X" / "based on the course material, X" /
