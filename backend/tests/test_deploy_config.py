@@ -6,6 +6,7 @@ core/config.py. These pin the values that silently broke a deploy before.
 Not a substitute for a real deploy: nothing here runs on Render.
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -33,8 +34,10 @@ def test_render_trusts_the_proxy_for_the_client_address():
     assert _render_env()["TRUSTED_PROXY"] == "true"
 
 
-def test_docker_start_command_trusts_forwarded_headers():
-    # README "Running behind a reverse proxy": set both TRUSTED_PROXY and this.
+def test_docker_start_command_never_trusts_every_forwarder():
+    # With --forwarded-allow-ips="*" uvicorn takes the LEFT-most X-Forwarded-For
+    # entry, which the client wrote, as the client address. TRUSTED_PROXY alone
+    # is what the rate limiter needs (it reads the entry the proxy appended).
     dockerfile = (_REPO / "backend" / "Dockerfile").read_text(encoding="utf-8")
     cmd = next(line for line in dockerfile.splitlines() if line.startswith("CMD"))
-    assert "--forwarded-allow-ips" in cmd
+    assert not re.search(r"forwarded-allow-ips=['\"]?\*", cmd)

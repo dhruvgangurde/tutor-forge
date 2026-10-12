@@ -204,11 +204,14 @@ forwarded address a client made up. Two settings control this:
   ```
 
   Without a proxy, start uvicorn with `--no-proxy-headers` so nothing on the
-  same host can set the client address. Use `--forwarded-allow-ips="*"` only
-  when the backend is reachable exclusively through the proxy.
+  same host can set the client address. Never use `--forwarded-allow-ips="*"`:
+  uvicorn then takes the left-most `X-Forwarded-For` entry, which the client
+  wrote, as the client address.
 
-Behind a proxy, set both: `TRUSTED_PROXY=true` and `--forwarded-allow-ips` to
-the proxy's address.
+Behind a proxy, `TRUSTED_PROXY=true` is what the rate limiter needs. Uvicorn's
+flag only changes the client address uvicorn itself records (its access log);
+set it to the proxy's own address if you want that. The Render blueprint sets
+`TRUSTED_PROXY` only.
 
 ## Roadmap
 
