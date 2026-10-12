@@ -73,7 +73,13 @@ class Settings(BaseSettings):
     # in course material. Below this, agents refuse generation (no LLM call).
     # One value per provider because each embedding backend has its own
     # similarity scale — the numbers are NOT interchangeable.
-    groundedness_threshold: float = 0.65        # real Gemini embeddings
+    # Gemini (gemini-embedding-001), measured 2026-10-12 on Gemini Test 2 with
+    # eval/datasets/groundedness_calibration.json: on-topic min 0.6452, so 0.65
+    # refused two informal on-topic questions. At 0.62 none are refused; four
+    # adjacent computing topics and three adversarial probes pass the gate,
+    # and run live through the tutor all ten declined or steered back to the
+    # course, none answered from general knowledge. Re-measure on a new model.
+    groundedness_threshold: float = 0.62
     groundedness_threshold_mock: float = 0.20   # mock stub: bag-of-words ceiling ~0.42,
                                                  # off-topic noise ~0.0-0.1
     # EMPIRICALLY MEASURED 2026-08-16 against nomic-embed-text on the two live

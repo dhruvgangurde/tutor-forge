@@ -239,7 +239,7 @@ JSON-ish fields are stored as `Text`, not JSONB — migrating to JSONB is tracke
 | `mock_gemini.py` | Deterministic mock Gemini Pro/Flash: topic-aware canned hierarchies + a **bag-of-words feature-hashing embedding** (768-dim, stopword-filtered) so similar text has positive cosine similarity |
 
 **Mock embeddings caveat (important):** the mock's similarity scale is far lower than real embeddings,
-so there are **two groundedness thresholds** in config — `groundedness_threshold = 0.65` (real Gemini)
+so there are **two groundedness thresholds** in config — `groundedness_threshold = 0.62` (real Gemini, measured 2026-10-12)
 and `groundedness_threshold_mock = 0.20` (mock ceiling ≈ 0.42, off-topic noise ≈ 0.0–0.1).
 
 ---
@@ -336,7 +336,7 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `JOB_STALE_AFTER_SECONDS` | `1800` | orphaned-job reaper threshold |
 | `RATE_LIMIT_*` | enabled; auth 10/60 s, AI 20/60 s | |
 | `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` | 50 MB / 20 | oversized ⇒ 413 |
-| `GROUNDEDNESS_THRESHOLD` / `_MOCK` | `0.65` / `0.20` | see §7 |
+| `GROUNDEDNESS_THRESHOLD` / `_MOCK` | `0.62` / `0.20` | see §7 |
 | `TUTOR_REWRITE_TIMEOUT_SECONDS` | `10.0` | longest wait for the Flash call that rewrites a follow-up into a standalone question for retrieval; past it the rewrite is skipped |
 | `ASSESSMENT_MIN_HIGHER_ORDER_SHARE` | `0.4` | smallest share of apply-or-higher questions in a generated quiz of 5+ questions when the teacher gives no Bloom mix |
 

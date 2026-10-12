@@ -405,6 +405,16 @@ def test_ollama_threshold_is_a_distinct_setting_from_mock():
     assert s.groundedness_threshold_ollama != s.groundedness_threshold_mock
 
 
+def test_gemini_threshold_is_the_measured_bar():
+    """
+    0.62, measured 2026-10-12 on gemini-embedding-001 (Gemini Test 2): no
+    on-topic question refused, and the 10 adjacent and adversarial probes run
+    live through the tutor at that bar all declined or steered back to the
+    course. 0.65 refused two informal on-topic questions (0.6452, 0.6456).
+    """
+    assert Settings.model_fields["groundedness_threshold"].default == 0.62
+
+
 def test_env_example_thresholds_match_the_config_defaults():
     """
     .env.example is what a new setup copies. It used to set the Ollama bar to

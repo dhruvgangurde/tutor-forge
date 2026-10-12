@@ -163,5 +163,5 @@ Stop and ask me before doing any of the following:
 
 - `docs/ROADMAP.md` and `PROJECT-CONTEXT.md` can be stale. Trust the code, and the newest status document.
 - Rate limiter, revoked-token cache and job reaper are single-process, and Chroma is a local on-disk store, so the backend isn't horizontally scalable as it stands.
-- Tutor groundedness thresholds differ for mock (0.20) and real (0.65) embeddings.
+- Tutor groundedness thresholds differ for mock (0.20) and real Gemini (0.62) embeddings.
 - A tutor reply must be judged in the context of the conversation: a short answer to the tutor's own question ("no", "I don't know") is not an out-of-course question and must never get the refusal message.
