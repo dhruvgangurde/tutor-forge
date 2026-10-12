@@ -110,6 +110,21 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
     return None
 
 
+async def _recent_history(session_id: uuid.UUID, db: AsyncSession) -> list[dict]:
+    """The last messages of the session, oldest first, as the model will see them."""
+    result = await db.execute(
+        select(TutoringMessage)
+        .where(TutoringMessage.session_id == session_id)
+        .order_by(TutoringMessage.created_at.desc(), _STUDENT_FIRST.desc())
+        .limit(TUTOR_GUARD.memory_turns)
+    )
+    rows = list(result.scalars().all())
+    return [
+        {"role": m.role, "content": m.content, "hint_level": m.hint_level, "is_refusal": m.is_refusal}
+        for m in reversed(rows)
+    ]
+
+
 async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringMessage | None:
     """The tutor's most recent turn that was not a refusal: what the student is replying to."""
     result = await db.execute(
@@ -238,6 +253,7 @@ async def send_chat_message(
     is_new_question = open_question is None or classify_turn(question) == TURN_NEW_QUESTION
     last_tutor = None if is_new_question else await _last_tutor_turn(session.id, db)
     definition_allowed = is_new_question and await _definition_allowed(session.course_id, question, db)
+    history = await _recent_history(session.id, db)  # before this message is persisted
 
     # Persist the student's message at receipt, stamped now. It used to be
     # written after the reply, in the same flush, so it carried the reply's
@@ -271,6 +287,7 @@ async def send_chat_message(
         # A new question starts a fresh ladder; a reply stays on the current rung.
         "hint_level": 0 if is_new_question else session.current_hint_level,
         "definition_allowed": definition_allowed,
+        "history": history,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
@@ -358,12 +375,13 @@ async def request_hint(
     open_question = await _open_question(session, db)
     if open_question is None:
         raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
-    # What the tutor said last, so the hint adds to it instead of repeating it.
+    # What the tutor said last, so the hint adds to it instead of repeating it,
+    # and the conversation so far, so it builds on what was actually answered.
     last_tutor = await _last_tutor_turn(session.id, db)
+    history = await _recent_history(session.id, db)
 
-    # The student's later replies are deliberately left out of the hint prompt:
-    # a hint is about the learning question, and a reply that drifted is
-    # exactly what used to drag the ladder off it.
+    # The hint is anchored on the learning question, never on the latest
+    # message: a reply that drifted used to drag the ladder off it.
     initial_state: TutorState = {
         "session_id": session.id,
         "course_id": session.course_id,
@@ -377,6 +395,7 @@ async def request_hint(
         "retrieval_result": None,
         "is_grounded": False,
         "hint_level": session.current_hint_level,  # Current level (advance_hint_node will increment)
+        "history": history,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},

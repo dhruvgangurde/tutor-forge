@@ -189,6 +189,17 @@ HINT_LADDER: dict[int, str] = {
 }
 
 
+#: Added on every path when the prompt carries the conversation so far. A hint
+#: used to see only the open question, so it claimed progress that never
+#: happened ("Now that you have the table size set up") and skipped the
+#: question the student had not answered.
+MEMORY_RULES = """\
+The conversation so far shows what they have actually said and got right.
+Never say or imply they have done, set up or understood something unless one
+of their messages shows it. If your last question is still unanswered, help
+with that question; do not move on to a later step.
+"""
+
 #: Added to a hint below the full explanation when the tutor has already said
 #: something. Hint 1 used to ask the opening question again in other words.
 HINT_AFTER_LAST_MESSAGE = """\

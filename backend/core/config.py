@@ -272,6 +272,11 @@ class TutorGuardThresholds:
     # uses this share of the quiz question's words.
     graded_question_asked_share: float = 0.8
     graded_question_stem_share: float = 0.6
+    # agents/tutor/nodes.py: how much of the conversation the model sees on
+    # every turn, as whole messages (both roles) and characters per message.
+    # Eight messages is four exchanges, about 1,200 tokens at the cap.
+    memory_turns: int = 8
+    memory_chars_per_turn: int = 600
 
 
 @dataclass(frozen=True)

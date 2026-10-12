@@ -63,6 +63,7 @@ from agents.tutor.prompts import (
     FULL_EXPLANATION_LEVEL,
     HINT_AFTER_LAST_MESSAGE,
     MAX_HINT_LEVEL,
+    MEMORY_RULES,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
     reply_instruction,
@@ -79,6 +80,7 @@ from agents.tutor.query_resolution import (
     resolve_retrieval_query,
 )
 from agents.tutor.state import TutorState
+from core.config import TUTOR_GUARD
 from core.context_phrasing import (
     mentions_context,
     refers_to_learner_in_third_person,
@@ -277,6 +279,21 @@ def decline_direct_answer_node(
 
 # ── Node 4 (grounded path) ────────────────────────────────────────────────────
 
+def conversation_block(history: list[dict]) -> str:
+    """
+    The last turns of the conversation, oldest first, each wrapped as
+    untrusted data (the tutor's own earlier turns included: they are model
+    output). Capped per message and in number by core/config.py.
+    """
+    turns = []
+    for m in history[-TUTOR_GUARD.memory_turns:]:
+        label = "STUDENT" if m.get("role") == "student" else "TUTOR"
+        if m.get("is_refusal"):
+            label += " REFUSAL"
+        turns.append(wrap_untrusted((m.get("content") or "")[:TUTOR_GUARD.memory_chars_per_turn], label))
+    return "The conversation so far, oldest first:\n" + "\n".join(turns)
+
+
 def generate_guiding_question_node(
     state: TutorState,
     retrieval_service: RetrievalService,
@@ -345,7 +362,6 @@ def generate_guiding_question_node(
             )
         parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
-        prompt = "\n\n".join(parts)
         system = reply_instruction(bool(state.get("is_non_answer")), hint_level)
     else:
         # Labelled "The question", not "Student question": the label was
@@ -359,7 +375,14 @@ def generate_guiding_question_node(
             parts.append(f"Your last message:\n{wrap_untrusted(last, 'YOUR LAST MESSAGE')}")
             system += "\n" + HINT_AFTER_LAST_MESSAGE
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
-        prompt = "\n\n".join(parts)
+
+    # The conversation so far, on every path, so a hint or a reply builds on
+    # what was actually said rather than guessing at it.
+    history = state.get("history") or []
+    if history:
+        parts.insert(0, conversation_block(history))
+        system += "\n" + MEMORY_RULES
+    prompt = "\n\n".join(parts)
 
     raw_response = gemini_pro.generate(
         prompt,

@@ -18,6 +18,8 @@ class TutorState(TypedDict):
     turn_kind: NotRequired[str]                # "new_question" | "follow_up" | "reply"
     is_non_answer: NotRequired[bool]           # "no", "I don't know": ask a simpler step
     definition_allowed: NotRequired[bool]      # pure "what is X?", not from graded work
+    history: NotRequired[list[dict]]           # the turns before this one, oldest first:
+                                               # {role, content, hint_level, is_refusal}
     pedagogy_skip_requested: bool              # FR-03.3: asked to be handed the answer
     retrieval_result: dict[str, Any] | None   # serialized RetrievalResult
     is_grounded: bool
