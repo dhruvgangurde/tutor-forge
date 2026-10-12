@@ -135,7 +135,9 @@ def rewrite_follow_up(message: str, history: list[dict], gemini_flash) -> str | 
     typed = _words(message)
     if not _is_new_topic(message, history):
         typed |= set().union(*(_words(m.get("content") or "") for m in history if m.get("role") == "student"))
-    if _words(standalone) - typed:
+    # Words that only say what kind of help is wanted ("problem", "example")
+    # carry no topic, so they may be added.
+    if _words(standalone) - typed - _TASK_WORDS:
         return _skipped("added_words")
     logger.info("[REWRITE] used=1 skipped=0 reason=-")
     return standalone

@@ -212,3 +212,14 @@ async def test_api_hints_and_non_answers_never_call_the_rewrite(client, student_
     await _run(client, student_token, ready_course_id, [_KNAPSACK, "no", "i dont get it"], flash,
                {_KNAPSACK: 0.70}, hint_after=True)
     flash.generate.assert_not_called()  # the first message has no history; the rest are non-answers
+
+
+def test_a_rewrite_may_add_words_that_only_name_the_kind_of_help():
+    # The live case: "problem" was typed outside the window; it names no topic.
+    history = _HISTORY[2:] + [
+        {"role": "student", "content": "size of matrix is (size of knapsack)x(no of items)", "hint_level": 0,
+         "is_refusal": False},
+    ]
+    history = [h for h in history if h["content"] != _KNAPSACK]
+    flash = _flash(_standalone(_REWRITTEN))
+    assert rewrite_follow_up(_EXAMPLE, history, flash) == _REWRITTEN
