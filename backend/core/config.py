@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import dotenv_values
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,10 +29,14 @@ class Settings(BaseSettings):
     )
 
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://postgres:password@localhost:5432/tutorforge"
+    # Secret-bearing fields are repr=False: anything that formats the settings
+    # object (an error message, a log line, a debugger) must not print them.
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:password@localhost:5432/tutorforge", repr=False
+    )
 
     # ── Gemini ────────────────────────────────────────────────────────────────
-    gemini_api_key: str = ""
+    gemini_api_key: str = Field(default="", repr=False)
     gemini_pro_model: str = "gemini-2.5-pro"
     gemini_flash_model: str = "gemini-2.5-flash"
     # text-embedding-004 is retired; gemini-embedding-001 returns 3072
@@ -125,11 +130,11 @@ class Settings(BaseSettings):
 
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
+    langfuse_secret_key: str = Field(default="", repr=False)
     langfuse_host: str = "https://cloud.langfuse.com"
 
     # ── JWT ───────────────────────────────────────────────────────────────────
-    jwt_secret_key: str = "change-me-in-production"
+    jwt_secret_key: str = Field(default="change-me-in-production", repr=False)
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
     # Refresh tokens (F19): long-lived, revocable, rotated on each use.
