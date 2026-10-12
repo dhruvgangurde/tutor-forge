@@ -81,6 +81,30 @@ def test_a_refusal_is_marked_and_a_forged_marker_is_filtered():
     assert "[filtered-marker]" in block and block.count("<<END UNTRUSTED STUDENT>>") == 1
 
 
+@pytest.mark.parametrize("name, marker", [
+    ("OUT_OF_CORPUS_REFUSAL", "(declined: outside the course)"),
+    ("COURSE_GAP_MESSAGE", "(declined: not enough in the course material for that part)"),
+    ("DIRECT_ANSWER_DECLINE", "(declined to hand over the answer; offered hints)"),
+])
+def test_an_earlier_refusal_reaches_the_model_as_a_marker_not_its_wording(name, marker):
+    """
+    The model copied the stock refusal from this window, word for word, as its
+    answer to a question the gate had passed (live, Gemini Test 2, 2026-10-13).
+    It now sees what happened, not wording it can repeat.
+    """
+    from agents.tutor import prompts
+    from core.prompt_safety import wrap_untrusted
+
+    stock = getattr(prompts, name)
+    block = conversation_block([
+        {"role": "student", "content": "what is the travelling salesman problem?", "hint_level": 0,
+         "is_refusal": False},
+        {"role": "tutor", "content": stock, "hint_level": 0, "is_refusal": True},
+    ])
+    assert stock not in block
+    assert wrap_untrusted(marker, "TUTOR REFUSAL") in block
+
+
 # ── The node ──────────────────────────────────────────────────────────────────
 
 
@@ -104,6 +128,19 @@ def test_every_path_sees_the_conversation_and_the_memory_rules(kwargs, hint):
     assert "size of matrix is (size of knapsack)x(no of items)" in prompt
     assert MEMORY_RULES in system
     assert "size of matrix" not in system  # the conversation never enters the system instruction
+
+
+def test_the_prompt_after_a_refusal_carries_none_of_its_wording():
+    from agents.tutor.prompts import OUT_OF_CORPUS_REFUSAL
+
+    history = [
+        {"role": "student", "content": "what is the travelling salesman problem?", "hint_level": 0,
+         "is_refusal": False},
+        {"role": "tutor", "content": OUT_OF_CORPUS_REFUSAL, "hint_level": 0, "is_refusal": True},
+    ]
+    prompt, system = _call({**_state(), "history": history})
+    assert "I can only help with topics covered in this course" not in prompt + system
+    assert "(declined: outside the course)" in prompt
 
 
 @pytest.mark.parametrize("hint", [False, True])

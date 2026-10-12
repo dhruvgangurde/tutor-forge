@@ -317,10 +317,22 @@ def conversation_block(history: list[dict]) -> str:
     turns = []
     for m in history[-TUTOR_GUARD.memory_turns:]:
         label = "STUDENT" if m.get("role") == "student" else "TUTOR"
+        content = m.get("content") or ""
         if m.get("is_refusal"):
             label += " REFUSAL"
-        turns.append(wrap_untrusted((m.get("content") or "")[:TUTOR_GUARD.memory_chars_per_turn], label))
+            # What happened, not the fixed wording: the model copied the stock
+            # refusal from here word for word as its own answer (2026-10-13).
+            content = _REFUSAL_MARKERS.get(content.strip(), "(declined)")
+        turns.append(wrap_untrusted(content[:TUTOR_GUARD.memory_chars_per_turn], label))
     return "The conversation so far, oldest first:\n" + "\n".join(turns)
+
+
+#: How an earlier refusal appears in the conversation window, by its fixed text.
+_REFUSAL_MARKERS = {
+    OUT_OF_CORPUS_REFUSAL: "(declined: outside the course)",
+    COURSE_GAP_MESSAGE: "(declined: not enough in the course material for that part)",
+    DIRECT_ANSWER_DECLINE: "(declined to hand over the answer; offered hints)",
+}
 
 
 def generate_guiding_question_node(
