@@ -176,6 +176,20 @@ def test_ollama_outline_spans_the_whole_document_within_budget():
     assert "worked example" not in outline.split("Dijkstra's Algorithm")[0]
 
 
+def test_gemini_outline_reaches_headings_past_the_first_32k_chars():
+    """
+    The Gemini path sent only the first 32,000 characters: for a long book
+    that is a few pages, so the outline knew chapter 1 and nothing else. It now
+    sends the same whole-document outline as Ollama, in the same budget.
+    """
+    gp = MagicMock()
+    gp.generate.return_value = json.dumps(HIERARCHY)
+    build_hierarchy_node(_state(parsed_content=_book()), gp)
+    prompt = gp.generate.call_args.args[0]
+    assert "EXPERIMENT 7: Dijkstra's Algorithm" in prompt  # a heading on page 250
+    assert gp.generate.call_args.kwargs == {"temperature": 0.3}
+
+
 def test_ollama_outline_falls_back_to_leading_text_without_structure():
     pages = [{"source_file": "notes.txt", "page_or_slide": None, "text": "plain notes " * 5_000}]
     budget = ingestion_nodes._ollama_content_budget_chars()

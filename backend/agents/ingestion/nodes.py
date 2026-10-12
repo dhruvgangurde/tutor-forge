@@ -178,11 +178,11 @@ Course material:
 
 # ── Hierarchy building on the Ollama (local dev) provider ─────────────────────
 #
-# Why this path differs from the Gemini one above (which is left untouched):
+# Why this path differs from the Gemini one above:
 #
-# The Gemini path sends the first 32,000 characters of the course with the JSON
-# instructions BEFORE the content. On qwen2.5:7b-instruct at num_ctx=8192 that
-# fails for any real textbook:
+# The Gemini path used to send the first 32,000 characters of the course with the
+# JSON instructions BEFORE the content (it now sends this outline, still first).
+# On qwen2.5:7b-instruct at num_ctx=8192 that fails for any real textbook:
 #   - dense technical text (formulas, code) tokenizes at ~3 chars/token, not
 #     ~4: Ollama measured the 32,000-char window at 10,437 tokens (BEE text)
 #     and 10,999 (DAA lab guide) -- the "~8k tokens" assumption above is wrong
@@ -504,18 +504,18 @@ def build_hierarchy_node(
 
     On LLM_PROVIDER=ollama this delegates to _build_hierarchy_ollama (outline
     input sized to the context window, instructions after the content, one JSON
-    retry). The Gemini/mock path below is unchanged.
+    retry). The Gemini/mock path below sends the same whole-document outline,
+    within 32,000 characters, in one call with the instructions first.
     """
     if settings.llm_provider == "ollama":
         return _require_chapters(_build_hierarchy_ollama(state, gemini_pro))
 
     course_id = state["course_id"]
 
-    # Combine all parsed text for the prompt (truncated to avoid token limits)
-    combined = "\n\n".join(
-        f"[{p['source_file']}, p.{p['page_or_slide']}]\n{p['text']}"
-        for p in state["parsed_content"]
-    )[:32_000]  # ~8k tokens; Gemini Pro context window is much larger
+    # The whole document's outline (contents pages and unit headings), not just
+    # its head: 32,000 characters of a 680-page book is chapter 1. Unstructured
+    # text falls back to the same leading 32,000 characters as before.
+    combined = _hierarchy_outline(state["parsed_content"], 32_000)
 
     # Lengths, counts and ids only in these logs: the content, the prompt, the
     # model's reply and the outline are all course text.
