@@ -39,7 +39,7 @@ services:
       - key: GEMINI_FLASH_MODEL
         value: gemini-2.5-flash
       - key: EMBEDDING_MODEL
-        value: text-embedding-004
+        value: gemini-embedding-001
       - key: CHROMA_PERSIST_PATH
         value: /app/data/chroma
       - key: CORS_ALLOWED_ORIGINS
