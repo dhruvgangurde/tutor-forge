@@ -1151,8 +1151,11 @@ def is_out_of_corpus_echo(text: str | None) -> bool:
     The reply repeats the stock out-of-corpus refusal (either of its first two
     sentences, ignoring case and punctuation). Seen live: the model copied it
     from an earlier refusal in the conversation window as its answer to a
-    question the gate had passed.
+    question the gate had passed. A reply opening with a refusal marker from
+    that window ("(declined: outside the course)") is a copy too.
     """
+    if (text or "").lstrip().lower().startswith("(declined"):
+        return True
     plain = _letters_only(text or "")
     return bool(plain) and any(s in plain for s in _REFUSAL_SENTENCES)
 

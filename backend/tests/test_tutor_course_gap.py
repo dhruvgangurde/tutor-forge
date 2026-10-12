@@ -343,3 +343,19 @@ async def test_api_a_copied_refusal_is_stored_as_one_and_opens_nothing(
     assert session.anchor_message_id is None
     assert hint.status_code == 400
     assert hint.json() == {"detail": NO_OPEN_QUESTION_FOR_HINT}
+
+
+@pytest.mark.parametrize("copied", [
+    "(declined: outside the course)",
+    "(declined: not enough in the course material for that part)",
+    "  (Declined) What would you like to look at instead?",
+])
+def test_a_reply_that_copies_a_refusal_marker_is_a_refusal(copied):
+    # The conversation window now shows earlier refusals as these markers
+    # (conversation_block), so a copy of one must be caught the same way.
+    from agents.tutor.prompts import OUT_OF_CORPUS_REFUSAL
+
+    out, _ = _run([copied], _state())
+    assert out["response"] == OUT_OF_CORPUS_REFUSAL
+    assert out["citations"] == []
+    assert out["pedagogy_trace"]["refused"] is True
