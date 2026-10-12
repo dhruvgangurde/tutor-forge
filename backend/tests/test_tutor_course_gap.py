@@ -209,6 +209,44 @@ async def test_api_chat_gap_is_persisted_as_a_refusal(client, student_token, rea
     assert messages.json()[-1]["is_refusal"] is True
 
 
+@pytest.mark.asyncio
+async def test_a_new_question_answered_with_the_gap_message_is_not_the_open_question(
+    client, student_token, ready_course_id
+):
+    """
+    The gate passed, so the question became the session's open question even
+    though the tutor ended up saying the course does not cover it; the next
+    hint then worked on a topic the student had just been told was not there.
+    Like an out-of-corpus refusal, it now leaves nothing open.
+    """
+    import uuid
+
+    from sqlalchemy import select
+
+    from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
+    from db.models import TutoringSession
+    from tests.test_tutoring import _TestSessionFactory
+
+    retrieval = _make_query_scoring_retrieval({_Q: 0.70})
+    gemini = _install_tutor_mocks(retrieval)
+    gemini.generate.side_effect = [_LIVE_GAPS[2], _LIVE_GAPS[2], _ASK, _ASK]
+    try:
+        sid = await _new_session(client, student_token, ready_course_id)
+        reply = await _chat(client, student_token, sid, _Q)
+        hint = await _hint(client, student_token, sid)
+    finally:
+        _clear_tutor_mocks()
+
+    assert reply.json()["response"] == COURSE_GAP_MESSAGE
+    async with _TestSessionFactory() as db:
+        session = (
+            await db.execute(select(TutoringSession).where(TutoringSession.id == uuid.UUID(sid)))
+        ).scalar_one()
+    assert session.anchor_message_id is None
+    assert hint.status_code == 400
+    assert hint.json() == {"detail": NO_OPEN_QUESTION_FOR_HINT}
+
+
 # ── A gap sentence the model glued to the rest of its reply ───────────────────
 
 

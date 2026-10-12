@@ -326,12 +326,15 @@ async def send_chat_message(
     )
     db.add(tutor_msg)
 
+    # A turn that ended in the course-gap message ("the course does not cover
+    # that") opens nothing either, like an out-of-corpus refusal.
+    opens = grounded and final_state.get("pedagogy_trace", {}).get("refusal_kind") != "course_gap"
     if is_new_question:
         # A grounded new question opens a conversation about itself; a refused
         # one leaves no open question, so a hint has nothing to build on.
-        session.anchor_message_id = student_msg.id if grounded else None
+        session.anchor_message_id = student_msg.id if opens else None
         session.current_hint_level = 0
-    elif grounded and session.anchor_message_id is None:
+    elif opens and session.anchor_message_id is None:
         # Older sessions: adopt the question found in the history once it has
         # passed the gate, so later turns do not have to guess again.
         session.anchor_message_id = open_question.id
@@ -436,7 +439,8 @@ async def request_hint(
 
     # Update session hint level to match final state
     session.current_hint_level = final_state.get("hint_level", session.current_hint_level)
-    if session.anchor_message_id is None:
+    gap = final_state.get("pedagogy_trace", {}).get("refusal_kind") == "course_gap"
+    if session.anchor_message_id is None and not gap:
         session.anchor_message_id = open_question.id  # older session: keep what passed the gate
 
     await db.commit()
