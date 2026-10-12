@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from courses.enrollment import is_enrolled
 from db.models import (
     Assessment,
     Chapter,
@@ -31,6 +32,18 @@ from db.models import (
     TutoringMessage,
     TutoringSession,
 )
+
+
+async def _has_work_in(student_id: uuid.UUID, course_id: uuid.UUID, db: AsyncSession) -> bool:
+    """A submission or a tutoring session of this student's in the course."""
+    submitted = select(Submission.id).join(
+        Assessment, Submission.assessment_id == Assessment.id
+    ).where(Submission.student_id == student_id, Assessment.course_id == course_id)
+    tutored = select(TutoringSession.id).where(
+        TutoringSession.student_id == student_id, TutoringSession.course_id == course_id
+    )
+    return bool((await db.execute(select(exists(submitted) | exists(tutored)))).scalar())
+
 
 _UNTAGGED_NOTE = (
     "No concept-level breakdown is available for this course yet. These "
@@ -97,16 +110,23 @@ async def get_course_progress(
     db: AsyncSession,
 ) -> dict | None:
     """
-    Full progress detail for one course, or None if the course does not exist.
+    Full progress detail for one course, or None if the course does not exist
+    or is not the student's: not enrolled and no work in it (a submission or a
+    tutoring session). None is a 404 either way, so ids cannot be probed.
 
-    A student with no submissions in an existing course gets an empty-but-valid
-    payload rather than a 404 — "you have not started this yet" is a real state
-    the page can render.
+    An enrolled student with no submissions gets an empty-but-valid payload
+    rather than a 404 — "you have not started this yet" is a real state the
+    page can render. A removed student keeps their history, as everywhere else.
     """
     course = (
         await db.execute(select(Course).where(Course.id == course_id))
     ).scalar_one_or_none()
     if not course:
+        return None
+    if not (
+        await is_enrolled(db, student_id=student_id, course_id=course_id)
+        or await _has_work_in(student_id, course_id, db)
+    ):
         return None
 
     # ── Released grades, newest first ─────────────────────────────────────────
