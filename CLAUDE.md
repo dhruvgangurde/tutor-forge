@@ -64,7 +64,7 @@ Every change ships with tests, and the full suites must be green before you repo
 - **Run before reporting:**
   - Backend (from `backend/`): `pytest -q`
   - Frontend (from `frontend/`): `npm test`, then `npm run build`, then `npm run lint`
-- **Current baseline** (update this line when it changes): pytest 1548 passed, frontend 254 passed, build and lint clean. A report must give the new counts and the difference from baseline. If the count goes down, explain exactly why.
+- **Current baseline** (update this line when it changes): pytest 1672 passed, frontend 258 passed, build and lint clean. A report must give the new counts and the difference from baseline. If the count goes down, explain exactly why.
 - Backend lint: keep `ruff` clean for files you touch; don't mass-reformat other files.
 - The eval suite in `backend/eval/` (harness, datasets and seven suites) exists but has never been run, so there are no measured results. Don't claim groundedness or grading-consistency numbers that were never measured.
 
