@@ -60,6 +60,10 @@ logger = logging.getLogger(__name__)
 _STUDENT_FIRST = case((TutoringMessage.role == "student", 0), else_=1)
 
 
+#: Refusals that leave no open question, even on a turn the gate passed.
+_OPENS_NOTHING = frozenset({"course_gap", "out_of_corpus"})
+
+
 def _now() -> datetime:
     """Wall-clock time, taken in Python when the row is created.
 
@@ -327,8 +331,8 @@ async def send_chat_message(
     db.add(tutor_msg)
 
     # A turn that ended in the course-gap message ("the course does not cover
-    # that") opens nothing either, like an out-of-corpus refusal.
-    opens = grounded and final_state.get("pedagogy_trace", {}).get("refusal_kind") != "course_gap"
+    # that") or in the out-of-corpus refusal opens nothing, whatever the gate said.
+    opens = grounded and final_state.get("pedagogy_trace", {}).get("refusal_kind") not in _OPENS_NOTHING
     if is_new_question:
         # A grounded new question opens a conversation about itself; a refused
         # one leaves no open question, so a hint has nothing to build on.
@@ -439,7 +443,7 @@ async def request_hint(
 
     # Update session hint level to match final state
     session.current_hint_level = final_state.get("hint_level", session.current_hint_level)
-    gap = final_state.get("pedagogy_trace", {}).get("refusal_kind") == "course_gap"
+    gap = final_state.get("pedagogy_trace", {}).get("refusal_kind") in _OPENS_NOTHING
     if session.anchor_message_id is None and not gap:
         session.anchor_message_id = open_question.id  # older session: keep what passed the gate
 

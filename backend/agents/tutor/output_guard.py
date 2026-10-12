@@ -56,6 +56,7 @@ from agents.tutor.prompts import (
     GUARD_FALLBACK_NON_ANSWER,
     GUARD_FALLBACK_QUESTION,
     MAX_ANSWER_GUARD_LEVEL,
+    OUT_OF_CORPUS_REFUSAL,
 )
 from agents.tutor.query_resolution import definition_head, topical_words
 from core.config import TUTOR_GUARD
@@ -1133,6 +1134,27 @@ def is_course_gap_reply(text: str | None) -> bool:
     gap = [s for s in sentences if bare_gap(s)]
     others = [s for s in sentences if s not in gap]
     return bool(gap) and len(others) <= 1 and all(_is_question(s) for s in others)
+
+
+def _letters_only(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+#: The first two sentences of the out-of-corpus refusal, for spotting a copy.
+_REFUSAL_SENTENCES = tuple(
+    _letters_only(s) for s in re.split(r"(?<=[.!?])\s+", OUT_OF_CORPUS_REFUSAL) if s.strip()
+)[:2]
+
+
+def is_out_of_corpus_echo(text: str | None) -> bool:
+    """
+    The reply repeats the stock out-of-corpus refusal (either of its first two
+    sentences, ignoring case and punctuation). Seen live: the model copied it
+    from an earlier refusal in the conversation window as its answer to a
+    question the gate had passed.
+    """
+    plain = _letters_only(text or "")
+    return bool(plain) and any(s in plain for s in _REFUSAL_SENTENCES)
 
 
 # ── Keeping the opening when the fallback fires ───────────────────────────────

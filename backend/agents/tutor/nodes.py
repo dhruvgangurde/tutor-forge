@@ -57,6 +57,7 @@ from agents.tutor.output_guard import (
     TutorTurn,
     guard_tutor_reply,
     is_course_gap_reply,
+    is_out_of_corpus_echo,
 )
 from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
@@ -471,6 +472,26 @@ def generate_guiding_question_node(
                     "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
                 },
             }
+    # The model sometimes copies the out-of-corpus refusal it sees in the
+    # conversation window. It has declined the topic, so this is that refusal:
+    # no citations, and (tutoring/service.py) it opens no question.
+    if is_out_of_corpus_echo(response):
+        logger.info("[TUTOR-GUARD] rule=refusal_echo path=%s hint_level=%s", path, hint_level)
+        return {
+            **state,
+            "response": OUT_OF_CORPUS_REFUSAL,
+            "citations": [],
+            "pedagogy_trace": {
+                **state.get("pedagogy_trace", {}),
+                "grounded": True,
+                "refused": True,
+                "refusal_kind": "out_of_corpus",
+                "hint_level": hint_level,
+                "is_full_explanation": False,
+                "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+                "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
+            },
+        }
     # Both warnings below log only the rule, the path and the level, in the
     # same form as the output guard: never the reply, which can carry what the
     # student wrote, and never the session id.
@@ -547,7 +568,7 @@ def advance_hint_node(
     out = generate_guiding_question_node(
         state_with_level, retrieval_service, gemini_pro, is_hint=True
     )
-    if out.get("pedagogy_trace", {}).get("refusal_kind") == "course_gap":
+    if out.get("pedagogy_trace", {}).get("refusal_kind") in ("course_gap", "out_of_corpus"):
         # A refusal is not a hint: the ladder stays where it was, so the
         # student can ask again rather than lose the rung.
         out = {**out, "hint_level": state["hint_level"],

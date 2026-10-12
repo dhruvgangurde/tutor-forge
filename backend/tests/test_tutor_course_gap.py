@@ -272,3 +272,74 @@ def test_a_gap_sentence_that_names_what_is_missing_stays():
                         course_text="It calls matrixChain(p, n + 1) and prints cost[1][n]."),
     )
     assert out == text and "course_gap" not in tripped
+
+
+# ── The model copying the out-of-corpus refusal ───────────────────────────────
+# Seen live (Gemini Test 2, 2026-10-13): after a refused question, "Explain
+# linear probing versus chaining in hash tables." passed the gate and the model
+# answered with the stock refusal word for word, copied from the conversation
+# window. It was stored as an ordinary turn with 4 citations and became the
+# open question, so the next hint ran on it and ended in the course-gap message.
+
+_OFF = "What is the travelling salesman problem?"
+_HASHING = "How do hash tables resolve collisions?"
+_PROBING = "Explain linear probing versus chaining in hash tables."
+
+
+def test_a_reply_that_copies_the_stock_refusal_is_a_refusal():
+    from agents.tutor.prompts import OUT_OF_CORPUS_REFUSAL
+
+    out, gemini = _run([OUT_OF_CORPUS_REFUSAL], _state())
+    assert out["response"] == OUT_OF_CORPUS_REFUSAL
+    assert out["citations"] == []
+    assert out["pedagogy_trace"]["refused"] is True
+    assert out["pedagogy_trace"]["refusal_kind"] == "out_of_corpus"
+    assert gemini.generate.call_count == 1  # no retry: the model has declined the topic
+
+
+def test_a_hint_that_copies_the_stock_refusal_keeps_the_level():
+    from agents.tutor.prompts import OUT_OF_CORPUS_REFUSAL
+
+    out, _ = _run([OUT_OF_CORPUS_REFUSAL], _state(hint_level=1), hint=True)
+    assert out["response"] == OUT_OF_CORPUS_REFUSAL
+    assert out["citations"] == []
+    assert out["hint_level"] == 1
+
+
+@pytest.mark.asyncio
+async def test_api_a_copied_refusal_is_stored_as_one_and_opens_nothing(
+    client, student_token, ready_course_id
+):
+    import uuid
+
+    from sqlalchemy import select
+
+    from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT, OUT_OF_CORPUS_REFUSAL
+    from db.models import TutoringSession
+    from tests.test_tutoring import _TestSessionFactory
+
+    retrieval = _make_query_scoring_retrieval({_OFF: 0.30, _HASHING: 0.70, _PROBING: 0.70})
+    gemini = _install_tutor_mocks(retrieval)
+    gemini.generate.side_effect = [_ASK, OUT_OF_CORPUS_REFUSAL, _ASK, _ASK]
+    headers = {"Authorization": f"Bearer {student_token}"}
+    try:
+        sid = await _new_session(client, student_token, ready_course_id)
+        assert (await _chat(client, student_token, sid, _OFF)).status_code == 200
+        assert (await _chat(client, student_token, sid, _HASHING)).status_code == 200
+        reply = await _chat(client, student_token, sid, _PROBING)
+        hint = await _hint(client, student_token, sid)
+        messages = await client.get(f"/tutor/sessions/{sid}/messages", headers=headers)
+    finally:
+        _clear_tutor_mocks()
+
+    assert reply.json()["response"] == OUT_OF_CORPUS_REFUSAL
+    copied = [m for m in messages.json() if m["role"] == "tutor"][-1]
+    assert copied["is_refusal"] is True
+    assert copied["citations"] == []
+    async with _TestSessionFactory() as db:
+        session = (
+            await db.execute(select(TutoringSession).where(TutoringSession.id == uuid.UUID(sid)))
+        ).scalar_one()
+    assert session.anchor_message_id is None
+    assert hint.status_code == 400
+    assert hint.json() == {"detail": NO_OPEN_QUESTION_FOR_HINT}
