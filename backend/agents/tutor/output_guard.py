@@ -89,6 +89,7 @@ RULE_VERDICT_REASON = "verdict_reason"
 RULE_COURSE_CLAIM = "course_claim"
 RULE_DEFINITION_EXTRA = "definition_extra"
 RULE_REPEATED_QUESTION = "repeated_question"
+RULE_COURSE_GAP = "course_gap"
 RULE_RESTATED_CORRECTION = "restated_correction"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
@@ -999,6 +1000,43 @@ def _tidy(text: str) -> tuple[str, bool]:
     return re.sub(r"[ \t]{2,}", " ", out).strip(), dropped
 
 
+# ── A reply that only says the course does not cover it ──────────────────────
+#
+# Seen live: "This course doesn't cover that part." as a whole reply, as a
+# full explanation, and glued to the fallback question. The gate had found
+# the topic in the course each time. The node asks once more and then shows a
+# fixed message; the guard never keeps such a sentence as an opening.
+
+_COURSE_GAP_RE = re.compile(
+    r"\b(?:this|the|our)\s+course(?:\s+material)?\s+(?:doesn't|does\s+not|didn't|did\s+not|"
+    r"won't|will\s+not|can't|cannot)\s+(?:cover|explain|address|include)"
+    r"|\b(?:not|isn't|aren't)\s+(?:covered|included|addressed)\s+(?:in|by)\s+(?:this|the)\s+course\b",
+    re.IGNORECASE,
+)
+
+
+def is_course_gap_reply(text: str | None) -> bool:
+    """
+    The reply says the course does not cover it and nothing else of substance:
+    at most one other sentence, and that one a question ("Which topic would
+    you like instead?"). An explanation that mentions a gap in passing is not
+    one.
+    """
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+    def bare_gap(sentence: str) -> bool:
+        # "...doesn't cover recursion in general, but it does show the base
+        # case: ..." says the gap and then teaches; only a sentence with
+        # nothing much beyond the gap phrase counts.
+        plain = _plain(sentence)
+        m = _COURSE_GAP_RE.search(plain)
+        return bool(m) and len(_content_words(plain[: m.start()] + plain[m.end():])) <= 3
+
+    gap = [s for s in sentences if bare_gap(s)]
+    others = [s for s in sentences if s not in gap]
+    return bool(gap) and len(others) <= 1 and all(_is_question(s) for s in others)
+
+
 # ── Keeping the opening when the fallback fires ───────────────────────────────
 
 #: At most this many sentences are kept ahead of the fallback question.
@@ -1020,7 +1058,7 @@ def _kept_opening(original: list[str], surviving: list[str]) -> list[str]:
     kept: list[str] = []
     for before, after in zip(original, surviving, strict=False):
         plain = _plain(after)
-        if after != before or _is_question(after) or plain.endswith(":"):
+        if after != before or _is_question(after) or plain.endswith(":") or _COURSE_GAP_RE.search(plain):
             break
         kept.append(after)
         if len(kept) == _MAX_KEPT_SENTENCES:

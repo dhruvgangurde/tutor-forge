@@ -164,6 +164,21 @@ Write any maths as plain text that reads well without rendering, such as
 Ask at most one question in your reply.
 """
 
+#: Added once when the model says the course does not cover a topic the gate
+#: has just found in it ("This course doesn't cover that part.").
+COURSE_GAP_RETRY = """\
+The course passages above DO cover this topic: they passed the course check.
+Explain what they say about it. If only part of the question is covered,
+explain that part and say plainly which part is not.
+"""
+
+#: Shown when the model still says the course does not cover it. Fixed text;
+#: a hint that ends here does not move the ladder, so they can ask again.
+COURSE_GAP_MESSAGE = (
+    "I couldn't find enough in the course material to explain that part. "
+    "Ask about one piece of it, or try another topic from the course."
+)
+
 #: Fixed replies used when the output guard has removed everything useful. No
 #: model call: a safe Socratic question that is true of any grounded topic.
 GUARD_FALLBACK_NON_ANSWER = (

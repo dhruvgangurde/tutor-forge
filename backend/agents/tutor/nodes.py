@@ -56,9 +56,12 @@ from agents.tutor.output_guard import (
     PATH_REPLY,
     TutorTurn,
     guard_tutor_reply,
+    is_course_gap_reply,
 )
 from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
+    COURSE_GAP_MESSAGE,
+    COURSE_GAP_RETRY,
     DIRECT_ANSWER_DECLINE,
     FULL_EXPLANATION_LEVEL,
     HINT_AFTER_LAST_MESSAGE,
@@ -384,6 +387,15 @@ def generate_guiding_question_node(
         system += "\n" + MEMORY_RULES
     prompt = "\n\n".join(parts)
 
+    def ask(instruction: str) -> str:
+        raw = gemini_pro.generate(
+            prompt,
+            temperature=TUTOR_TEMPERATURE,
+            system_instruction=instruction + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
+        )
+        # Simple LaTeX becomes plain text first, since the chat does not render maths.
+        return strip_source_narration(strip_context_references(to_plain_math(raw)))
+
     raw_response = gemini_pro.generate(
         prompt,
         temperature=TUTOR_TEMPERATURE,
@@ -402,6 +414,31 @@ def generate_guiding_question_node(
         path = PATH_HINT if is_hint else PATH_NEW_QUESTION
     cleaned = to_plain_math(raw_response)
     response = strip_source_narration(strip_context_references(cleaned))
+
+    # The model sometimes says the course does not cover a topic the gate has
+    # just found in it. Once more, told that the passages do cover it; if it
+    # still says so, a fixed message, counted as a refusal, and (for a hint)
+    # the ladder does not move. Logged by rule name only.
+    if is_course_gap_reply(response):
+        logger.info("[TUTOR-GUARD] rule=course_gap path=%s hint_level=%s", path, hint_level)
+        response = ask(system + "\n" + COURSE_GAP_RETRY)
+        if is_course_gap_reply(response):
+            logger.info("[TUTOR-GUARD] rule=course_gap_final path=%s hint_level=%s", path, hint_level)
+            return {
+                **state,
+                "response": COURSE_GAP_MESSAGE,
+                "citations": [asdict(c) for c in citations],
+                "pedagogy_trace": {
+                    **state.get("pedagogy_trace", {}),
+                    "grounded": True,
+                    "refused": True,
+                    "refusal_kind": "course_gap",
+                    "hint_level": hint_level,
+                    "is_full_explanation": hint_level >= FULL_EXPLANATION_LEVEL,
+                    "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+                    "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
+                },
+            }
     # Both warnings below log only the rule, the path and the level, in the
     # same form as the output guard: never the reply, which can carry what the
     # student wrote, and never the session id.
@@ -474,9 +511,15 @@ def advance_hint_node(
     """
     new_level = min(state["hint_level"] + 1, MAX_HINT_LEVEL)
     state_with_level = {**state, "hint_level": new_level}
-    return generate_guiding_question_node(
+    out = generate_guiding_question_node(
         state_with_level, retrieval_service, gemini_pro, is_hint=True
     )
+    if out.get("pedagogy_trace", {}).get("refusal_kind") == "course_gap":
+        # A refusal is not a hint: the ladder stays where it was, so the
+        # student can ask again rather than lose the rung.
+        out = {**out, "hint_level": state["hint_level"],
+               "pedagogy_trace": {**out["pedagogy_trace"], "hint_level": state["hint_level"]}}
+    return out
 
 
 # ── Node 6 ────────────────────────────────────────────────────────────────────
