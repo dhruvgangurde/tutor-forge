@@ -10,7 +10,7 @@ import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.dependencies import get_db_session
@@ -47,8 +47,19 @@ async def authenticate_user(
     Runs a bcrypt verify on every path — including when the user does not exist
     — so login timing cannot be used to enumerate registered emails (F31).
     """
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
+    # Addresses are stored lowercased (register_user), but rows from before may
+    # differ only by case: the exact address picks its own row first, and two
+    # case-variants with no exact match are ambiguous, so neither signs in.
+    typed = email.strip()
+    rows = (
+        await db.execute(
+            select(User)
+            .where(func.lower(User.email) == typed.lower())
+            .order_by((User.email == typed).desc())
+            .limit(2)
+        )
+    ).scalars().all()
+    user = rows[0] if len(rows) == 1 or (rows and rows[0].email == typed) else None
     if user is None:
         verify_password(password, _DUMMY_PASSWORD_HASH)  # equalize timing
         return None
@@ -66,8 +77,11 @@ async def register_user(
     Create a new student user account.
     Raises ValueError if email already exists.
     """
-    result = await db.execute(select(User).where(User.email == email))
-    if result.scalar_one_or_none():
+    # One account per address whatever its letter case; enrolment matches
+    # without case too (courses/enrollment.py).
+    email = email.strip().lower()
+    taken = await db.execute(select(User.id).where(func.lower(User.email) == email).limit(1))
+    if taken.first() is not None:
         raise ValueError("Email already exists.")
 
     user = User(

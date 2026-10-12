@@ -57,6 +57,12 @@ class _Result:
     def scalar_one_or_none(self):
         return self._user
 
+    def scalars(self):  # the login lookup reads up to two rows
+        return self
+
+    def all(self):
+        return [self._user] if self._user is not None else []
+
 
 class _FakeDB:
     def __init__(self, user):

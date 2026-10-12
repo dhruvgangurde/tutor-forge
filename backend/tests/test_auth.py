@@ -117,6 +117,53 @@ async def test_login_unknown_email(client):
     assert resp.status_code == 401
 
 
+# ── Email letter case ─────────────────────────────────────────────────────────
+# Register and login matched the address exactly while enrolment ignored case,
+# so "Alice@x.com" and "alice@x.com" could both register and enrolling either
+# found two rows and failed with a 500. Addresses are now stored lowercased and
+# matched without regard to case.
+
+
+@pytest.mark.asyncio
+async def test_register_stores_the_email_lowercased_and_refuses_a_case_variant(client):
+    first = await client.post("/auth/register", json={"email": "Alice@Example.com", "password": "password123"})
+    assert first.status_code == 201, first.text
+    second = await client.post("/auth/register", json={"email": "alice@example.com", "password": "password123"})
+    assert second.status_code == 409
+
+    from sqlalchemy import select
+
+    async with _TestSessionFactory() as db:
+        emails = (await db.execute(select(User.email))).scalars().all()
+    assert "alice@example.com" in emails
+    assert "Alice@example.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_login_ignores_the_letter_case_of_the_email(client):
+    await client.post("/auth/register", json={"email": "alice@example.com", "password": "password123"})
+    resp = await client.post("/auth/login", json={"email": "ALICE@example.com", "password": "password123"})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_login_with_two_legacy_case_variant_accounts_never_500s(client):
+    """
+    Rows written before addresses were lowercased may differ only by case. The
+    exact address still signs in to its own account; any other casing matches
+    both, is ambiguous, and fails like a wrong password instead of a 500.
+    """
+    async with _TestSessionFactory() as db:
+        db.add(User(email="Bob@demo.com", hashed_password=hash_password("upper-pass"), role="student"))
+        db.add(User(email="bob@demo.com", hashed_password=hash_password("lower-pass"), role="student"))
+        await db.commit()
+
+    exact = await client.post("/auth/login", json={"email": "Bob@demo.com", "password": "upper-pass"})
+    assert exact.status_code == 200
+    ambiguous = await client.post("/auth/login", json={"email": "BOB@demo.com", "password": "lower-pass"})
+    assert ambiguous.status_code == 401
+
+
 # ── GET /auth/me ──────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
