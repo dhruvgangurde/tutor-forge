@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 _ALLOWED_MIME = {"application/pdf",
                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                  "text/plain"}
-_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per file
 
 
 # ── Node 1: validate_files_node ───────────────────────────────────────────────
@@ -45,15 +44,17 @@ _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per file
 def validate_files_node(state: IngestionState) -> IngestionState:
     """
     Validate each uploaded file for MIME type and size.
-    Sets status="failed" and error on first violation.
+    Sets status="failed" and error on first violation. The size limit is the
+    upload route's own (settings.max_upload_bytes), so the two cannot disagree.
     """
     for f in state["files"]:
         if f["mime_type"] not in _ALLOWED_MIME:
             return {**state, "status": "failed",
                     "error": f"Unsupported file type: {f['mime_type']} for {f['filename']}"}
-        if len(f["content"]) > _MAX_FILE_BYTES:
+        if len(f["content"]) > settings.max_upload_bytes:
+            limit_mb = settings.max_upload_bytes // (1024 * 1024)
             return {**state, "status": "failed",
-                    "error": f"File too large: {f['filename']} exceeds 50 MB"}
+                    "error": f"File too large: {f['filename']} exceeds {limit_mb} MB"}
     return {**state, "status": "running"}
 
 

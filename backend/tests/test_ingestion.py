@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agents.ingestion.graph import build_ingestion_graph
 from agents.ingestion.nodes import (
-    _MAX_FILE_BYTES,
     build_hierarchy_node,
     chunk_and_embed_node,
     parse_content_node,
@@ -80,8 +79,23 @@ def test_validate_rejects_unsupported_mime():
 
 
 def test_validate_rejects_oversized_file():
-    big = {"filename": "a.txt", "content": b"x" * (_MAX_FILE_BYTES + 1), "mime_type": "text/plain"}
+    from core.config import settings
+
+    big = {"filename": "a.txt", "content": b"x" * (settings.max_upload_bytes + 1), "mime_type": "text/plain"}
     out = validate_files_node(_state(files=[big]))
+    assert out["status"] == "failed"
+    assert "too large" in out["error"].lower()
+
+
+def test_validate_follows_the_configured_upload_limit(monkeypatch):
+    """
+    The node had its own 50 MB constant: change MAX_UPLOAD_BYTES and a file
+    the upload route accepted could still fail here, or the reverse.
+    """
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "max_upload_bytes", 10)
+    out = validate_files_node(_state(files=[_txt("a.txt", "x" * 11)]))
     assert out["status"] == "failed"
     assert "too large" in out["error"].lower()
 
