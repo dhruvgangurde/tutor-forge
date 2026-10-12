@@ -482,6 +482,7 @@ def generate_guiding_question_node(
             is_non_answer=bool(state.get("is_non_answer")),
             definition_allowed=definition,
             previous_tutor_message=state.get("tutor_last_message") if (in_conversation or is_hint) else None,
+            student_messages=tuple(m.get("content") or "" for m in history if m.get("role") == "student"),
         ),
     )
 

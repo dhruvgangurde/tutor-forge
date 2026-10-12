@@ -90,6 +90,7 @@ RULE_COURSE_CLAIM = "course_claim"
 RULE_DEFINITION_EXTRA = "definition_extra"
 RULE_REPEATED_QUESTION = "repeated_question"
 RULE_COURSE_GAP = "course_gap"
+RULE_PROGRESS_CLAIM = "progress_claim"
 RULE_RESTATED_CORRECTION = "restated_correction"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
@@ -109,6 +110,7 @@ class TutorTurn:
     is_non_answer: bool = False    # their reply was "no", "I don't know"...
     definition_allowed: bool = False  # a pure "what is X?" opening, not graded work
     previous_tutor_message: str | None = None  # what the tutor said last (hint and reply paths)
+    student_messages: tuple[str, ...] = ()     # their earlier messages in the conversation window
 
 
 # ── Words ─────────────────────────────────────────────────────────────────────
@@ -321,6 +323,57 @@ def _invented_reference(sentence: str, turn: TutorTurn, reply_words: set[str]) -
     return not (attributed and _overlap(attributed, reply_words) >= 0.5)
 
 
+# ── 1a. Progress they have not made ──────────────────────────────────────────
+#
+# Seen live: Hint 1 opened "Now that you have the table size set up" right
+# after the student got the size wrong, and the next hint "Now that you are
+# reading the matrix dimensions into your array" when they had written no
+# code. A claim that they have done or got something is kept only when their
+# own messages (the reply and the earlier ones in the window) carry it.
+
+_PROGRESS_VERBS = (
+    r"set\s+up|setting\s+up|built|building|got|found|worked\s+out|working\s+out|filled(?:\s+in)?|"
+    r"filling(?:\s+in)?|chosen|choosing|written|writing|read|reading|figured\s+out|figuring\s+out|"
+    r"established|defined|defining|initiali[sz]ed|created|creating|completed|done|finished|identified|"
+    r"identifying|determined|understood|grasped|learn(?:ed|t)|sorted|computed|calculated|placed|put|"
+    r"decided|picked|traced|drawn|drawing|listed|noted"
+)
+_PROGRESS_CLAIM_RE = re.compile(
+    r"\byou(?:'ve|\s+have|\s+had|'re|\s+are)\s+(?:already\s+|now\s+|just\s+|successfully\s+)?"
+    r"(?:(?:\w+|[\w\[\]()+-]+)\s+){0,6}?(?:" + _PROGRESS_VERBS + r")\b",
+    re.IGNORECASE,
+)
+_CLAUSE_END_RE = re.compile(r"[,;:]|\s[-\u2014\u2013]\s")
+
+
+def _progress_claim(sentence: str, turn: TutorTurn, reply_words: set[str]) -> re.Match | None:
+    """The unsupported progress claim in ``sentence``, if any."""
+    plain = _plain(sentence)
+    m = _PROGRESS_CLAIM_RE.search(plain)
+    if not m:
+        return None
+    clause = _CLAUSE_END_RE.split(plain[m.start():], maxsplit=1)[0]
+    attributed = _content_words(clause) - {"you", "already", "now", "just"}
+    supported = reply_words | set().union(*(_content_words(t) for t in turn.student_messages))
+    if attributed and _overlap(attributed, supported) >= 0.5:
+        return None
+    return m
+
+
+def _without_progress_claim(sentence: str, turn: TutorTurn, reply_words: set[str]) -> str | None:
+    m = _progress_claim(sentence, turn, reply_words)
+    if m is None:
+        return sentence
+    plain = _plain(sentence)
+    first_clause = _CLAUSE_END_RE.split(plain, maxsplit=1)[0]
+    if m.start() < len(first_clause):
+        # "Now that you have X set up, what ...?" keeps its question.
+        cut = _cut_leading_clause(sentence, lambda clause: _PROGRESS_CLAIM_RE.search(_plain(clause)) is not None)
+        if cut != sentence:
+            return cut
+    return sentence if _is_question(sentence) else None
+
+
 # ── 1b. Pointing at sources they have never seen ──────────────────────────────
 
 #: Left over after strip_source_narration has removed the forms it can rewrite.
@@ -467,6 +520,8 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
         share = TUTOR_GUARD.claim_background_share
         background = {w for w, n in counts.items() if n / len(units) > share}
     student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
+    # Their earlier messages in the window count as their words on every path.
+    student |= set().union(*(_claim_words(t) for t in turn.student_messages))
     ignore = _claim_words(turn.question) | background
     return _ClaimSignals([u - ignore for u in units], ignore, student - ignore)
 
@@ -1156,6 +1211,9 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
+
+    # 1a. No progress they have not made.
+    run(RULE_PROGRESS_CLAIM, lambda s: _without_progress_claim(s, turn, reply_words))
 
     # 1b. No pointing at passages they have never seen.
     run(RULE_SOURCE_REFERENCE, lambda s: None if _SOURCE_REFERENCE_RE.search(_plain(s)) else s)
