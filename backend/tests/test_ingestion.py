@@ -371,6 +371,39 @@ async def test_ingestion_graph_end_to_end(seeded):
     assert course.status == "ready"
 
 
+async def test_a_text_file_is_cited_without_a_page_end_to_end(seeded):
+    """
+    A .txt has no pages. Its chunks are stored with page -1 (Chroma metadata),
+    and retrieval used to hand the -1 back, so every citation read "page -1"
+    and the prompt said "p.-1". Upload to citation, through the real
+    retrieval service on an in-memory Chroma.
+    """
+    import chromadb
+
+    from core.mock_gemini import MockGeminiProClient
+    from retrieval.service import RetrievalService
+
+    db, course_id, job_id = seeded
+    retrieval = RetrievalService(
+        chroma_client=chromadb.EphemeralClient(), gemini_client=MockGeminiProClient()
+    )
+    gemini_pro = MagicMock()
+    gemini_pro.generate.return_value = json.dumps(HIERARCHY)
+    graph = build_ingestion_graph(retrieval_service=retrieval, gemini_pro=gemini_pro, db=db)
+    final = await graph.ainvoke(_state(
+        course_id=course_id,
+        job_id=job_id,
+        files=[_txt("notes.txt", "Binary search halves the sorted range at every step.")],
+    ))
+    assert final["status"] == "complete"
+
+    result = retrieval.retrieve(course_id, "how does binary search halve the sorted range")
+    assert result.chunks
+    assert all(c.page_or_slide is None for c in result.chunks)
+    assert all(c.page_or_slide is None for c in retrieval.build_citation_bundle(result))
+    assert "p.-1" not in retrieval.build_context_window(result, token_budget=1000)
+
+
 async def test_persist_logs_carry_no_outline_names(seeded, caplog):
     """Chapter and concept names are course text: the logs keep ids and counts."""
     import logging
