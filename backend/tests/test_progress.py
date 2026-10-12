@@ -27,6 +27,7 @@ from db.models import (
     Chapter,
     Concept,
     Course,
+    Enrollment,
     FinalGrade,
     GradeRecommendation,
     Question,
@@ -135,6 +136,15 @@ async def _seed_course_with_concepts() -> tuple[uuid.UUID, list[uuid.UUID]]:
         db.add_all([c1, c2])
         await db.commit()
         return course.id, [c1.id, c2.id]
+
+
+async def _enroll(course_id: uuid.UUID, student_email: str) -> None:
+    async with _Session() as db:
+        student = (
+            await db.execute(select(User).where(User.email == student_email))
+        ).scalar_one()
+        db.add(Enrollment(course_id=course_id, student_id=student.id))
+        await db.commit()
 
 
 async def _seed_graded_submission(
@@ -467,6 +477,7 @@ async def test_course_detail_for_a_course_with_no_work_is_empty_not_404(
     client, student_token
 ):
     course_id, _ = await _seed_course_with_concepts()
+    await _enroll(course_id, "student@demo.com")
     resp = await client.get(
         f"/progress/me/courses/{course_id}",
         headers={"Authorization": f"Bearer {student_token}"},
@@ -488,10 +499,30 @@ async def test_course_detail_unknown_course_is_404(client, student_token):
 
 
 @pytest.mark.asyncio
+async def test_course_detail_is_404_without_enrollment_or_work(client, student_token):
+    """
+    A course the student is not enrolled in and never worked in answers
+    exactly like a course that does not exist, so ids cannot be probed and the
+    course name is never shown. Enrolment or earlier work (a submission or a
+    tutoring session) is what opens it; a removed student keeps their history.
+    """
+    course_id, _ = await _seed_course_with_concepts()
+    headers = {"Authorization": f"Bearer {student_token}"}
+
+    resp = await client.get(f"/progress/me/courses/{course_id}", headers=headers)
+    unknown = await client.get(f"/progress/me/courses/{uuid.uuid4()}", headers=headers)
+
+    assert resp.status_code == 404
+    assert resp.json() == unknown.json()
+    assert "Algorithms" not in resp.text
+
+
+@pytest.mark.asyncio
 async def test_course_detail_does_not_leak_another_students_mastery(
     client, student_token
 ):
     course_id, concepts = await _seed_course_with_concepts()
+    await _enroll(course_id, "student@demo.com")
     await _seed_graded_submission(
         course_id, "other@demo.com", concept_id=concepts[0], final_score=4.0, max_score=4.0
     )

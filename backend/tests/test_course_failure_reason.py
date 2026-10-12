@@ -41,6 +41,16 @@ def test_stored_errors_become_plain_sentences(stored, expected_start):
     assert "JSON" not in reason and "Exception" not in reason
 
 
+def test_the_too_large_reason_states_the_configured_limit(monkeypatch):
+    # It said "50 MB" whatever MAX_UPLOAD_BYTES was set to.
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "max_upload_bytes", 100 * 1024 * 1024)
+    assert failure_reason("File too large: deck.pptx exceeds 100 MB") == (
+        "One of the files is larger than the 100 MB limit."
+    )
+
+
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 _engine = create_async_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 _Session = async_sessionmaker(_engine, expire_on_commit=False)

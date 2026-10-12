@@ -130,7 +130,7 @@ def test_the_prompt_checks_hold(result):
 def test_every_failure_found_is_a_documented_known_gap(result):
     undocumented = []
     for r in _rows(result, "reply") + _rows(result, "turn"):
-        definition_wrong = "definition_expected" in r and r["definition_kept"] != (r["definition_expected"] == "kept")
+        definition_wrong = r.get("definition_ok") is False
         if (r.get("leak") or r.get("repeat_survived") or definition_wrong) and not r.get("known_gap"):
             undocumented.append(r.get("id") or f"{r['conversation']}#{r['turn']}")
     for r in _rows(result, "question"):
@@ -171,3 +171,138 @@ def test_registered_in_the_runner():
     from eval.runner import SUITES
 
     assert SUITES["tutor-pedagogy"] == "eval.suites.tutor_pedagogy"
+
+
+class _FakeGemini:
+    """Stands in for Gemini in the live-mode wiring tests: one safe question for every call."""
+
+    def __init__(self, fail_on: int | None = None):
+        self.calls = 0
+        self.fail_on = fail_on
+
+    def generate(self, prompt, temperature=0.7, system_instruction=""):
+        self.calls += 1
+        if self.fail_on and self.calls >= self.fail_on:
+            raise RuntimeError("quota exhausted")
+        return "What do you think happens next?"
+
+
+def _live_run(monkeypatch, pro, flash):
+    import main
+    from core.config import settings
+    from eval.suites.tutor_pedagogy import run
+
+    monkeypatch.setattr(settings, "llm_provider", "gemini")  # live runs only on Gemini
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (pro, flash))
+    return asyncio.run(run(live=True))
+
+
+def test_live_mode_wiring_uses_the_model_and_counts_calls(monkeypatch):
+    pro, flash = _FakeGemini(), _FakeGemini()
+    live = _live_run(monkeypatch, pro, flash)
+    assert live.metrics["live_gemini"] == "measured"
+    assert live.metrics["live_calls"] == pro.calls + flash.calls > 0
+    assert live.metrics["live_stopped_early"] is None
+    assert live.metrics["probes_run"] == len(_data()["reply_probes"])
+    assert live.metrics["leaks"] == 0  # a safe question leaks nothing
+    assert live.headline.startswith("Live:")
+
+
+def test_live_mode_stops_at_the_first_failure_without_retrying(monkeypatch):
+    pro, flash = _FakeGemini(fail_on=3), _FakeGemini()
+    live = _live_run(monkeypatch, pro, flash)
+    assert pro.calls == 3 and flash.calls == 0  # nothing reaches a model after the failure
+    assert live.metrics["live_stopped_early"].startswith("RuntimeError")
+    assert live.metrics["probes_run"] < len(_data()["reply_probes"])
+    assert "Stopped early" in live.headline
+
+
+def test_live_mode_refuses_a_provider_other_than_gemini():
+    from eval.suites.tutor_pedagogy import run
+
+    assert asyncio.run(run(live=True)).status == "skipped"  # tests pin LLM_PROVIDER=mock
+
+
+# ── T4: a kept definition must be grounded, whatever its wording ─────────────
+
+_T4_CASE = "T4-definition-not-from-course"
+_GROUNDED_PIVOT = "The pivot is the element of the array that the other elements are partitioned around."
+_UNGROUNDED_PIVOT = "A pivot is a reference value used to split data into two groups in many algorithms."
+
+
+def test_the_t4_case_expects_a_kept_definition_to_be_grounded_and_the_stale_gap_is_gone():
+    data = _data()
+    probe = next(p for p in data["reply_probes"] if p["id"] == _T4_CASE)
+    assert probe["definition"]["expected"] == "grounded"
+    # The definition rule now removes a definition that is not allowed even when
+    # the question names more than the term, so no T4 case documents that gap.
+    assert all("known_gap" not in p for p in data["reply_probes"] if p["case"] == "T4")
+    assert all("known_gap" not in t for c in data["conversations"] if c["case"] == "T4" for t in c["turns"])
+
+
+def test_the_groundedness_measure_is_the_guards():
+    from eval.suites.tutor_pedagogy import _definition_grounded
+
+    passages = "\n\n".join(_data()["fixture"]["passages"])
+    question = _data()["questions"]["PIVOT"]
+    assert _definition_grounded(_GROUNDED_PIVOT + " What next?", question, passages)
+    assert not _definition_grounded(_UNGROUNDED_PIVOT + " What next?", question, passages)
+
+
+def test_a_grounded_case_accepts_a_kept_definition_only_when_grounded():
+    from eval.suites.tutor_pedagogy import _definition_fields
+
+    passages = "\n\n".join(_data()["fixture"]["passages"])
+    question = _data()["questions"]["PIVOT"]
+    spec = {"sentence": _UNGROUNDED_PIVOT, "expected": "grounded"}
+    follow = " Which element does this lab choose as the pivot?"
+
+    kept_grounded = _definition_fields(_GROUNDED_PIVOT + follow, question, spec, passages, live=True)
+    assert kept_grounded["definition_kept"] and kept_grounded["definition_grounded"] and kept_grounded["definition_ok"]
+
+    kept_ungrounded = _definition_fields(_UNGROUNDED_PIVOT + follow, question, spec, passages, live=True)
+    assert kept_ungrounded["definition_kept"] and not kept_ungrounded["definition_grounded"]
+    assert not kept_ungrounded["definition_ok"]
+
+    removed = _definition_fields(follow.strip(), question, spec, passages, live=True)
+    assert not removed["definition_kept"] and removed["definition_ok"]
+
+    # "kept" and "removed" mean what they did.
+    assert _definition_fields(_GROUNDED_PIVOT + follow, question, {**spec, "expected": "kept"}, passages, True)["definition_ok"]
+    assert not _definition_fields(_GROUNDED_PIVOT + follow, question, {**spec, "expected": "removed"}, passages, True)["definition_ok"]
+
+
+def test_offline_the_ungrounded_recorded_definition_is_removed_and_the_case_passes(result):
+    row = next(r for r in _rows(result, "reply") if r["id"] == _T4_CASE)
+    assert row["definition_kept"] is False
+    assert row["definition_ok"] is True
+    assert _T4_CASE not in result.metrics["definition_mismatches"]
+    assert result.metrics["definition_grounded_as_expected"] == 1
+
+
+class _DefiningGemini(_FakeGemini):
+    """Opens the pivot question with a definition; every other call gets the safe question."""
+
+    def __init__(self, sentence: str):
+        super().__init__()
+        self.sentence = sentence
+
+    def generate(self, prompt, temperature=0.7, system_instruction=""):
+        self.calls += 1
+        if _data()["questions"]["PIVOT"] in prompt and "THEIR REPLY" not in prompt:
+            return self.sentence + " Which element of the range does this lab choose as the pivot?"
+        return "What do you think happens next?"
+
+
+def test_live_a_grounded_definition_of_the_models_own_is_accepted(monkeypatch):
+    live = _live_run(monkeypatch, _DefiningGemini(_GROUNDED_PIVOT), _FakeGemini())
+    row = next(r for r in _rows(live, "reply") if r["id"] == _T4_CASE)
+    assert row["definition_kept"] and row["definition_grounded"] and row["definition_ok"]
+    assert _T4_CASE not in live.metrics["definition_mismatches"]
+
+
+def test_live_an_ungrounded_definition_is_removed_by_the_guard_and_the_case_passes(monkeypatch):
+    live = _live_run(monkeypatch, _DefiningGemini(_UNGROUNDED_PIVOT), _FakeGemini())
+    row = next(r for r in _rows(live, "reply") if r["id"] == _T4_CASE)
+    assert row["definition_kept"] is False  # the guard spares only a grounded opening sentence
+    assert row["definition_ok"] is True

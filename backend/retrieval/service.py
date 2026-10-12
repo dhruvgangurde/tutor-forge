@@ -347,7 +347,8 @@ class RetrievalService:
             chunk = Chunk(
                 text=doc,
                 source_file=source_file,
-                page_or_slide=page_or_slide or None,
+                # add_chunks stores "no page" (a .txt) as -1; -1 is truthy, so map it back.
+                page_or_slide=None if page_or_slide in (None, -1) else page_or_slide,
                 course_id=course_id,
             )
             result.chunks.append(chunk)

@@ -12,6 +12,7 @@ can act on. The raw message stays in the database for debugging.
 
 from __future__ import annotations
 
+from core.config import settings
 from core.exceptions import AI_BUSY_MESSAGE
 
 _DEFAULT = "Processing the course materials failed. Try uploading the course again."
@@ -22,7 +23,6 @@ _REASONS: tuple[tuple[str, str], ...] = (
         "Unsupported file type",
         "One of the files is not a supported type. Upload PDF, PowerPoint or text files.",
     ),
-    ("File too large", "One of the files is larger than the 50 MB limit."),
     (
         "Hierarchy JSON parse error",
         "The course outline could not be worked out from these materials. "
@@ -49,6 +49,9 @@ _REASONS: tuple[tuple[str, str], ...] = (
 def failure_reason(error_message: str | None) -> str:
     """The teacher-facing reason for a failed ingestion."""
     message = (error_message or "").strip()
+    if message.startswith("File too large"):
+        # The limit as configured now, not a number fixed in this file.
+        return f"One of the files is larger than the {settings.max_upload_bytes // (1024 * 1024)} MB limit."
     for prefix, reason in _REASONS:
         if message.startswith(prefix):
             return reason

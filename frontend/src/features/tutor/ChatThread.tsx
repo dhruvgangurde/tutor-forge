@@ -1,7 +1,15 @@
 import { Fragment, useEffect, useRef } from 'react'
-import { ChatBubble } from './ChatBubble'
+import { ChatBubble, dedupeByLabel } from './ChatBubble'
 import { BookIcon } from '../../components/ui/icons'
-import type { TutoringMessageOut } from '../../lib/api/types'
+import type { Citation, TutoringMessageOut } from '../../lib/api/types'
+
+/** The chips a message shows, as one comparable key ('' for none). */
+function chipKey(citations: Citation[]): string {
+  return dedupeByLabel(citations)
+    .map((c) => `${c.source_file}|${c.page_or_slide}`)
+    .sort()
+    .join('\n')
+}
 
 interface ChatThreadProps {
   messages: TutoringMessageOut[]
@@ -79,6 +87,17 @@ export function ChatThread({ messages, isLoading, isReplying = false }: ChatThre
     )
   }
 
+  // The chips of the previous tutor message, so a run of hints on one
+  // question shows its sources once rather than under every rung.
+  const sameAsAbove = new Set<string>()
+  let previousTutorChips = ''
+  for (const msg of messages) {
+    if (msg.role !== 'tutor') continue
+    const key = chipKey(msg.citations)
+    if (key && key === previousTutorChips) sameAsAbove.add(msg.id)
+    previousTutorChips = key
+  }
+
   return (
     <div className="chat-thread" ref={threadRef} {...logProps}>
       {messages.map((msg, idx) => {
@@ -116,6 +135,7 @@ export function ChatThread({ messages, isLoading, isReplying = false }: ChatThre
               isRefusal={msg.is_refusal}
               timestamp={msg.created_at}
               hintLevel={msg.hint_level}
+              sameSourcesAsAbove={sameAsAbove.has(msg.id)}
             />
           </Fragment>
         )

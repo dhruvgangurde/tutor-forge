@@ -234,3 +234,72 @@ describe('ChatThread rendering', () => {
     ).toBeInTheDocument()
   })
 })
+
+describe('ChatThread repeated sources', () => {
+  // Seen live: every hint on one question retrieved the same passages, so
+  // "DAA Complete Lab Guide, page 9 | page 11 | page 2" repeated under each rung.
+  const cite = (page: number) => ({
+    chunk_text: `passage ${page}`,
+    source_file: 'DAA_Complete_Lab_Guide.pdf',
+    page_or_slide: page,
+    confidence: 0.7,
+  })
+  const chips = (container: HTMLElement) =>
+    [...container.querySelectorAll('.citation-badge')].map((n) => n.textContent)
+
+  it('shows one "Same sources as above" chip when a tutor turn repeats the last one', () => {
+    const { container } = render(
+      <ChatThread
+        messages={[
+          msg({ id: 'a', citations: [cite(9), cite(11)] }),
+          msg({ id: 'b', hint_level: 1, citations: [cite(11), cite(9), cite(9)] }),
+        ]}
+      />
+    )
+    expect(chips(container)).toEqual([
+      'DAA Complete Lab Guide, page 9',
+      'DAA Complete Lab Guide, page 11',
+      'Same sources as above',
+    ])
+    // The pages are still there on hover, so nothing is hidden.
+    expect(container.querySelector('.same-sources')?.getAttribute('title')).toContain('page 11')
+  })
+
+  it('compares with the previous tutor turn, across a student message', () => {
+    const { container } = render(
+      <ChatThread
+        messages={[
+          msg({ id: 'a', citations: [cite(9)] }),
+          msg({ id: 's', role: 'student', citations: [] }),
+          msg({ id: 'b', citations: [cite(9)] }),
+        ]}
+      />
+    )
+    expect(chips(container)).toEqual(['DAA Complete Lab Guide, page 9', 'Same sources as above'])
+  })
+
+  it('lists the chips in full when the sources change', () => {
+    const { container } = render(
+      <ChatThread
+        messages={[
+          msg({ id: 'a', citations: [cite(9)] }),
+          msg({ id: 'b', citations: [cite(9), cite(11)] }),
+        ]}
+      />
+    )
+    expect(chips(container)).not.toContain('Same sources as above')
+  })
+
+  it('never collapses a turn with no sources, or after a refusal without any', () => {
+    const { container } = render(
+      <ChatThread
+        messages={[
+          msg({ id: 'a', citations: [cite(9)] }),
+          msg({ id: 'r', is_refusal: true, citations: [] }),
+          msg({ id: 'b', citations: [cite(9)] }),
+        ]}
+      />
+    )
+    expect(chips(container)).toEqual(['DAA Complete Lab Guide, page 9', 'DAA Complete Lab Guide, page 9'])
+  })
+})

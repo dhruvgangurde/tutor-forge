@@ -76,6 +76,7 @@ _FILLER_WORDS = frozenset({
     "what", "whats", "why", "how", "when", "where", "which", "who", "whom",
     # meta / interaction verbs and nouns
     "tell", "give", "show", "say", "answer", "answers", "solution", "solutions",
+    "want", "wanna", "need", "like",
     "solve", "explain", "explanation", "help", "hint", "hints", "clarify",
     "understand", "know", "get", "see", "think", "mean", "means", "meaning",
     "question", "ask", "repeat", "rephrase", "elaborate", "continue", "go",
@@ -101,8 +102,11 @@ _WORD_RE = re.compile(r"[a-z0-9']+")
 
 
 def topical_words(text: str) -> list[str]:
-    """Return the words in ``text`` that carry retrievable topic signal."""
-    return [w for w in _WORD_RE.findall((text or "").lower()) if w not in _FILLER_WORDS]
+    """
+    Return the words in ``text`` that carry retrievable topic signal. A bare
+    number is not one: "0/1 knapsack" names one topic, not three.
+    """
+    return [w for w in _WORD_RE.findall((text or "").lower()) if w not in _FILLER_WORDS and not w.isdigit()]
 
 
 def is_low_content(text: str) -> bool:
@@ -204,9 +208,14 @@ _QUESTION_OPENERS = frozenset({
     "what", "whats", "what's", "why", "how", "who", "whom", "whose", "when",
     "where", "which",
     "tell", "explain", "define", "describe", "show", "give", "list", "solve",
-    "calculate", "derive", "compare",
+    "calculate", "derive", "compare", "teach", "help", "walk",
     "is", "are", "does", "do", "can", "could",
 })
+
+#: Requests that open with the student rather than a verb: "i want a diagram
+#: of the matrix", "i need help with the knapsack table". Seen live as replies
+#: to whatever question was open, because no opener was known.
+_REQUEST_PREFIXES = ("i want", "i wanna", "i need", "i'd like", "id like", "i would like")
 
 #: Skipped at the start of a message before looking for an opener.
 _INTERJECTIONS = frozenset({
@@ -248,9 +257,10 @@ def classify_turn(text: str) -> str:
     learning question yet.
     """
     words = _leading_words(text)
-    if not words or words[0] not in _QUESTION_OPENERS:
-        return TURN_REPLY
     joined = " ".join(words)
+    is_request = any(joined == p or joined.startswith(p + " ") for p in _REQUEST_PREFIXES)
+    if not words or (words[0] not in _QUESTION_OPENERS and not is_request):
+        return TURN_REPLY
     if any(joined.startswith(prefix) for prefix in _FOLLOW_UP_PREFIXES):
         return TURN_FOLLOW_UP
     if any(w in _REFERRING_WORDS for w in words[1:3]):
@@ -339,6 +349,29 @@ def is_non_answer(text: str) -> bool:
     return any(normalised.startswith(prefix) for prefix in _NON_ANSWER_PREFIXES)
 
 
+#: Replies that say the explanation did not land. A non-answer is one of them;
+#: so is "I don't get it" after a full explanation, which used to be judged as
+#: an attempt at the question.
+_CONFUSION_PREFIXES = (
+    "i dont get it", "i don't get it", "dont get it", "don't get it", "i dont understand",
+    "i don't understand", "dont understand", "don't understand", "i do not understand",
+    "still confused", "im confused", "i'm confused", "i am confused", "confused",
+    "that didnt help", "that didn't help", "didnt help", "didn't help", "doesnt help",
+    "doesn't help", "not helpful", "explain again", "explain it again", "explain that again",
+    "can you explain", "could you explain", "simpler", "make it simpler", "in simpler",
+    "i still dont", "i still don't", "no idea what", "what does that mean", "lost me",
+    "you lost me", "too hard", "too complicated",
+)
+
+
+def is_confusion(text: str) -> bool:
+    """True when the reply says they did not follow: a non-answer, or "I don't get it"."""
+    if is_non_answer(text):
+        return True
+    normalised = " ".join(_leading_words(_normalise(text)))
+    return any(normalised.startswith(prefix) for prefix in _CONFUSION_PREFIXES)
+
+
 # ── Query resolution ──────────────────────────────────────────────────────────
 
 #: ``retrieval_query_source`` values recorded on the state for observability.
@@ -346,6 +379,7 @@ def is_non_answer(text: str) -> bool:
 #: earlier turn of the conversation.
 SOURCE_MESSAGE = "message"
 SOURCE_PRIOR_TURN = "prior_turn"
+SOURCE_REWRITE = "rewrite"  # the message rewritten as a standalone question (agents/tutor/rewrite.py)
 
 
 def resolve_retrieval_query(

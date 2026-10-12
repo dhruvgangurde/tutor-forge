@@ -46,7 +46,7 @@ def _short_answer_state():
         max_points=2.0, answer_text="At low - 1.",
         rubric_criteria=[{"description": "Says i starts at low - 1.", "max_points": 2.0}],
     )
-    evidence = [[{"text": "The index i starts at low - 1.", "source_file": "lab.md", "page_or_slide": 1, "score": 0.9}]]
+    evidence = [[{"text": "The index i starts at low - 1.", "source_file": "lab.md", "page_or_slide": 1, "confidence": 0.9}]]
     return response, grading_state([response], evidence=evidence)
 
 

@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from agents.ingestion.state import IngestionState
 from core.config import settings
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
+from courses.file_types import base_mime
 from retrieval.models import Chunk
 
 if TYPE_CHECKING:
@@ -37,7 +38,6 @@ logger = logging.getLogger(__name__)
 _ALLOWED_MIME = {"application/pdf",
                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                  "text/plain"}
-_MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per file
 
 
 # ── Node 1: validate_files_node ───────────────────────────────────────────────
@@ -45,15 +45,17 @@ _MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB per file
 def validate_files_node(state: IngestionState) -> IngestionState:
     """
     Validate each uploaded file for MIME type and size.
-    Sets status="failed" and error on first violation.
+    Sets status="failed" and error on first violation. The size limit is the
+    upload route's own (settings.max_upload_bytes), so the two cannot disagree.
     """
     for f in state["files"]:
-        if f["mime_type"] not in _ALLOWED_MIME:
+        if base_mime(f["mime_type"]) not in _ALLOWED_MIME:
             return {**state, "status": "failed",
                     "error": f"Unsupported file type: {f['mime_type']} for {f['filename']}"}
-        if len(f["content"]) > _MAX_FILE_BYTES:
+        if len(f["content"]) > settings.max_upload_bytes:
+            limit_mb = settings.max_upload_bytes // (1024 * 1024)
             return {**state, "status": "failed",
-                    "error": f"File too large: {f['filename']} exceeds 50 MB"}
+                    "error": f"File too large: {f['filename']} exceeds {limit_mb} MB"}
     return {**state, "status": "running"}
 
 
@@ -70,8 +72,8 @@ def parse_content_node(state: IngestionState) -> IngestionState:
     parsed: list[dict[str, Any]] = []
     course_id = state["course_id"]
 
-    for f in state["files"]:
-        mime = f["mime_type"]
+    for file_index, f in enumerate(state["files"]):
+        mime = base_mime(f["mime_type"])
         raw = f["content"]
         filename = f["filename"]
 
@@ -93,6 +95,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                         )
                         parsed.append({
                             "source_file": filename,
+                            "file_index": file_index,
                             "page_or_slide": page_num,
                             "text": text,
                         })
@@ -113,6 +116,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                     )
                     parsed.append({
                         "source_file": filename,
+                        "file_index": file_index,
                         "page_or_slide": slide_num,
                         "text": combined_text,
                     })
@@ -125,6 +129,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
             )
             parsed.append({
                 "source_file": filename,
+                "file_index": file_index,
                 "page_or_slide": None,
                 "text": text,
             })
@@ -178,11 +183,11 @@ Course material:
 
 # ── Hierarchy building on the Ollama (local dev) provider ─────────────────────
 #
-# Why this path differs from the Gemini one above (which is left untouched):
+# Why this path differs from the Gemini one above:
 #
-# The Gemini path sends the first 32,000 characters of the course with the JSON
-# instructions BEFORE the content. On qwen2.5:7b-instruct at num_ctx=8192 that
-# fails for any real textbook:
+# The Gemini path used to send the first 32,000 characters of the course with the
+# JSON instructions BEFORE the content (it now sends this outline, still first).
+# On qwen2.5:7b-instruct at num_ctx=8192 that fails for any real textbook:
 #   - dense technical text (formulas, code) tokenizes at ~3 chars/token, not
 #     ~4: Ollama measured the 32,000-char window at 10,437 tokens (BEE text)
 #     and 10,999 (DAA lab guide) -- the "~8k tokens" assumption above is wrong
@@ -504,18 +509,18 @@ def build_hierarchy_node(
 
     On LLM_PROVIDER=ollama this delegates to _build_hierarchy_ollama (outline
     input sized to the context window, instructions after the content, one JSON
-    retry). The Gemini/mock path below is unchanged.
+    retry). The Gemini/mock path below sends the same whole-document outline,
+    within 32,000 characters, in one call with the instructions first.
     """
     if settings.llm_provider == "ollama":
         return _require_chapters(_build_hierarchy_ollama(state, gemini_pro))
 
     course_id = state["course_id"]
 
-    # Combine all parsed text for the prompt (truncated to avoid token limits)
-    combined = "\n\n".join(
-        f"[{p['source_file']}, p.{p['page_or_slide']}]\n{p['text']}"
-        for p in state["parsed_content"]
-    )[:32_000]  # ~8k tokens; Gemini Pro context window is much larger
+    # The whole document's outline (contents pages and unit headings), not just
+    # its head: 32,000 characters of a 680-page book is chapter 1. Unstructured
+    # text falls back to the same leading 32,000 characters as before.
+    combined = _hierarchy_outline(state["parsed_content"], 32_000)
 
     # Lengths, counts and ids only in these logs: the content, the prompt, the
     # model's reply and the outline are all course text.
@@ -639,7 +644,9 @@ def chunk_and_embed_node(
             end = start + _CHUNK_SIZE
             chunk_text = text[start:end].strip()
             if chunk_text:
-                chunk_id = f"{course_id}_{page['source_file']}_{page['page_or_slide']}_{chunk_index}"
+                # The file's position in the upload keeps two same-named files apart.
+                file_index = page.get("file_index", 0)
+                chunk_id = f"{course_id}_{file_index}_{page['source_file']}_{page['page_or_slide']}_{chunk_index}"
                 chunk = Chunk(
                     text=chunk_text,
                     source_file=page["source_file"],

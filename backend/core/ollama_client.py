@@ -28,7 +28,7 @@ Mirrors the Gemini wrappers in main.py (GeminiProClient / GeminiFlashClient) and
 the mocks in core/mock_gemini.py exactly, so RetrievalService and every agent
 node consume it without a single call-site change:
 
-    generate(prompt, temperature=0.7, system_instruction="") -> str
+    generate(prompt, temperature=0.7, system_instruction="", timeout=None) -> str
     generate_deterministic(prompt, system_instruction="")    -> str   (temperature=0)
     embed(text)                                              -> list[float]
 
@@ -159,7 +159,7 @@ class OllamaClient:
             detail = ""
             try:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
-            except Exception:  # noqa: BLE001 - error body is best-effort
+            except Exception:  # noqa: BLE001, S110 - error body is best-effort
                 pass
             if exc.code == 429 or exc.code >= 500:
                 raise OllamaTransientError(

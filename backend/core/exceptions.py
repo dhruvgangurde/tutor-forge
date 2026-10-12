@@ -219,15 +219,18 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
-        # Intentional validation should raise DomainError. A bare ValueError
-        # reaching here is logged so it cannot silently mask a bug.
+        # Intentional validation raises DomainError, and routers catch the
+        # ValueErrors they mean to show. One reaching here is a bug whose text
+        # is internal (a provider or parser message): logged with its
+        # traceback, answered like any unexpected error. Kept apart from the
+        # Exception handler, which runs outside CORS (ServerErrorMiddleware).
         with bind_request_id(request) as rid:
-            logger.warning(
-                "Unhandled ValueError on %s %s: %s", request.method, request.url.path, exc
+            logger.exception(
+                "Unhandled ValueError on %s %s", request.method, request.url.path
             )
         return JSONResponse(
-            status_code=400,
-            content={"error": "bad_request", "detail": str(exc)},
+            status_code=500,
+            content={"error": "internal_error", "detail": "An unexpected error occurred."},
             headers=_correlation_headers(rid),
         )
 

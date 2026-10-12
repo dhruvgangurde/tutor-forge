@@ -77,7 +77,7 @@ async def test_same_student_different_assessment_allowed(session):
 
 
 async def test_different_student_same_assessment_allowed(session):
-    teacher, student_a, assessment = await _seed(session)
+    _teacher, student_a, assessment = await _seed(session)
     student_b = User(email=f"s2-{uuid.uuid4()}@x.com", hashed_password=hash_password("pw"), role="student")
     session.add(student_b)
     await session.flush()
@@ -171,4 +171,23 @@ def test_migrations_have_a_single_head():
 
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[1] / "db" / "migrations"))
-    assert ScriptDirectory.from_config(cfg).get_heads() == ["0007_tutoring_anchor"]
+    assert ScriptDirectory.from_config(cfg).get_heads() == ["0008_tutoring_resolved_content"]
+
+
+def test_migration_0008_adds_one_nullable_text_column():
+    import importlib.util
+    from pathlib import Path
+
+    from db.models import TutoringMessage
+
+    path = Path(__file__).resolve().parents[1] / "db" / "migrations" / "versions" / "0008_tutoring_resolved_content.py"
+    spec = importlib.util.spec_from_file_location("mig0008", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.revision == "0008_tutoring_resolved_content"
+    assert module.down_revision == "0007_tutoring_anchor"
+    assert (module._TABLE, module._COLUMN) == ("tutoring_messages", "resolved_content")
+    column = TutoringMessage.__table__.c.resolved_content
+    assert column.nullable and column.server_default is None
+    assert callable(module.upgrade) and callable(module.downgrade)

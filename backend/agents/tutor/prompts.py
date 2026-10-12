@@ -143,6 +143,9 @@ Write it as a short conversational explanation in plain paragraphs, about 120 to
 #: Highest hint level at which the tutor must not state the answer. Hint 3 is
 #: the near-answer rung and level 4 the full explanation, so both may.
 MAX_ANSWER_GUARD_LEVEL = 2
+#: From this rung on, the tutor has explained; a confused reply gets the
+#: explanation again from another angle rather than a smaller question.
+EXPLAIN_FROM_LEVEL = MAX_ANSWER_GUARD_LEVEL + 1
 
 #: Below Hint 3, on every path (a new question, a hint, or a reply).
 _ASK_DO_NOT_TELL = """\
@@ -163,6 +166,21 @@ Write any maths as plain text that reads well without rendering, such as
 "a = b / c" or "x²". Never use LaTeX: no backslash commands and no $ signs.
 Ask at most one question in your reply.
 """
+
+#: Added once when the model says the course does not cover a topic the gate
+#: has just found in it ("This course doesn't cover that part.").
+COURSE_GAP_RETRY = """\
+The course passages above DO cover this topic: they passed the course check.
+Explain what they say about it. If only part of the question is covered,
+explain that part and say plainly which part is not.
+"""
+
+#: Shown when the model still says the course does not cover it. Fixed text;
+#: a hint that ends here does not move the ladder, so they can ask again.
+COURSE_GAP_MESSAGE = (
+    "I couldn't find enough in the course material to explain that part. "
+    "Ask about one piece of it, or try another topic from the course."
+)
 
 #: Fixed replies used when the output guard has removed everything useful. No
 #: model call: a safe Socratic question that is true of any grounded topic.
@@ -188,6 +206,17 @@ HINT_LADDER: dict[int, str] = {
     4: _rung(_LEVEL_4, 4),
 }
 
+
+#: Added on every path when the prompt carries the conversation so far. A hint
+#: used to see only the open question, so it claimed progress that never
+#: happened ("Now that you have the table size set up") and skipped the
+#: question the student had not answered.
+MEMORY_RULES = """\
+The conversation so far shows what they have actually said and got right.
+Never say or imply they have done, set up or understood something unless one
+of their messages shows it. If your last question is still unanswered, help
+with that question; do not move on to a later step.
+"""
 
 #: Added to a hint below the full explanation when the tutor has already said
 #: something. Hint 1 used to ask the opening question again in other words.
@@ -249,8 +278,9 @@ question, or a follow-up question about it.
 Respond to their reply, then ask one question that moves them a step closer to
 answering THE QUESTION themselves. Do not give them the final answer to THE QUESTION.
 Say a reply is correct only when it fully and accurately answers what you asked.
-If it is partly right, say which part is right and what is still missing. If it
-is wrong, say so kindly and point to the idea they need. A reply that says the
+If it is partly right, say which part is right in their own words, then ask
+about what is still missing without stating it. If it is wrong, say so kindly
+and point to the idea they need. A reply that says the
 opposite of the course on any point is not partly right: say kindly that it is
 not quite right. Do not open with praise
 such as "That's correct!" or "That's an interesting thought!" unless the reply
@@ -271,13 +301,34 @@ QUESTION into a smaller, simpler first step and ask about that step.
 """
 
 
-def reply_instruction(non_answer: bool, hint_level: int = 0) -> str:
+#: "no" or "I don't get it" right after a full explanation. The non-answer
+#: step above would break THE QUESTION into a smaller quiz question, which is
+#: what happened live: the student said the explanation did not help and was
+#: asked another question. They need the explanation again, differently.
+_EXPLAIN_AGAIN = """\
+You are a tutor partway through a conversation. THE QUESTION is what you are
+working through together, and you have already explained it in full. THEIR
+REPLY says that explanation did not land.
+Do not ask another question in its place, do not repeat the same explanation,
+and give no verdict on their reply. Explain it again from a different angle:
+start from the simplest idea, use everyday words, and give one small concrete
+example labelled "Example" (made-up small numbers are fine when the method
+itself is from the course). End with one short question that checks they
+followed. Keep it to 4-8 sentences.
+"""
+
+
+def reply_instruction(non_answer: bool, hint_level: int = 0, explain_again: bool = False) -> str:
     """
     System instruction for a reply or follow-up inside an open conversation.
 
     Below Hint 3 the reply must not tell them the answer either; from Hint 3 on
     the ladder has already started giving it, so that rule is left out.
+    ``explain_again`` is the confused reply after a full explanation: the
+    explanation again from another angle, not a smaller question.
     """
+    if explain_again:
+        return _EXPLAIN_AGAIN + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
     step = "\n" + _NON_ANSWER_STEP if non_answer else ""
     ask = "\n" + _ASK_DO_NOT_TELL if hint_level <= MAX_ANSWER_GUARD_LEVEL else ""
     return _REPLY + step + ask + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES

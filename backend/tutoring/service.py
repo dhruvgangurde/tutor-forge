@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
 from agents.tutor.query_resolution import (
+    SOURCE_REWRITE,
     TURN_NEW_QUESTION,
     classify_turn,
     definition_head,
@@ -57,6 +58,10 @@ logger = logging.getLogger(__name__)
 #: first. On Windows the Python clock ticks every 15.6 ms, so a turn's two rows
 #: could share a timestamp and came back in either order.
 _STUDENT_FIRST = case((TutoringMessage.role == "student", 0), else_=1)
+
+
+#: Refusals that leave no open question, even on a turn the gate passed.
+_OPENS_NOTHING = frozenset({"course_gap", "out_of_corpus"})
 
 
 def _now() -> datetime:
@@ -108,6 +113,21 @@ async def _open_question(session: TutoringSession, db: AsyncSession) -> Tutoring
     if students and not was_refused(students[0]):
         return students[0]
     return None
+
+
+async def _recent_history(session_id: uuid.UUID, db: AsyncSession) -> list[dict]:
+    """The last messages of the session, oldest first, as the model will see them."""
+    result = await db.execute(
+        select(TutoringMessage)
+        .where(TutoringMessage.session_id == session_id)
+        .order_by(TutoringMessage.created_at.desc(), _STUDENT_FIRST.desc())
+        .limit(TUTOR_GUARD.memory_turns)
+    )
+    rows = list(result.scalars().all())
+    return [
+        {"role": m.role, "content": m.content, "hint_level": m.hint_level, "is_refusal": m.is_refusal}
+        for m in reversed(rows)
+    ]
 
 
 async def _last_tutor_turn(session_id: uuid.UUID, db: AsyncSession) -> TutoringMessage | None:
@@ -215,6 +235,7 @@ async def send_chat_message(
     retrieval_service: RetrievalService,
     gemini_pro,
     langfuse: Langfuse,
+    gemini_flash=None,
 ) -> dict:
     """
     Process a student's question and return a Socratic guiding response.
@@ -238,6 +259,7 @@ async def send_chat_message(
     is_new_question = open_question is None or classify_turn(question) == TURN_NEW_QUESTION
     last_tutor = None if is_new_question else await _last_tutor_turn(session.id, db)
     definition_allowed = is_new_question and await _definition_allowed(session.course_id, question, db)
+    history = await _recent_history(session.id, db)  # before this message is persisted
 
     # Persist the student's message at receipt, stamped now. It used to be
     # written after the reply, in the same flush, so it carried the reply's
@@ -261,8 +283,9 @@ async def send_chat_message(
         "course_id": session.course_id,
         "student_id": session.student_id,
         "question": question,
-        "prior_question": None if is_new_question else open_question.content,
+        "prior_question": None if is_new_question else (open_question.resolved_content or open_question.content),
         "tutor_last_message": last_tutor.content if last_tutor else None,
+        "tutor_last_level": last_tutor.hint_level if last_tutor else 0,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,
@@ -271,6 +294,7 @@ async def send_chat_message(
         # A new question starts a fresh ladder; a reply stays on the current rung.
         "hint_level": 0 if is_new_question else session.current_hint_level,
         "definition_allowed": definition_allowed,
+        "history": history,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
@@ -282,9 +306,13 @@ async def send_chat_message(
         gemini_pro=gemini_pro,
         langfuse=langfuse,
         mode="chat",
+        gemini_flash=gemini_flash,
     )
     final_state = await graph.ainvoke(initial_state)
     grounded = bool(final_state.get("is_grounded"))
+    if final_state.get("retrieval_query_source") == SOURCE_REWRITE:
+        # The question this message stood for; later hints retrieve on it.
+        student_msg.resolved_content = final_state.get("retrieval_query")
 
     # Persist tutor response. A grounded turn that declined to hand over the
     # answer (FR-03.3) is also a refusal from the UI's point of view -- it is
@@ -302,12 +330,15 @@ async def send_chat_message(
     )
     db.add(tutor_msg)
 
+    # A turn that ended in the course-gap message ("the course does not cover
+    # that") or in the out-of-corpus refusal opens nothing, whatever the gate said.
+    opens = grounded and final_state.get("pedagogy_trace", {}).get("refusal_kind") not in _OPENS_NOTHING
     if is_new_question:
         # A grounded new question opens a conversation about itself; a refused
         # one leaves no open question, so a hint has nothing to build on.
-        session.anchor_message_id = student_msg.id if grounded else None
+        session.anchor_message_id = student_msg.id if opens else None
         session.current_hint_level = 0
-    elif grounded and session.anchor_message_id is None:
+    elif opens and session.anchor_message_id is None:
         # Older sessions: adopt the question found in the history once it has
         # passed the gate, so later turns do not have to guess again.
         session.anchor_message_id = open_question.id
@@ -358,17 +389,18 @@ async def request_hint(
     open_question = await _open_question(session, db)
     if open_question is None:
         raise ValueError(NO_OPEN_QUESTION_FOR_HINT)
-    # What the tutor said last, so the hint adds to it instead of repeating it.
+    # What the tutor said last, so the hint adds to it instead of repeating it,
+    # and the conversation so far, so it builds on what was actually answered.
     last_tutor = await _last_tutor_turn(session.id, db)
+    history = await _recent_history(session.id, db)
 
-    # The student's later replies are deliberately left out of the hint prompt:
-    # a hint is about the learning question, and a reply that drifted is
-    # exactly what used to drag the ladder off it.
+    # The hint is anchored on the learning question, never on the latest
+    # message: a reply that drifted used to drag the ladder off it.
     initial_state: TutorState = {
         "session_id": session.id,
         "course_id": session.course_id,
         "student_id": session.student_id,
-        "question": open_question.content,
+        "question": open_question.resolved_content or open_question.content,
         "prior_question": None,
         "tutor_last_message": last_tutor.content if last_tutor else None,
         "resolved_question": None,
@@ -377,6 +409,7 @@ async def request_hint(
         "retrieval_result": None,
         "is_grounded": False,
         "hint_level": session.current_hint_level,  # Current level (advance_hint_node will increment)
+        "history": history,
         "response": "",
         "citations": [],
         "pedagogy_trace": {},
@@ -410,7 +443,8 @@ async def request_hint(
 
     # Update session hint level to match final state
     session.current_hint_level = final_state.get("hint_level", session.current_hint_level)
-    if session.anchor_message_id is None:
+    gap = final_state.get("pedagogy_trace", {}).get("refusal_kind") in _OPENS_NOTHING
+    if session.anchor_message_id is None and not gap:
         session.anchor_message_id = open_question.id  # older session: keep what passed the gate
 
     await db.commit()

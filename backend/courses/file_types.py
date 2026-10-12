@@ -70,6 +70,11 @@ def _is_text(content: bytes) -> bool:
 _CONTENT_CHECKS = {".pdf": _is_pdf, ".pptx": _is_pptx, ".txt": _is_text}
 
 
+def base_mime(declared: str | None) -> str:
+    """The media type without parameters, lower-cased: "text/plain; charset=utf-8" is "text/plain"."""
+    return (declared or "").split(";", 1)[0].strip().lower()
+
+
 def content_mismatch(filename: str, ext: str, declared_mime: str | None, content: bytes) -> str | None:
     """
     Why this upload's type is not trustworthy, or None if it is.
@@ -79,7 +84,7 @@ def content_mismatch(filename: str, ext: str, declared_mime: str | None, content
     what is wrong in plain words.
     """
     label = _LABELS[ext]
-    mime = (declared_mime or "").split(";", 1)[0].strip().lower()
+    mime = base_mime(declared_mime)
     if mime != _EXPECTED_MIME[ext]:
         return (
             f"'{filename}' was sent as {mime or 'an unknown type'}, which does not "

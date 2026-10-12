@@ -10,10 +10,10 @@ Stack: backend `backend/` (FastAPI, SQLAlchemy async, Alembic, LangGraph, Chroma
 
 ## 2. Hard invariants (never break these)
 
-1. **Groundedness before generation.** Every agent retrieves evidence and runs the groundedness check BEFORE any LLM call. Not grounded means refuse, with no fallback to general model knowledge.
+1. **Groundedness before generation.** Every agent retrieves evidence and runs the groundedness check before any LLM call that produces content for the student. A call that only rewrites the student's message for retrieval sees the conversation, never course text, and its output is used only to retrieve. Not grounded means refuse, with no fallback to general model knowledge.
 2. **Teacher approval.** AI output is only ever a recommendation. A `FinalGrade` row is written only by `grading/service.finalize_grade()` after an explicit teacher approve or override. UI language says "Recommended score", "Suggested feedback", "Teacher review". Never "Final grade" or "Official grade" for AI output.
 3. **Grading determinism.** Grading uses `generate_deterministic()` at temperature 0. Same submission means same score.
-4. **Pedagogy before answers.** The tutor guides with questions and the hint ladder (3 hints, then a full explanation). It never solves graded work outright. It speaks to the student as "you", never "the student", and does not narrate its sources ("the course material states…"); citations already show the source.
+4. **Teaching before answers.** The tutor has two modes. In Guide mode it works through a question with the student: guiding questions and the hint ladder (3 hints, then a full explanation), never stating the answer before Hint 3. In Explain mode it explains a concept from the course plainly, with one small worked example labelled "Example", then asks one check question. The student can switch modes, and the tutor switches to Explain when asked to explain, teach or give an example. In either mode it never solves graded work: a question that matches a published quiz question is always Guide mode, with no answer at any rung. Every explanation, example and method comes from the course material (invariant 1); made-up numbers in an example are allowed only when the method is from the course. It speaks to the student as "you", never "the student", and does not narrate its sources ("the course material states…"); citations already show the source.
 5. **Config-driven.** No model name, path, threshold or secret is hardcoded outside `core/config.py`.
 6. **Self-contained tests.** The backend suite runs offline, with no API key and no external services.
 7. **Provider abstraction.** Business, retrieval and grading logic stay independent of the model provider.
@@ -64,7 +64,7 @@ Every change ships with tests, and the full suites must be green before you repo
 - **Run before reporting:**
   - Backend (from `backend/`): `pytest -q`
   - Frontend (from `frontend/`): `npm test`, then `npm run build`, then `npm run lint`
-- **Current baseline** (update this line when it changes): pytest 1536 passed, frontend 254 passed, build and lint clean. A report must give the new counts and the difference from baseline. If the count goes down, explain exactly why.
+- **Current baseline** (update this line when it changes): pytest 1723 passed, frontend 262 passed, build and lint clean. A report must give the new counts and the difference from baseline. If the count goes down, explain exactly why.
 - Backend lint: keep `ruff` clean for files you touch; don't mass-reformat other files.
 - The eval suite in `backend/eval/` (harness, datasets and seven suites) exists but has never been run, so there are no measured results. Don't claim groundedness or grading-consistency numbers that were never measured.
 
@@ -163,5 +163,5 @@ Stop and ask me before doing any of the following:
 
 - `docs/ROADMAP.md` and `PROJECT-CONTEXT.md` can be stale. Trust the code, and the newest status document.
 - Rate limiter, revoked-token cache and job reaper are single-process, and Chroma is a local on-disk store, so the backend isn't horizontally scalable as it stands.
-- Tutor groundedness thresholds differ for mock (0.20) and real (0.65) embeddings.
+- Tutor groundedness thresholds differ for mock (0.20) and real Gemini (0.62) embeddings.
 - A tutor reply must be judged in the context of the conversation: a short answer to the tutor's own question ("no", "I don't know") is not an out-of-course question and must never get the refusal message.

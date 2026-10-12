@@ -220,22 +220,12 @@ async def hard_delete_course(
     this function does not re-check, so that the router owns the HTTP semantics
     and this stays a plain operation.
 
-    The Chroma collection goes too; leaving it behind would orphan the
-    embeddings on disk with no row pointing at them. A Chroma failure is logged
-    and does not abort the DB delete: a stale collection is recoverable, a
-    half-deleted course is not.
+    The Chroma collection goes too, AFTER the rows are committed: if the row
+    delete fails, the course keeps its index and still works. A Chroma failure
+    after that is logged and leaves an orphaned collection, which is
+    recoverable; a course whose index is gone is not.
     """
     course_id, name = course.id, course.name
-
-    if retrieval_service is not None:
-        try:
-            retrieval_service.delete_course_collection(course_id)
-        except Exception:  # never block the delete on Chroma
-            logger.exception(
-                "Could not delete Chroma collection for course %s; the database "
-                "rows are still being removed and the collection is now orphaned.",
-                course_id,
-            )
 
     # Core DELETE, not db.delete(course): the ORM tries to NULL child FKs before
     # removing the parent, which fails on assessments.course_id (NOT NULL).
@@ -243,6 +233,16 @@ async def hard_delete_course(
     # is both correct and the only thing that works.
     await db.execute(sa_delete(Course).where(Course.id == course_id))
     await db.commit()
+
+    if retrieval_service is not None:
+        try:
+            retrieval_service.delete_course_collection(course_id)
+        except Exception:  # the rows are gone; never fail the delete on Chroma
+            logger.exception(
+                "Could not delete Chroma collection for course %s after its rows "
+                "were removed; the collection is now orphaned.",
+                course_id,
+            )
     logger.warning(
         "Course HARD DELETED: course_id=%s name_chars=%d (had no student submissions).",
         course_id,

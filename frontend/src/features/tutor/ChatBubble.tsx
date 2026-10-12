@@ -11,6 +11,12 @@ interface ChatBubbleProps {
   timestamp: string
   /** Hint ladder depth, 0 for a plain chat turn. Drives the rung label. */
   hintLevel?: number
+  /**
+   * The previous tutor message showed exactly these sources. Hints on one
+   * question retrieve the same passages, so the same chips used to repeat
+   * under every rung; one quiet chip says so instead.
+   */
+  sameSourcesAsAbove?: boolean
 }
 
 /** Mirrors MAX_HINT_LEVEL in backend/agents/tutor/prompts.py. */
@@ -30,7 +36,7 @@ function hintRungLabel(level: number): string {
  * Chunks arrive ranked, so the first of a group is the best-matching one and
  * its passage is what the tooltip should quote.
  */
-function dedupeByLabel(citations: Citation[]): Citation[] {
+export function dedupeByLabel(citations: Citation[]): Citation[] {
   const seen = new Set<string>()
   return citations.filter((c) => {
     const key = `${c.source_file}|${c.page_or_slide}`
@@ -62,6 +68,7 @@ export function ChatBubble({
   isRefusal,
   timestamp,
   hintLevel = 0,
+  sameSourcesAsAbove = false,
 }: ChatBubbleProps) {
   const isTutor = role === 'tutor'
   const isHint = isTutor && hintLevel > 0
@@ -92,16 +99,26 @@ export function ChatBubble({
         {sources.length > 0 && (
           <div className="citations">
             <span className="citations-label">Sources</span>
-            {sources.map((c, idx) => (
+            {sameSourcesAsAbove ? (
               <div
-                key={idx}
-                className="citation-badge"
-                title={`${c.source_file}\n\n${c.chunk_text}`}
+                className="citation-badge same-sources"
+                title={sources.map((c) => citationLabel(c.source_file, c.page_or_slide)).join('\n')}
               >
                 <DocumentIcon size={14} />
-                {citationLabel(c.source_file, c.page_or_slide)}
+                Same sources as above
               </div>
-            ))}
+            ) : (
+              sources.map((c, idx) => (
+                <div
+                  key={idx}
+                  className="citation-badge"
+                  title={`${c.source_file}\n\n${c.chunk_text}`}
+                >
+                  <DocumentIcon size={14} />
+                  {citationLabel(c.source_file, c.page_or_slide)}
+                </div>
+              ))
+            )}
           </div>
         )}
         <div className="message-time">{new Date(timestamp).toLocaleTimeString()}</div>

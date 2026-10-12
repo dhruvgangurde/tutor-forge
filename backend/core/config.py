@@ -16,22 +16,31 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import dotenv_values
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from core.limits import MAX_UPLOAD_TOTAL_BYTES
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Never under pytest (it sets PYTEST_VERSION before any conftest loads):
+        # the suite runs on its defaults, not on a developer's .env (invariant 6).
+        env_file=None if os.environ.get("PYTEST_VERSION") else ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
 
     # ── Database ──────────────────────────────────────────────────────────────
-    database_url: str = "postgresql+asyncpg://postgres:password@localhost:5432/tutorforge"
+    # Secret-bearing fields are repr=False: anything that formats the settings
+    # object (an error message, a log line, a debugger) must not print them.
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:password@localhost:5432/tutorforge", repr=False
+    )
 
     # ── Gemini ────────────────────────────────────────────────────────────────
-    gemini_api_key: str = ""
+    gemini_api_key: str = Field(default="", repr=False)
     gemini_pro_model: str = "gemini-2.5-pro"
     gemini_flash_model: str = "gemini-2.5-flash"
     # text-embedding-004 is retired; gemini-embedding-001 returns 3072
@@ -73,7 +82,13 @@ class Settings(BaseSettings):
     # in course material. Below this, agents refuse generation (no LLM call).
     # One value per provider because each embedding backend has its own
     # similarity scale — the numbers are NOT interchangeable.
-    groundedness_threshold: float = 0.65        # real Gemini embeddings
+    # Gemini (gemini-embedding-001), measured 2026-10-12 on Gemini Test 2 with
+    # eval/datasets/groundedness_calibration.json: on-topic min 0.6452, so 0.65
+    # refused two informal on-topic questions. At 0.62 none are refused; four
+    # adjacent computing topics and three adversarial probes pass the gate,
+    # and run live through the tutor all ten declined or steered back to the
+    # course, none answered from general knowledge. Re-measure on a new model.
+    groundedness_threshold: float = 0.62
     groundedness_threshold_mock: float = 0.20   # mock stub: bag-of-words ceiling ~0.42,
                                                  # off-topic noise ~0.0-0.1
     # EMPIRICALLY MEASURED 2026-08-16 against nomic-embed-text on the two live
@@ -106,6 +121,10 @@ class Settings(BaseSettings):
     # model, in approximate tokens (RetrievalService.build_context_window uses
     # 4 characters per token). Chunks are added best-first until it is spent.
     tutor_context_token_budget: int = 3000
+    # Longest wait for the one Flash call that rewrites a follow-up into a
+    # standalone question for retrieval (agents/tutor/rewrite.py). Past it the
+    # rewrite is skipped and the message is retrieved on as typed.
+    tutor_rewrite_timeout_seconds: float = 10.0
 
     # ── Assessment generation ─────────────────────────────────────────────────
     # Smallest share of apply-or-higher Bloom levels in a generated quiz of 5 or
@@ -115,11 +134,11 @@ class Settings(BaseSettings):
 
     # ── Langfuse ──────────────────────────────────────────────────────────────
     langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
+    langfuse_secret_key: str = Field(default="", repr=False)
     langfuse_host: str = "https://cloud.langfuse.com"
 
     # ── JWT ───────────────────────────────────────────────────────────────────
-    jwt_secret_key: str = "change-me-in-production"
+    jwt_secret_key: str = Field(default="change-me-in-production", repr=False)
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60
     # Refresh tokens (F19): long-lived, revocable, rotated on each use.
@@ -185,10 +204,11 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = True
 
     # ── Uploads (F15) ─────────────────────────────────────────────────────────
-    # Per-file cap enforced during read (bounded memory; oversized => 413) and a
-    # cap on the number of files per request.
+    # Per-file cap enforced during read (bounded memory; oversized => 413), a
+    # cap on the number of files per request, and one on all files together.
     max_upload_bytes: int = 50 * 1024 * 1024   # 50 MB
     max_upload_files: int = 20
+    max_upload_total_bytes: int = MAX_UPLOAD_TOTAL_BYTES   # 100 MB
 
     # ── LLM provider selection ────────────────────────────────────────────────
     # Replaces the old binary USE_MOCK_GEMINI flag with an explicit three-way
@@ -272,6 +292,14 @@ class TutorGuardThresholds:
     # uses this share of the quiz question's words.
     graded_question_asked_share: float = 0.8
     graded_question_stem_share: float = 0.6
+    # agents/tutor/nodes.py: how much of the conversation the model sees on
+    # every turn, as whole messages (both roles) and characters per message.
+    # Eight messages is four exchanges, about 1,200 tokens at the cap.
+    memory_turns: int = 8
+    memory_chars_per_turn: int = 600
+    # agents/tutor/rewrite.py: a rewritten question longer than this is not
+    # a question any more; it is discarded.
+    rewrite_max_chars: int = 300
 
 
 @dataclass(frozen=True)

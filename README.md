@@ -147,6 +147,7 @@ npm run dev                # → http://localhost:5173
 | `GEMINI_EMBED_RPM`        | `90`                     | Client-side pacing per embedding model, requests per minute (0 = off)                                                                   |
 | `GEMINI_MAX_WAIT_SECONDS` | `60.0`                   | Longest wait for one interactive Gemini call (tutor chat, hints, query embedding); a 429 there fails fast as "The AI service is busy"   |
 | `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0`           | The same limit for every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full minute and retries |
+| `TUTOR_REWRITE_TIMEOUT_SECONDS` | `10.0`            | Longest wait for the Flash call that rewrites a follow-up into a standalone question for retrieval; past it the rewrite is skipped       |
 | `ASSESSMENT_MIN_HIGHER_ORDER_SHARE` | `0.4`          | Smallest share of apply-or-higher questions in a generated quiz of 5+ questions when the teacher gives no Bloom mix                     |
 | `CHROMA_PERSIST_PATH`     | `data/chroma`            | ChromaDB persistence directory                                                                                                            |
 | `JWT_SECRET_KEY`          | *(change in production)* | JWT signing secret                                                                                                                        |
@@ -203,11 +204,14 @@ forwarded address a client made up. Two settings control this:
   ```
 
   Without a proxy, start uvicorn with `--no-proxy-headers` so nothing on the
-  same host can set the client address. Use `--forwarded-allow-ips="*"` only
-  when the backend is reachable exclusively through the proxy.
+  same host can set the client address. Never use `--forwarded-allow-ips="*"`:
+  uvicorn then takes the left-most `X-Forwarded-For` entry, which the client
+  wrote, as the client address.
 
-Behind a proxy, set both: `TRUSTED_PROXY=true` and `--forwarded-allow-ips` to
-the proxy's address.
+Behind a proxy, `TRUSTED_PROXY=true` is what the rate limiter needs. Uvicorn's
+flag only changes the client address uvicorn itself records (its access log);
+set it to the proxy's own address if you want that. The Render blueprint sets
+`TRUSTED_PROXY` only.
 
 ## Roadmap
 

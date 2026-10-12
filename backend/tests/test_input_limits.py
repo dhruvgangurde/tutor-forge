@@ -202,9 +202,11 @@ def _answers(course, count: int, text: str = "an answer") -> dict:
 
 async def test_short_answer_at_the_limit_is_accepted(client, course):
     token = await _token(client, "student@demo.com")
+    body = _answers(course, MAX_SUBMISSION_ANSWERS, None)  # every question, skipped ones blank
+    body["responses"][0]["answer_text"] = "x" * MAX_ANSWER_TEXT_CHARS
     resp = await client.post(
         f"/assessments/{course['assessment_id']}/submit",
-        json=_answers(course, 1, "x" * MAX_ANSWER_TEXT_CHARS),
+        json=body,
         headers=_auth(token),
     )
     assert resp.status_code == 201, resp.text

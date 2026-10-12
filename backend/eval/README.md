@@ -48,7 +48,9 @@ python -m eval.runner --suite grading-variance
 python -m eval.runner --suite paraphrase-bias
 python -m eval.runner --suite distractor-quality
 python -m eval.runner --suite tutor-pedagogy       # offline: no LLM, no .env needed
-python -m eval.runner --suite grading-checks       # offline; --live grades with the real model
+python -m eval.runner --suite grading-checks       # offline
+python -m eval.runner --suite novice-learner       # offline
+python -m eval.runner --suite tutor-pedagogy --suite grading-checks --live   # Gemini
 python -m eval.runner --all
 ```
 
@@ -57,7 +59,7 @@ That folder is gitignored (`backend/eval/results/` in the root `.gitignore`), so
 reports are not committed; measured numbers go in a short dated summary in the
 docs instead.
 
-## tutor-pedagogy (offline)
+## tutor-pedagogy (offline; live with --live)
 
 Findings T1-T6 and G1 from live testing on Gemini, as recorded cases
 (`datasets/tutor_pedagogy.json`): the live tutor replies and quiz questions,
@@ -70,8 +72,19 @@ not the model, and its refusal numbers are on the mock embedder's scale.
 
 It reports leakage at hint levels 0-2, on-topic refusals, repeated questions,
 fallbacks on non-leaking replies, the definition sentence kept or removed, and
-MC key support. Live (Gemini) numbers are reported as not measured. It runs in
-pytest (`tests/test_eval_tutor_pedagogy.py`) as a regression gate: fixed live
+MC key support. Offline, live (Gemini) numbers are reported as not measured.
+
+With `--live` (and `LLM_PROVIDER=gemini`; any other provider is refused) Gemini
+writes every reply and the quiz, while retrieval and the gate stay on the mock
+embedder in memory, so nothing touches the real database or Chroma store.
+Repeats are judged with the guard's own repeat measure on the live text, and a
+definition counts as given when the reply opens with a statement naming the
+term. Both live suites run as background work (the configured pacing; a 429
+waits out its window), count their calls, and stop at the first failed call
+with no retry loop, reporting what finished. Live is never run by pytest.
+
+The offline run is a pytest regression gate
+(`tests/test_eval_tutor_pedagogy.py`): fixed live
 failures must stay fixed, and any leak, repeat or mismatch it finds must be a
 documented `known_gap` in the dataset.
 
@@ -94,6 +107,25 @@ gibberish low, is the `--live` run, which also checks the score ordering
 (gibberish <= partial <= full; an injected answer <= the same answer without
 it). Live is never run by pytest. The offline run is a pytest gate
 (`tests/test_eval_grading_checks.py`).
+
+## novice-learner (offline; live with --live)
+
+A beginner learning dynamic programming, replayed from the live session
+5c6672fa (`datasets/novice_learner.json`): the student's turns verbatim, the
+tutor's live replies as recorded outputs, a synthetic DP lab sheet as the
+course, recorded follow-up rewrites, and a published quiz in one course. Every
+turn goes through the real tutoring service, graph, rewrite plumbing, guard
+and course-gap handling, on the mock embedder in memory.
+
+Scored on: an explanation (golden facts) within N tutor turns of a concept
+being asked; no false refusals and the off-topic question still refused;
+context kept (follow-ups retrieved on the conversation's topic); an example
+when asked; graded-question leakage; and what must never be shown (an empty
+"this course doesn't cover that part", one glued to other text, or a claim of
+progress the student did not make). The explanation and the example are Step 2
+(Explain mode) items, reported but not gated until then. The offline run is a
+pytest gate (`tests/test_eval_novice_learner.py`); live (Gemini writes the
+replies and the rewrites) is never run by pytest.
 
 ## What is NOT measured here, and why
 

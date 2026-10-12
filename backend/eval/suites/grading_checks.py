@@ -28,7 +28,9 @@ without it) is checked as well. Live is never run by pytest.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import time
 
 from eval.harness import SuiteResult, grading_response, grading_state, load_dataset
 
@@ -70,9 +72,33 @@ class RecordedGrader:
         return json.dumps({"criterion_scores": scores, "overall_feedback": "Recorded."})
 
 
+class _CountingGrader:
+    """
+    The configured model in live mode. Counts calls; after one failed call
+    every later call raises without reaching the API, so the run stops
+    instead of retrying in a loop (the grading node turns a failed call into
+    a 0 score, which would otherwise read as a real result).
+    """
+
+    def __init__(self, client):
+        self.client = client
+        self.calls = 0
+        self.error: str | None = None
+
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
+        if self.error:
+            raise RuntimeError("live run stopped after an earlier failed call")
+        self.calls += 1
+        try:
+            return self.client.generate_deterministic(prompt, system_instruction=system_instruction)
+        except Exception as exc:
+            self.error = f"{type(exc).__name__}: {str(exc)[:200]}"
+            raise
+
+
 def _evidence(fixture: dict) -> list[dict]:
     return [
-        {"text": p, "source_file": fixture["source_file"], "page_or_slide": i + 1, "score": 0.9}
+        {"text": p, "source_file": fixture["source_file"], "page_or_slide": i + 1, "confidence": 0.9}
         for i, p in enumerate(fixture["passages"])
     ]
 
@@ -197,16 +223,33 @@ def _ordering(rows: list[dict]) -> dict:
 
 
 async def run(live: bool = False) -> SuiteResult:
+    from core.config import settings
+    from core.gemini_calls import background_work
+
     data = load_dataset(DATASET)
     live_model = None
     if live:
+        if settings.llm_provider != "gemini":
+            return SuiteResult(
+                name="grading-checks", criterion="Grading checks, live", target="-", status="skipped",
+                headline=f"Live mode needs LLM_PROVIDER=gemini (it is {settings.llm_provider!r}); nothing was run.",
+            )
         from main import _build_llm_clients
 
-        live_model, _flash = _build_llm_clients()
+        live_model = _CountingGrader(_build_llm_clients()[0])
 
-    short = [_short_answer_row(a, data, live_model) for a in data["answers"]]
+    started = time.perf_counter()
+    short: list[dict] = []
+    # Background work: the configured pacing applies and a 429 waits out its window.
+    with background_work() if live else contextlib.nullcontext():
+        for answer in data["answers"]:
+            row = _short_answer_row(answer, data, live_model)
+            if live_model is not None and live_model.error:
+                break  # the case that hit the failure is not counted
+            short.append(row)
     closed = _closed_rows(data)
-    ordering = _ordering(short)
+    complete = len(short) == len(data["answers"])
+    ordering = _ordering(short) if complete else {}
 
     determinism_ok = all(r["same_twice"] for r in short + closed) and all(r["same_prompt_twice"] for r in short)
     blank_ok = all(r["blank_scored_zero_without_model"] for r in short if "blank_scored_zero_without_model" in r)
@@ -223,16 +266,24 @@ async def run(live: bool = False) -> SuiteResult:
         "mcq_and_numeric_as_expected": closed_ok,
     }
     raised = sorted(k for k, ok in ordering.items() if not ok)
-    met = all(code_checks.values()) and (not live or not raised)
+    met = all(code_checks.values()) and complete and (not live or not raised)
 
     metrics = {
         "mode": "live" if live else "offline",
         "checks": code_checks,
-        "score_ordering": ordering if live else LIVE_NOT_MEASURED,
+        "score_ordering": (ordering if complete else "not measured (stopped early)") if live else LIVE_NOT_MEASURED,
         "short_answer_cases": len(short),
         "mcq_numeric_cases": len(closed),
         "live_model": "measured" if live else LIVE_NOT_MEASURED,
     }
+    if live:
+        metrics.update({
+            "live_calls": live_model.calls,
+            "live_duration_s": round(time.perf_counter() - started, 1),
+            "live_stopped_early": live_model.error,
+            "short_answer_cases_run": len(short),
+            "scores": {r["id"]: f"{r['score']:g} of {r['max']:g}" for r in short},
+        })
     if not live:
         metrics["obedient_model_bound"] = {
             r["id"]: f"{r['score']:g} of {r['max']:g}" for r in short if r["obedient_model"]
@@ -263,6 +314,7 @@ async def run(live: bool = False) -> SuiteResult:
         f"{'Live' if live else 'Offline'}: code checks {'all hold' if all(code_checks.values()) else 'FAILED'}"
         + (f"; score ordering broken: {', '.join(raised)}" if live and raised else "")
         + ("" if live else "; live model behaviour not measured")
+        + (f"; stopped early: {live_model.error}" if live and live_model.error else "")
     )
     return SuiteResult(
         name="grading-checks",

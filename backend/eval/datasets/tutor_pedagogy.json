@@ -125,16 +125,14 @@
       "mode": "chat", "question": "PIVOT", "hint_level": 0, "definition_allowed": false,
       "model_output": "The pivot is the element of the array that the other elements are partitioned around. Which element of the range do you think this lab chooses as the pivot?",
       "definition": {"sentence": "The pivot is the element of the array that the other elements are partitioned around.", "expected": "removed"},
-      "note": "A quiz in the course asks what the pivot is, so no definition is given.",
-      "known_gap": "The guard does not remove a definition that is not allowed when the question names more than the term ('what is the pivot in quick sort?'): states_answer needs two of the question's topic words and the sentence has one, and course_claim finds 2 shared words, not 3 ('array', 'around'; 'element' is background and 'other' a filler word). Only the prompt keeps it out."
+      "note": "A quiz in the course asks what the pivot is, so no definition is given."
     },
     {
       "id": "T4-definition-not-from-course", "case": "T4", "source": "synthetic",
       "mode": "chat", "question": "PIVOT", "hint_level": 0, "definition_allowed": true,
       "model_output": "A pivot is a reference value used to split data into two groups in many algorithms. What do you think the pivot is used for here?",
-      "definition": {"sentence": "A pivot is a reference value used to split data into two groups in many algorithms.", "expected": "removed"},
-      "note": "Most of its words are not in the passages: general knowledge, not the course.",
-      "known_gap": "The guard does not remove a definition that is not allowed when the question names more than the term ('what is the pivot in quick sort?'): states_answer needs two of the question's topic words and the sentence has one, and course_claim finds 2 shared words, not 3 ('array', 'around'; 'element' is background and 'other' a filler word). Only the prompt keeps it out."
+      "definition": {"sentence": "A pivot is a reference value used to split data into two groups in many algorithms.", "expected": "grounded"},
+      "note": "The recorded definition is general knowledge (most of its words are not in the passages), so offline it must be removed. Live, the model may open with a definition of its own; one counts only when it is grounded in the retrieved passages, by the guard's own measure."
     },
     {
       "id": "T4-definition-on-a-hint", "case": "T4", "source": "synthetic",
@@ -142,8 +140,7 @@
       "previous": "What do you think the pivot is used for in quick sort?",
       "model_output": "The pivot is the element of the array that the other elements are partitioned around. Which element of the range do you think this lab chooses as the pivot?",
       "definition": {"sentence": "The pivot is the element of the array that the other elements are partitioned around.", "expected": "removed"},
-      "note": "The one definition sentence is for the opening of a new question only.",
-      "known_gap": "The guard does not remove a definition that is not allowed when the question names more than the term ('what is the pivot in quick sort?'): states_answer needs two of the question's topic words and the sentence has one, and course_claim finds 2 shared words, not 3 ('array', 'around'; 'element' is background and 'other' a filler word). Only the prompt keeps it out."
+      "note": "The one definition sentence is for the opening of a new question only."
     },
     {
       "id": "T5-live-other-method", "case": "T5", "source": "live",
@@ -262,7 +259,7 @@
     {
       "id": "C-T4-definition-with-published-quiz", "case": "T4", "published_quiz": true,
       "turns": [
-        {"kind": "chat", "text": "PIVOT", "expect": "tutored", "known_gap": "The guard does not remove a definition that is not allowed when the question names more than the term ('what is the pivot in quick sort?'): states_answer needs two of the question's topic words and the sentence has one, and course_claim finds 2 shared words, not 3 ('array', 'around'; 'element' is background and 'other' a filler word). Only the prompt keeps it out.", "definition": {"sentence": "The pivot is the element of the array that the other elements are partitioned around.", "expected": "removed"}, "model_output": "The pivot is the element of the array that the other elements are partitioned around. Which element of the range do you think this lab chooses as the pivot?"}
+        {"kind": "chat", "text": "PIVOT", "expect": "tutored", "definition": {"sentence": "The pivot is the element of the array that the other elements are partitioned around.", "expected": "removed"}, "model_output": "The pivot is the element of the array that the other elements are partitioned around. Which element of the range do you think this lab chooses as the pivot?"}
       ]
     }
   ],

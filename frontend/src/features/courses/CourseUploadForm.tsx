@@ -2,11 +2,14 @@ import { FormEvent, useRef, useState } from 'react'
 import { useUploadCourse } from './hooks'
 import { ErrorBanner } from '../../components/ui/ErrorBanner'
 import { getErrorMessage } from '../../lib/api/errors'
-import { MAX_COURSE_NAME_CHARS } from '../../lib/limits'
+import { MAX_COURSE_NAME_CHARS, MAX_UPLOAD_TOTAL_BYTES } from '../../lib/limits'
 import { useToast } from '../../hooks/useToast'
 
 // No legacy .ppt: the backend's parser reads only .pptx (backend/courses/router.py).
 export const ALLOWED_EXTENSIONS = '.pdf,.pptx,.txt'
+
+// The server's own 413 message for the same limit (backend/courses/router.py).
+const TOO_MUCH_MESSAGE = `These files add up to more than ${MAX_UPLOAD_TOTAL_BYTES / (1024 * 1024)} MB. Upload fewer files at a time.`
 
 interface CourseUploadFormProps {
   onDone: () => void
@@ -15,6 +18,7 @@ interface CourseUploadFormProps {
 /** Course upload form: name + multi-file picker. Used inline on CoursesPage. */
 export function CourseUploadForm({ onDone }: CourseUploadFormProps) {
   const [name, setName] = useState('')
+  const [tooMuch, setTooMuch] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const upload = useUploadCourse()
   const { showToast } = useToast()
@@ -23,6 +27,9 @@ export function CourseUploadForm({ onDone }: CourseUploadFormProps) {
     e.preventDefault()
     const files = Array.from(fileInputRef.current?.files ?? [])
     if (files.length === 0) return
+    const over = files.reduce((sum, f) => sum + f.size, 0) > MAX_UPLOAD_TOTAL_BYTES
+    setTooMuch(over)
+    if (over) return
 
     try {
       await upload.mutateAsync({ name, files })
@@ -37,7 +44,11 @@ export function CourseUploadForm({ onDone }: CourseUploadFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="login-form">
-      {upload.isError && <ErrorBanner message={getErrorMessage(upload.error)} />}
+      {tooMuch ? (
+        <ErrorBanner message={TOO_MUCH_MESSAGE} />
+      ) : (
+        upload.isError && <ErrorBanner message={getErrorMessage(upload.error)} />
+      )}
 
       <div className="field-group">
         <label htmlFor="course-name-input" className="field-label">

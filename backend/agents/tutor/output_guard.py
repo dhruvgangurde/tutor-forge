@@ -56,6 +56,7 @@ from agents.tutor.prompts import (
     GUARD_FALLBACK_NON_ANSWER,
     GUARD_FALLBACK_QUESTION,
     MAX_ANSWER_GUARD_LEVEL,
+    OUT_OF_CORPUS_REFUSAL,
 )
 from agents.tutor.query_resolution import definition_head, topical_words
 from core.config import TUTOR_GUARD
@@ -89,6 +90,8 @@ RULE_VERDICT_REASON = "verdict_reason"
 RULE_COURSE_CLAIM = "course_claim"
 RULE_DEFINITION_EXTRA = "definition_extra"
 RULE_REPEATED_QUESTION = "repeated_question"
+RULE_COURSE_GAP = "course_gap"
+RULE_PROGRESS_CLAIM = "progress_claim"
 RULE_RESTATED_CORRECTION = "restated_correction"
 
 #: Full explanation: the only rung where a worked-example qualifier ("as shown
@@ -108,6 +111,7 @@ class TutorTurn:
     is_non_answer: bool = False    # their reply was "no", "I don't know"...
     definition_allowed: bool = False  # a pure "what is X?" opening, not graded work
     previous_tutor_message: str | None = None  # what the tutor said last (hint and reply paths)
+    student_messages: tuple[str, ...] = ()     # their earlier messages in the conversation window
 
 
 # ── Words ─────────────────────────────────────────────────────────────────────
@@ -320,6 +324,57 @@ def _invented_reference(sentence: str, turn: TutorTurn, reply_words: set[str]) -
     return not (attributed and _overlap(attributed, reply_words) >= 0.5)
 
 
+# ── 1a. Progress they have not made ──────────────────────────────────────────
+#
+# Seen live: Hint 1 opened "Now that you have the table size set up" right
+# after the student got the size wrong, and the next hint "Now that you are
+# reading the matrix dimensions into your array" when they had written no
+# code. A claim that they have done or got something is kept only when their
+# own messages (the reply and the earlier ones in the window) carry it.
+
+_PROGRESS_VERBS = (
+    r"set\s+up|setting\s+up|built|building|got|found|worked\s+out|working\s+out|filled(?:\s+in)?|"
+    r"filling(?:\s+in)?|chosen|choosing|written|writing|read|reading|figured\s+out|figuring\s+out|"
+    r"established|defined|defining|initiali[sz]ed|created|creating|completed|done|finished|identified|"
+    r"identifying|determined|understood|grasped|learn(?:ed|t)|sorted|computed|calculated|placed|put|"
+    r"decided|picked|traced|drawn|drawing|listed|noted"
+)
+_PROGRESS_CLAIM_RE = re.compile(
+    r"\byou(?:'ve|\s+have|\s+had|'re|\s+are)\s+(?:already\s+|now\s+|just\s+|successfully\s+)?"
+    r"(?:(?:\w+|[\w\[\]()+-]+)\s+){0,6}?(?:" + _PROGRESS_VERBS + r")\b",
+    re.IGNORECASE,
+)
+_CLAUSE_END_RE = re.compile(r"[,;:]|\s[-\u2014\u2013]\s")
+
+
+def _progress_claim(sentence: str, turn: TutorTurn, reply_words: set[str]) -> re.Match | None:
+    """The unsupported progress claim in ``sentence``, if any."""
+    plain = _plain(sentence)
+    m = _PROGRESS_CLAIM_RE.search(plain)
+    if not m:
+        return None
+    clause = _CLAUSE_END_RE.split(plain[m.start():], maxsplit=1)[0]
+    attributed = _content_words(clause) - {"you", "already", "now", "just"}
+    supported = reply_words | set().union(*(_content_words(t) for t in turn.student_messages))
+    if attributed and _overlap(attributed, supported) >= 0.5:
+        return None
+    return m
+
+
+def _without_progress_claim(sentence: str, turn: TutorTurn, reply_words: set[str]) -> str | None:
+    m = _progress_claim(sentence, turn, reply_words)
+    if m is None:
+        return sentence
+    plain = _plain(sentence)
+    first_clause = _CLAUSE_END_RE.split(plain, maxsplit=1)[0]
+    if m.start() < len(first_clause):
+        # "Now that you have X set up, what ...?" keeps its question.
+        cut = _cut_leading_clause(sentence, lambda clause: _PROGRESS_CLAIM_RE.search(_plain(clause)) is not None)
+        if cut != sentence:
+            return cut
+    return sentence if _is_question(sentence) else None
+
+
 # ── 1b. Pointing at sources they have never seen ──────────────────────────────
 
 #: Left over after strip_source_narration has removed the forms it can rewrite.
@@ -466,6 +521,8 @@ def _claim_signals(turn: TutorTurn) -> _ClaimSignals:
         share = TUTOR_GUARD.claim_background_share
         background = {w for w, n in counts.items() if n / len(units) > share}
     student = _claim_words(turn.student_reply or "") if turn.path == PATH_REPLY else set()
+    # Their earlier messages in the window count as their words on every path.
+    student |= set().union(*(_claim_words(t) for t in turn.student_messages))
     ignore = _claim_words(turn.question) | background
     return _ClaimSignals([u - ignore for u in units], ignore, student - ignore)
 
@@ -762,6 +819,13 @@ _PARTIAL_VERDICT_RE = re.compile(r"\b(?:partly|partially|half|somewhat|mostly)\s
 _NEGATED_RE = re.compile(r"(?:\bnot|n't|\bnever|\brather\s+than|\binstead\s+of)\b([^,;.!?]*)", re.IGNORECASE)
 #: Said instead of "partly right" when the attempt contradicts the course.
 NOT_QUITE_VERDICT = "That's not quite right."
+#: A verdict that credits part of the attempt, as opposed to a correction.
+_NEAR_MISS_RE = re.compile(
+    r"^(?:close|nearly|almost|good\s+start|(?:partly|partially|mostly|half)\s+(?:right|correct)|"
+    r"(?:that's|that\s+is|you're|you\s+are)\s+(?:close|nearly\s+there|almost\s+there|"
+    r"(?:partly|partially|mostly)\s+(?:right|correct)|on\s+the\s+right\s+track))\b",
+    re.IGNORECASE,
+)
 
 
 def _negates(reason: str, reply_words: set[str]) -> bool:
@@ -784,6 +848,15 @@ def _cut_reason(sentence: str, reply_words: set[str] = frozenset()) -> str:
         return sentence
     if _PARTIAL_VERDICT_RE.search(_plain(parts[0])) and _negates(parts[1], reply_words):
         return NOT_QUITE_VERDICT
+    # Behind a near-miss verdict, a reason in their own words names the part
+    # they got right and gives nothing away: "Close: the size does depend on
+    # the knapsack size and the number of items" stays. A correction's reason
+    # is the answer even when most of its words are theirs ("not quite right,
+    # because it moves when an element is SMALLER than the pivot"), so only a
+    # near-miss verdict keeps one.
+    reason = _content_words(_plain(parts[1]))
+    if _NEAR_MISS_RE.match(_plain(parts[0]).lstrip(" \"'")) and reason and _overlap(reason, reply_words) >= 0.6:
+        return sentence
     return parts[0].rstrip(" ,;:.!") + "."
 
 
@@ -999,6 +1072,94 @@ def _tidy(text: str) -> tuple[str, bool]:
     return re.sub(r"[ \t]{2,}", " ", out).strip(), dropped
 
 
+# ── A reply that only says the course does not cover it ──────────────────────
+#
+# Seen live: "This course doesn't cover that part." as a whole reply, as a
+# full explanation, and glued to the fallback question. The gate had found
+# the topic in the course each time. The node asks once more and then shows a
+# fixed message; the guard never keeps such a sentence as an opening.
+
+_COURSE_GAP_RE = re.compile(
+    r"\b(?:this|the|our)\s+course(?:\s+material)?\s+(?:doesn't|does\s+not|didn't|did\s+not|"
+    r"won't|will\s+not|can't|cannot)\s+(?:cover|explain|address|include)"
+    r"|\b(?:not|isn't|aren't)\s+(?:covered|included|addressed)\s+(?:in|by)\s+(?:this|the)\s+course\b"
+    # Missed live on 2026-10-12, shown as ordinary turns: "there is no mention or
+    # explanation of the travelling salesman problem" and "not explained in the
+    # provided material".
+    r"|\bthere(?:\s+is|'s)\s+no\s+(?:mention|explanation|information|discussion|coverage)"
+    r"(?:\s+or\s+\w+)?\s+of\b"
+    r"|\b(?:not|isn't|aren't)\s+(?:explained|covered|mentioned|discussed|described|included|addressed)"
+    r"\s+in\s+(?:this|the)\s+(?:provided\s+)?(?:course\s+)?(?:materials?|passages?|text|notes)\b",
+    re.IGNORECASE,
+)
+
+#: Lead-ins that only soften a gap sentence: "I must inform you that this course
+#: does not cover how binary search works" names three topic words, not four.
+_GAP_FILLER = frozenset({"inform", "sorry", "unfortunately", "afraid", "provided"})
+
+
+def _gap_extra_words(sentence: str) -> int | None:
+    """Content words beyond the "course doesn't cover" phrase, or None without one."""
+    plain = _plain(sentence)
+    m = _COURSE_GAP_RE.search(plain)
+    return len(_content_words(plain[: m.start()] + plain[m.end():]) - _GAP_FILLER) if m else None
+
+
+def _empty_gap_sentence(sentence: str) -> bool:
+    """
+    "This course doesn't cover that part." and nothing more: it names no part,
+    so it only contradicts the course check. "The course doesn't cover the C++
+    template syntax." names what is missing, as the retry asks, and stays.
+    """
+    extra = _gap_extra_words(sentence)
+    return extra is not None and extra <= 1
+
+
+def is_course_gap_reply(text: str | None) -> bool:
+    """
+    The reply says the course does not cover it and nothing else of substance:
+    at most one other sentence, and that one a question ("Which topic would
+    you like instead?"). An explanation that mentions a gap in passing is not
+    one.
+    """
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+|\n+", text or "") if s.strip()]
+
+    def bare_gap(sentence: str) -> bool:
+        # "...doesn't cover recursion in general, but it does show the base
+        # case: ..." says the gap and then teaches; only a sentence with
+        # nothing much beyond the gap phrase counts.
+        extra = _gap_extra_words(sentence)
+        return extra is not None and extra <= 3
+
+    gap = [s for s in sentences if bare_gap(s)]
+    others = [s for s in sentences if s not in gap]
+    return bool(gap) and len(others) <= 1 and all(_is_question(s) for s in others)
+
+
+def _letters_only(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
+#: The first two sentences of the out-of-corpus refusal, for spotting a copy.
+_REFUSAL_SENTENCES = tuple(
+    _letters_only(s) for s in re.split(r"(?<=[.!?])\s+", OUT_OF_CORPUS_REFUSAL) if s.strip()
+)[:2]
+
+
+def is_out_of_corpus_echo(text: str | None) -> bool:
+    """
+    The reply repeats the stock out-of-corpus refusal (either of its first two
+    sentences, ignoring case and punctuation). Seen live: the model copied it
+    from an earlier refusal in the conversation window as its answer to a
+    question the gate had passed. A reply opening with a refusal marker from
+    that window ("(declined: outside the course)") is a copy too.
+    """
+    if (text or "").lstrip().lower().startswith("(declined"):
+        return True
+    plain = _letters_only(text or "")
+    return bool(plain) and any(s in plain for s in _REFUSAL_SENTENCES)
+
+
 # ── Keeping the opening when the fallback fires ───────────────────────────────
 
 #: At most this many sentences are kept ahead of the fallback question.
@@ -1020,7 +1181,7 @@ def _kept_opening(original: list[str], surviving: list[str]) -> list[str]:
     kept: list[str] = []
     for before, after in zip(original, surviving, strict=False):
         plain = _plain(after)
-        if after != before or _is_question(after) or plain.endswith(":"):
+        if after != before or _is_question(after) or plain.endswith(":") or _COURSE_GAP_RE.search(plain):
             break
         kept.append(after)
         if len(kept) == _MAX_KEPT_SENTENCES:
@@ -1118,6 +1279,15 @@ def apply_guards(text: str, turn: TutorTurn) -> tuple[str, list[str]]:
 
     # 1. Only what they actually said.
     run(RULE_INVENTED_REFERENCE, lambda s: None if _invented_reference(s, turn, reply_words) else s)
+
+    # 0. No empty "this course doesn't cover that part" glued to the rest of
+    # a reply: the course check has just found the topic. (A reply that is
+    # only that is asked again in agents/tutor/nodes.py.)
+    if any(not _empty_gap_sentence(s) for s in _sentences(lines)):
+        run(RULE_COURSE_GAP, lambda s: None if _empty_gap_sentence(s) else s)
+
+    # 1a. No progress they have not made.
+    run(RULE_PROGRESS_CLAIM, lambda s: _without_progress_claim(s, turn, reply_words))
 
     # 1b. No pointing at passages they have never seen.
     run(RULE_SOURCE_REFERENCE, lambda s: None if _SOURCE_REFERENCE_RE.search(_plain(s)) else s)

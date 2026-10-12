@@ -56,13 +56,19 @@ from agents.tutor.output_guard import (
     PATH_REPLY,
     TutorTurn,
     guard_tutor_reply,
+    is_course_gap_reply,
+    is_out_of_corpus_echo,
 )
 from agents.tutor.plain_math import to_plain_math
 from agents.tutor.prompts import (
+    COURSE_GAP_MESSAGE,
+    COURSE_GAP_RETRY,
     DIRECT_ANSWER_DECLINE,
+    EXPLAIN_FROM_LEVEL,
     FULL_EXPLANATION_LEVEL,
     HINT_AFTER_LAST_MESSAGE,
     MAX_HINT_LEVEL,
+    MEMORY_RULES,
     OUT_OF_CORPUS_REFUSAL,
     TUTOR_TEMPERATURE,
     reply_instruction,
@@ -71,14 +77,18 @@ from agents.tutor.prompts import (
 from agents.tutor.query_resolution import (
     SOURCE_MESSAGE,
     SOURCE_PRIOR_TURN,
+    SOURCE_REWRITE,
     TURN_NEW_QUESTION,
     TURN_REPLY,
     classify_turn,
+    is_confusion,
     is_non_answer,
     is_pedagogy_skip_request,
     resolve_retrieval_query,
 )
+from agents.tutor.rewrite import rewrite_follow_up
 from agents.tutor.state import TutorState
+from core.config import TUTOR_GUARD
 from core.context_phrasing import (
     mentions_context,
     refers_to_learner_in_third_person,
@@ -105,6 +115,7 @@ _REFUSAL_MESSAGE = OUT_OF_CORPUS_REFUSAL
 def retrieve_context_node(
     state: TutorState,
     retrieval_service: RetrievalService,
+    gemini_flash=None,
 ) -> TutorState:
     """
     Resolve what to retrieve on, then retrieve the course context for it.
@@ -124,6 +135,8 @@ def retrieve_context_node(
     question = state["question"]
     resolved, source = resolve_retrieval_query(question, state.get("prior_question"))
     turn_kind = TURN_NEW_QUESTION if source == SOURCE_MESSAGE else classify_turn(question)
+    non_answer = turn_kind == TURN_REPLY and (is_non_answer(question) or is_confusion(question))
+    skip_requested = is_pedagogy_skip_request(question)
 
     if source != SOURCE_MESSAGE:
         # Lengths only: both texts are what the student typed.
@@ -137,13 +150,31 @@ def retrieve_context_node(
         )
 
     result = retrieval_service.retrieve(state["course_id"], resolved)
+    query = resolved
+
+    # A follow-up rewritten as the standalone question it stands for, from the
+    # conversation only (agents/tutor/rewrite.py). The better-scoring
+    # retrieval wins. A new question is still judged on its own text when that
+    # scores higher, and a rewrite holds only words the student typed, so it
+    # cannot pass what they did not ask; the off-topic controls stay refused.
+    rewritten = None
+    if gemini_flash is not None and not non_answer and not skip_requested:
+        rewritten = rewrite_follow_up(question, state.get("history") or [], gemini_flash)
+    if rewritten:
+        alt = retrieval_service.retrieve(state["course_id"], rewritten)
+        if (alt.top_score if not alt.is_empty() else 0.0) > (result.top_score if not result.is_empty() else 0.0):
+            result, query, source = alt, rewritten, SOURCE_REWRITE
+            if turn_kind == TURN_NEW_QUESTION:
+                resolved = rewritten  # the question this new ladder is about
     return {
         **state,
         "resolved_question": resolved,
+        "retrieval_query": query,
         "retrieval_query_source": source,
         "turn_kind": turn_kind,
-        "is_non_answer": turn_kind == TURN_REPLY and is_non_answer(question),
-        "pedagogy_skip_requested": is_pedagogy_skip_request(question),
+        # "I don't get it" counts with "no" and "I don't know": nothing to judge.
+        "is_non_answer": non_answer,
+        "pedagogy_skip_requested": skip_requested,
         "retrieval_result": {
             "query": result.query,
             "chunks": [asdict(c) for c in result.chunks],
@@ -277,6 +308,33 @@ def decline_direct_answer_node(
 
 # ── Node 4 (grounded path) ────────────────────────────────────────────────────
 
+def conversation_block(history: list[dict]) -> str:
+    """
+    The last turns of the conversation, oldest first, each wrapped as
+    untrusted data (the tutor's own earlier turns included: they are model
+    output). Capped per message and in number by core/config.py.
+    """
+    turns = []
+    for m in history[-TUTOR_GUARD.memory_turns:]:
+        label = "STUDENT" if m.get("role") == "student" else "TUTOR"
+        content = m.get("content") or ""
+        if m.get("is_refusal"):
+            label += " REFUSAL"
+            # What happened, not the fixed wording: the model copied the stock
+            # refusal from here word for word as its own answer (2026-10-13).
+            content = _REFUSAL_MARKERS.get(content.strip(), "(declined)")
+        turns.append(wrap_untrusted(content[:TUTOR_GUARD.memory_chars_per_turn], label))
+    return "The conversation so far, oldest first:\n" + "\n".join(turns)
+
+
+#: How an earlier refusal appears in the conversation window, by its fixed text.
+_REFUSAL_MARKERS = {
+    OUT_OF_CORPUS_REFUSAL: "(declined: outside the course)",
+    COURSE_GAP_MESSAGE: "(declined: not enough in the course material for that part)",
+    DIRECT_ANSWER_DECLINE: "(declined to hand over the answer; offered hints)",
+}
+
+
 def generate_guiding_question_node(
     state: TutorState,
     retrieval_service: RetrievalService,
@@ -325,7 +383,9 @@ def generate_guiding_question_node(
 
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
-    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
+    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN or (
+        state.get("retrieval_query_source") == SOURCE_REWRITE and state.get("turn_kind") != TURN_NEW_QUESTION
+    )
     # A pure "what is X?" opening (the service has ruled out graded work) gets
     # one definition sentence; hints and replies keep the normal ladder.
     definition = (
@@ -345,8 +405,12 @@ def generate_guiding_question_node(
             )
         parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
-        prompt = "\n\n".join(parts)
-        system = reply_instruction(bool(state.get("is_non_answer")), hint_level)
+        # A confused reply right after a full explanation (the tutor's last turn
+        # at Hint 3 or above) gets the explanation again, not a smaller question.
+        explain_again = (
+            bool(state.get("is_non_answer")) and state.get("tutor_last_level", hint_level) >= EXPLAIN_FROM_LEVEL
+        )
+        system = reply_instruction(bool(state.get("is_non_answer")), hint_level, explain_again=explain_again)
     else:
         # Labelled "The question", not "Student question": the label was
         # echoed back as "the student" in the reply.
@@ -359,7 +423,23 @@ def generate_guiding_question_node(
             parts.append(f"Your last message:\n{wrap_untrusted(last, 'YOUR LAST MESSAGE')}")
             system += "\n" + HINT_AFTER_LAST_MESSAGE
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
-        prompt = "\n\n".join(parts)
+
+    # The conversation so far, on every path, so a hint or a reply builds on
+    # what was actually said rather than guessing at it.
+    history = state.get("history") or []
+    if history:
+        parts.insert(0, conversation_block(history))
+        system += "\n" + MEMORY_RULES
+    prompt = "\n\n".join(parts)
+
+    def ask(instruction: str) -> str:
+        raw = gemini_pro.generate(
+            prompt,
+            temperature=TUTOR_TEMPERATURE,
+            system_instruction=instruction + "\n\n" + UNTRUSTED_CONTENT_NOTICE,
+        )
+        # Simple LaTeX becomes plain text first, since the chat does not render maths.
+        return strip_source_narration(strip_context_references(to_plain_math(raw)))
 
     raw_response = gemini_pro.generate(
         prompt,
@@ -379,6 +459,51 @@ def generate_guiding_question_node(
         path = PATH_HINT if is_hint else PATH_NEW_QUESTION
     cleaned = to_plain_math(raw_response)
     response = strip_source_narration(strip_context_references(cleaned))
+
+    # The model sometimes says the course does not cover a topic the gate has
+    # just found in it. Once more, told that the passages do cover it; if it
+    # still says so, a fixed message, counted as a refusal, and (for a hint)
+    # the ladder does not move. Logged by rule name only.
+    if is_course_gap_reply(response):
+        logger.info("[TUTOR-GUARD] rule=course_gap path=%s hint_level=%s", path, hint_level)
+        response = ask(system + "\n" + COURSE_GAP_RETRY)
+        if is_course_gap_reply(response):
+            logger.info("[TUTOR-GUARD] rule=course_gap_final path=%s hint_level=%s", path, hint_level)
+            return {
+                **state,
+                "response": COURSE_GAP_MESSAGE,
+                "citations": [asdict(c) for c in citations],
+                "pedagogy_trace": {
+                    **state.get("pedagogy_trace", {}),
+                    "grounded": True,
+                    "refused": True,
+                    "refusal_kind": "course_gap",
+                    "hint_level": hint_level,
+                    "is_full_explanation": hint_level >= FULL_EXPLANATION_LEVEL,
+                    "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+                    "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
+                },
+            }
+    # The model sometimes copies the out-of-corpus refusal it sees in the
+    # conversation window. It has declined the topic, so this is that refusal:
+    # no citations, and (tutoring/service.py) it opens no question.
+    if is_out_of_corpus_echo(response):
+        logger.info("[TUTOR-GUARD] rule=refusal_echo path=%s hint_level=%s", path, hint_level)
+        return {
+            **state,
+            "response": OUT_OF_CORPUS_REFUSAL,
+            "citations": [],
+            "pedagogy_trace": {
+                **state.get("pedagogy_trace", {}),
+                "grounded": True,
+                "refused": True,
+                "refusal_kind": "out_of_corpus",
+                "hint_level": hint_level,
+                "is_full_explanation": False,
+                "retrieval_query_source": state.get("retrieval_query_source", SOURCE_MESSAGE),
+                "turn_kind": state.get("turn_kind", TURN_NEW_QUESTION),
+            },
+        }
     # Both warnings below log only the rule, the path and the level, in the
     # same form as the output guard: never the reply, which can carry what the
     # student wrote, and never the session id.
@@ -414,6 +539,7 @@ def generate_guiding_question_node(
             is_non_answer=bool(state.get("is_non_answer")),
             definition_allowed=definition,
             previous_tutor_message=state.get("tutor_last_message") if (in_conversation or is_hint) else None,
+            student_messages=tuple(m.get("content") or "" for m in history if m.get("role") == "student"),
         ),
     )
 
@@ -451,9 +577,15 @@ def advance_hint_node(
     """
     new_level = min(state["hint_level"] + 1, MAX_HINT_LEVEL)
     state_with_level = {**state, "hint_level": new_level}
-    return generate_guiding_question_node(
+    out = generate_guiding_question_node(
         state_with_level, retrieval_service, gemini_pro, is_hint=True
     )
+    if out.get("pedagogy_trace", {}).get("refusal_kind") in ("course_gap", "out_of_corpus"):
+        # A refusal is not a hint: the ladder stays where it was, so the
+        # student can ask again rather than lose the rung.
+        out = {**out, "hint_level": state["hint_level"],
+               "pedagogy_trace": {**out["pedagogy_trace"], "hint_level": state["hint_level"]}}
+    return out
 
 
 # ── Node 6 ────────────────────────────────────────────────────────────────────

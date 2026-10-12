@@ -97,17 +97,82 @@ class _FakeLiveModel:
 
 def test_live_mode_wiring_checks_score_ordering(monkeypatch):
     import main
+    from core.config import settings
     from eval.suites.grading_checks import run
 
+    monkeypatch.setattr(settings, "llm_provider", "gemini")  # live runs only on Gemini
     monkeypatch.setattr(main, "_build_llm_clients", lambda: (_FakeLiveModel(), None))
     live = asyncio.run(run(live=True))
     assert live.metrics["mode"] == "live"
     assert isinstance(live.metrics["score_ordering"], dict)
     assert all(live.metrics["score_ordering"].values()), live.metrics["score_ordering"]
     assert live.status == "pass"
+    assert live.metrics["live_calls"] == 12  # 6 answered cases, graded twice; blanks make no call
+    assert live.metrics["live_stopped_early"] is None
+
+
+class _FailingLiveModel(_FakeLiveModel):
+    """Fails on the third call, like a daily quota."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
+        self.calls += 1
+        if self.calls >= 3:
+            raise RuntimeError("quota exhausted")
+        return super().generate_deterministic(prompt, system_instruction)
+
+
+def test_live_mode_stops_at_the_first_failure_without_retrying(monkeypatch):
+    import main
+    from core.config import settings
+    from eval.suites.grading_checks import run
+
+    model = _FailingLiveModel()
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (model, None))
+    live = asyncio.run(run(live=True))
+    assert model.calls == 3  # nothing reaches the model after the failure
+    assert live.metrics["live_stopped_early"].startswith("RuntimeError")
+    assert live.metrics["score_ordering"] == "not measured (stopped early)"
+    assert live.status == "fail"
+
+
+def test_live_mode_refuses_a_provider_other_than_gemini(monkeypatch):
+    import main
+    from eval.suites.grading_checks import run
+
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (_FakeLiveModel(), None))
+    live = asyncio.run(run(live=True))  # tests pin LLM_PROVIDER=mock
+    assert live.status == "skipped"
 
 
 def test_registered_in_the_runner():
     from eval.runner import SUITES
 
     assert SUITES["grading-checks"] == "eval.suites.grading_checks"
+
+
+class _CitingLiveModel(_FakeLiveModel):
+    """Like a real model: it quotes the evidence in its citations."""
+
+    def generate_deterministic(self, prompt: str, system_instruction: str = "") -> str:
+        out = json.loads(super().generate_deterministic(prompt, system_instruction))
+        for c in out["criterion_scores"]:
+            c["citations"] = [{"quoted_text": "The index i starts at low - 1", "source_file": "sorting_lab_guide.md",
+                               "page_or_slide": 1}]
+        return json.dumps(out)
+
+
+def test_live_mode_handles_citations_that_quote_the_evidence(monkeypatch):
+    # The first live run stopped here: the fixture's evidence lacked the
+    # "confidence" key that real retrieval provides and citations look up.
+    import main
+    from core.config import settings
+    from eval.suites.grading_checks import run
+
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(main, "_build_llm_clients", lambda: (_CitingLiveModel(), None))
+    live = asyncio.run(run(live=True))
+    assert live.status == "pass", live.headline

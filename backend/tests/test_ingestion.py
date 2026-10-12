@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from agents.ingestion.graph import build_ingestion_graph
 from agents.ingestion.nodes import (
-    _MAX_FILE_BYTES,
     build_hierarchy_node,
     chunk_and_embed_node,
     parse_content_node,
@@ -72,6 +71,17 @@ def test_validate_accepts_supported_file():
     assert out["status"] == "running"
 
 
+def test_validate_accepts_a_type_with_parameters_the_upload_accepted():
+    """
+    The upload route ignores parameters ("text/plain; charset=utf-8" is a
+    text file) but this node compared the whole string, so the same file was
+    accepted at upload and then failed as "Unsupported file type".
+    """
+    f = {**_txt("a.txt", "hi"), "mime_type": "text/plain; charset=utf-8"}
+    out = validate_files_node(_state(files=[f]))
+    assert out["status"] == "running"
+
+
 def test_validate_rejects_unsupported_mime():
     bad = {"filename": "a.exe", "content": b"x", "mime_type": "application/x-msdownload"}
     out = validate_files_node(_state(files=[bad]))
@@ -80,8 +90,23 @@ def test_validate_rejects_unsupported_mime():
 
 
 def test_validate_rejects_oversized_file():
-    big = {"filename": "a.txt", "content": b"x" * (_MAX_FILE_BYTES + 1), "mime_type": "text/plain"}
+    from core.config import settings
+
+    big = {"filename": "a.txt", "content": b"x" * (settings.max_upload_bytes + 1), "mime_type": "text/plain"}
     out = validate_files_node(_state(files=[big]))
+    assert out["status"] == "failed"
+    assert "too large" in out["error"].lower()
+
+
+def test_validate_follows_the_configured_upload_limit(monkeypatch):
+    """
+    The node had its own 50 MB constant: change MAX_UPLOAD_BYTES and a file
+    the upload route accepted could still fail here, or the reverse.
+    """
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "max_upload_bytes", 10)
+    out = validate_files_node(_state(files=[_txt("a.txt", "x" * 11)]))
     assert out["status"] == "failed"
     assert "too large" in out["error"].lower()
 
@@ -174,6 +199,20 @@ def test_ollama_outline_spans_the_whole_document_within_budget():
     assert "EXPERIMENT 7: Dijkstra's Algorithm" in outline   # a heading on page 250
     assert "talks about transformers" not in outline         # prose, not a heading
     assert "worked example" not in outline.split("Dijkstra's Algorithm")[0]
+
+
+def test_gemini_outline_reaches_headings_past_the_first_32k_chars():
+    """
+    The Gemini path sent only the first 32,000 characters: for a long book
+    that is a few pages, so the outline knew chapter 1 and nothing else. It now
+    sends the same whole-document outline as Ollama, in the same budget.
+    """
+    gp = MagicMock()
+    gp.generate.return_value = json.dumps(HIERARCHY)
+    build_hierarchy_node(_state(parsed_content=_book()), gp)
+    prompt = gp.generate.call_args.args[0]
+    assert "EXPERIMENT 7: Dijkstra's Algorithm" in prompt  # a heading on page 250
+    assert gp.generate.call_args.kwargs == {"temperature": 0.3}
 
 
 def test_ollama_outline_falls_back_to_leading_text_without_structure():
@@ -294,7 +333,7 @@ def test_chunk_and_embed_produces_overlapping_chunks():
     assert passed_course_id == course_id
     # 1000 chars, window 400, stride 340 -> windows at 0, 340, 680 => 3 chunks
     assert len(chunks) == 3
-    assert out["chunks"][0]["chunk_id"] == f"{course_id}_a.txt_1_0"
+    assert out["chunks"][0]["chunk_id"] == f"{course_id}_0_a.txt_1_0"
 
 
 def test_chunk_and_embed_empty_content_adds_nothing():
@@ -369,6 +408,70 @@ async def test_ingestion_graph_end_to_end(seeded):
     retrieval.add_chunks.assert_called_once()
     course = (await db.execute(select(Course).where(Course.id == course_id))).scalar_one()
     assert course.status == "ready"
+
+
+async def test_a_text_file_is_cited_without_a_page_end_to_end(seeded):
+    """
+    A .txt has no pages. Its chunks are stored with page -1 (Chroma metadata),
+    and retrieval used to hand the -1 back, so every citation read "page -1"
+    and the prompt said "p.-1". Upload to citation, through the real
+    retrieval service on an in-memory Chroma.
+    """
+    import chromadb
+
+    from core.mock_gemini import MockGeminiProClient
+    from retrieval.service import RetrievalService
+
+    db, course_id, job_id = seeded
+    retrieval = RetrievalService(
+        chroma_client=chromadb.EphemeralClient(), gemini_client=MockGeminiProClient()
+    )
+    gemini_pro = MagicMock()
+    gemini_pro.generate.return_value = json.dumps(HIERARCHY)
+    graph = build_ingestion_graph(retrieval_service=retrieval, gemini_pro=gemini_pro, db=db)
+    final = await graph.ainvoke(_state(
+        course_id=course_id,
+        job_id=job_id,
+        files=[_txt("notes.txt", "Binary search halves the sorted range at every step.")],
+    ))
+    assert final["status"] == "complete"
+
+    result = retrieval.retrieve(course_id, "how does binary search halve the sorted range")
+    assert result.chunks
+    assert all(c.page_or_slide is None for c in result.chunks)
+    assert all(c.page_or_slide is None for c in retrieval.build_citation_bundle(result))
+    assert "p.-1" not in retrieval.build_context_window(result, token_budget=1000)
+
+
+async def test_two_files_with_the_same_name_are_both_indexed(seeded):
+    """
+    Chunk ids were course + file name + page + index, so two uploads named
+    notes.txt produced the same ids, and the one upsert batch was refused
+    (Chroma rejects repeated ids in a batch): the whole ingestion failed. The
+    file's position in the upload now keeps the ids apart.
+    """
+    import chromadb
+
+    from core.mock_gemini import MockGeminiProClient
+    from retrieval.service import RetrievalService
+
+    db, course_id, job_id = seeded
+    retrieval = RetrievalService(
+        chroma_client=chromadb.EphemeralClient(), gemini_client=MockGeminiProClient()
+    )
+    gemini_pro = MagicMock()
+    gemini_pro.generate.return_value = json.dumps(HIERARCHY)
+    graph = build_ingestion_graph(retrieval_service=retrieval, gemini_pro=gemini_pro, db=db)
+    first, second = "Binary search halves the sorted range.", "Merge sort splits the list in two."
+    final = await graph.ainvoke(_state(
+        course_id=course_id,
+        job_id=job_id,
+        files=[_txt("notes.txt", first), _txt("notes.txt", second)],
+    ))
+    assert final["status"] == "complete"
+
+    found = {c.text for c in retrieval.retrieve(course_id, "binary search merge sort").chunks}
+    assert {first, second} <= found
 
 
 async def test_persist_logs_carry_no_outline_names(seeded, caplog):

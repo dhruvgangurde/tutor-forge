@@ -23,7 +23,7 @@ Authorization:
 
 Error handling:
   - HTTPException is raised only in the router layer.
-  - Business logic raises ValueError; core/exceptions.py converts to 400.
+  - A ValueError no route catches is a 500 with a fixed message (core/exceptions.py).
 """
 
 import json
@@ -518,6 +518,13 @@ async def submit_assessment(
                 status_code=400,
                 detail=f"question_id {resp_item.question_id} does not belong to this assessment.",
             )
+    # The grader's maximum is summed over the rows sent, so a question left out
+    # would raise the percentage. Repeats are already a 422 (SubmitRequest).
+    if {r.question_id for r in body.responses} != valid_question_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="Please answer or skip every question before submitting.",
+        )
 
     # ── Persist submission ────────────────────────────────────────────────────
     submission = Submission(

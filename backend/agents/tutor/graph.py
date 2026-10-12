@@ -66,6 +66,7 @@ def build_tutor_graph(
     gemini_pro,
     langfuse,
     mode: str = "chat",  # "chat" | "hint"
+    gemini_flash=None,  # chat only: rewrites a follow-up for retrieval; None skips it
 ):
     """
     Build and compile the tutor graph.
@@ -75,7 +76,14 @@ def build_tutor_graph(
     """
     builder = StateGraph(TutorState)
 
-    builder.add_node("retrieve_context", partial(retrieve_context_node, retrieval_service=retrieval_service))
+    builder.add_node(
+        "retrieve_context",
+        partial(
+            retrieve_context_node,
+            retrieval_service=retrieval_service,
+            gemini_flash=gemini_flash if mode == "chat" else None,
+        ),
+    )
     builder.add_node("check_groundedness", partial(check_groundedness_node, retrieval_service=retrieval_service))
     builder.add_node("refuse", refuse_node)
     builder.add_node(

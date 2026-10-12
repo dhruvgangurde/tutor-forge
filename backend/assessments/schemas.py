@@ -353,6 +353,14 @@ class SubmitRequest(BaseModel):
         min_length=1, max_length=MAX_SUBMISSION_ANSWERS
     )
 
+    @model_validator(mode="after")
+    def one_answer_per_question(self) -> "SubmitRequest":
+        # Each row is graded on its own, so a repeat would score a question twice.
+        ids = [r.question_id for r in self.responses]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each question can be answered only once; one was sent more than once.")
+        return self
+
 
 # ── Response: submission acknowledgement ──────────────────────────────────────
 

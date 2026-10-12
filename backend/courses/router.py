@@ -109,11 +109,22 @@ async def upload_course(
         )
 
     file_data = []
+    total = 0
     for uf in files:
         ext = "." + (uf.filename or "").rsplit(".", 1)[-1].lower()
         if ext not in _ALLOWED_EXTENSIONS:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {uf.filename}")
         content = await read_upload_capped(uf, settings.max_upload_bytes)
+        # Every file is held in memory until ingestion ends, so cap them together too.
+        total += len(content)
+        if total > settings.max_upload_total_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"These files add up to more than {settings.max_upload_total_bytes // (1024 * 1024)} MB. "
+                    "Upload fewer files at a time."
+                ),
+            )
         # The extension alone proves nothing: the declared type and the bytes
         # themselves must agree with it (audit #7a).
         mismatch = content_mismatch(uf.filename or "", ext, uf.content_type, content)

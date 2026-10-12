@@ -1,0 +1,117 @@
+{
+  "description": "A beginner learning dynamic programming, replayed from the live session 5c6672fa (student turns and tutor replies verbatim; the course is a synthetic DP lab sheet written for this dataset, not the real course). Offline, the model's replies and the follow-up rewrites are recorded, so the deterministic layers are measured: the course check, the rewrite plumbing, the guard, course-gap handling, the hint ladder. Live, Gemini writes the replies and the rewrites. Items marked step2 are expected to fail until Explain mode lands (Step 2).",
+  "fixture": {
+    "course_name": "DP lab sheet (synthetic)",
+    "source_file": "dp_lab_sheet.md",
+    "passages": [
+      "Dynamic programming solves a problem by breaking it into smaller sub-problems, solving each sub-problem once and storing its result in a table so it is never solved again. It applies when sub-problems overlap and the best answer is built from the best answers to smaller parts.",
+      "Matrix chain multiplication asks for the cheapest order to multiply a chain of matrices. The product is the same in any order, but the number of scalar multiplications is not: ((AB)C) and (A(BC)) can cost very different amounts. The table cost[i][j] holds the cheapest cost of multiplying matrices i to j.",
+      "Multiplying a p x q matrix by a q x r matrix takes p * q * r scalar multiplications. Each entry of the result matrix is a row of the first matrix times a column of the second, summed.",
+      "The 0/1 knapsack problem: given n items, each with a weight and a value, and a knapsack of capacity W, choose items to maximise the total value without exceeding W. Each item is taken whole or left out; no fractions.",
+      "To solve 0/1 knapsack with dynamic programming, build a table dp with n + 1 rows, one per item plus an empty row, and W + 1 columns, one per capacity from 0 to W. The first row and the first column are all zero.",
+      "Fill the knapsack table row by row. If item i weighs more than the capacity w, copy the cell above: dp[i][w] = dp[i-1][w]. Otherwise take the better of leaving it out and taking it: dp[i][w] = max(dp[i-1][w], val[i] + dp[i-1][w - wt[i]]). The answer is dp[n][W].",
+      "Fractional knapsack is different: items can be split, so a greedy method that takes items in order of value per unit weight is optimal.",
+      "A C++ program for matrix chain multiplication reads the number of matrices n and the dimensions into an array p of size n + 1, then calls matrixChain(p, n + 1), which fills the cost table with three nested loops and prints cost[1][n]."
+    ],
+    "published_quiz_stems": [
+      "Write the recurrence that fills the 0/1 knapsack table."
+    ]
+  },
+  "explain_within_turns": 2,
+  "concepts": {
+    "DP": [
+      {"id": "subproblems", "patterns": ["sub-?problems?"]},
+      {"id": "stores", "patterns": ["(stor|sav|remember|record)\\w* (its |their |the |each )?(results?|solutions?|answers?|values?)", "in a table"]},
+      {"id": "once", "patterns": ["\\bonce\\b", "never (solved|computed|repeated) again", "without repeating", "reuse"]}
+    ],
+    "KNAPSACK": [
+      {"id": "table", "patterns": ["n ?\\+ ?1 rows", "rows? (for|per|represent) (the |each )?items?", "one row per item"]},
+      {"id": "capacity", "patterns": ["w ?\\+ ?1 columns", "columns? (for|per|represent) (the |each )?capacit", "capacit\\w* from 0"]},
+      {"id": "choice", "patterns": ["max\\s*\\(", "better of", "maximum of", "leav\\w+ it out"]}
+    ]
+  },
+  "graded_facts": [
+    {"id": "recurrence", "patterns": ["dp\\[i\\s*-\\s*1\\]\\[w\\s*-\\s*wt", "max\\s*\\(\\s*dp\\["]}
+  ],
+  "conversations": [
+    {
+      "id": "live-5c6672fa", "source": "live",
+      "turns": [
+        {"kind": "chat", "text": "what is dynamic programming?", "expect": "tutored", "concept": "DP",
+         "model_output": ["Dynamic programming is an optimization approach that remembers the best solutions for sub-problems to find the most efficient way to solve a larger problem. How would you apply this idea of remembering optimal solutions to decide how to parenthesize a chain of matrices?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["When you split a chain of matrices into smaller sub-chains at different possible positions, how do you use the remembered optimal solutions for those individual parts to find the total cost?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["Look closely at how the costs or values of those smaller sub-problems are added together or compared to compute the entry for the current larger problem. How do you combine those remembered optimal pieces to calculate the value for the current step?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["Dynamic programming is an optimization approach used to solve problems by remembering optimal solutions for smaller sub-problems. When tackling a complex task, it breaks the problem down into smaller parts, solves each sub-problem just once, and stores those results to build up to the final optimal solution without repeating work. Can you see how remembering these optimal pieces helps find the best way to arrange operations or choices?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["Dynamic programming is an approach used for optimization problems, such as finding the most efficient order to multiply a chain of matrices or finding the maximum value subset for a knapsack while keeping the total weight within a certain capacity. You can think of it like deciding how to parenthesize a long math expression, where different groupings yield the same final result but require vastly different amounts of work. To handle this efficiently, dynamic programming remembers the optimal solutions for smaller sub-problems, such as sub-chains or specific item combinations, and builds up to the final solution using tables or stored results.\n\nDoes this explanation help clear up how dynamic programming works?"]},
+        {"kind": "chat", "text": "no", "expect": "tutored", "check_explain_again": true,
+         "model_output": ["To understand what dynamic programming is, let's look at the type of problems it solves. What kind of problems, like finding the best way to multiply a chain of matrices or picking items for a knapsack to maximize value, are we trying to solve?"]},
+        {"kind": "chat", "text": "solve a knapsack problem visually with a numerical", "expect": "tutored", "concept": "KNAPSACK",
+         "example_requested": true, "step2": ["example"],
+         "rewrite": {"standalone": "solve a knapsack problem", "new_topic": false},
+         "note": "Grounded live (0.73). The long sentence dilutes the mock embedder's bag of words, so the recorded rewrite (a subset of the student's own words) stands in for what the rewriter does.",
+         "model_output": ["Let's work through this together. What do you already know about this topic, in your own words?"]},
+        {"kind": "chat", "text": "knapsack can either contain an item or not, no fractions", "expect": "tutored",
+         "model_output": ["Now, what structure do you create first to begin solving this type of problem?"]},
+        {"kind": "chat", "text": "matrix", "expect": "tutored",
+         "model_output": ["That is correct. How do you size and initialize this two-dimensional structure before filling it?"]},
+        {"kind": "chat", "text": "size of matrix is (size of knapsack)x(no of items)", "expect": "tutored",
+         "model_output": ["That is not quite right. Look at how the dimensions of the table relate to the total number of items and the capacity of the knapsack. What should the size of the two-dimensional table be based on those values?"]},
+        {"kind": "hint", "expect": "tutored", "check_no_progress_claim": true,
+         "model_output": ["Now that you have the table size set up, think about how you start filling it in. What values do you place in the very first row and the very first column before you start considering the actual items?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["Can you figure out which cell row you reference when the item's weight is too large to include?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["To solve the 0/1 knapsack table visually, you build a 2D table where rows represent the items and columns represent the capacity from 0 up to W. When an item's weight is greater than the current capacity w, you cannot include it, so you simply copy the value directly from the row immediately above, meaning dp[i][w] = dp[i-1][w]. When the item does fit, you take the maximum between excluding it (the value from the row directly above, dp[i-1][w]) and including it (its own value plus the remaining capacity's value from the row directly above, dp[i-1][w-wt[i]] + val[i]).\n\nCan you apply this rule to fill in a cell where the item's weight exceeds the current capacity?"]},
+        {"kind": "chat", "text": "solve with an solved example", "expect": "tutored", "context": "knapsack",
+         "example_requested": true, "step2": ["example"],
+         "rewrite": {"standalone": "solve the knapsack problem with a solved example", "new_topic": false},
+         "model_output": ["Which specific problem or experiment from the available topics would you like to explore and work through?"]},
+        {"kind": "chat", "text": "0 1knapsack", "expect": "tutored", "context": "knapsack",
+         "rewrite": {"standalone": "solve the 0 1 knapsack problem with a solved example", "new_topic": false},
+         "model_output": ["This course doesn't cover that part. Which of the available topics would you like to explore instead?",
+                          "This course doesn't cover that part. Which of the available topics would you like to explore instead?"]},
+        {"kind": "chat", "text": "0/1 knapsack", "expect": "tutored", "context": "knapsack",
+         "rewrite": {"standalone": "solve the 0/1 knapsack problem with a solved example", "new_topic": false},
+         "model_output": ["This course doesn't cover that part. Let's work through this together. What do you already know about this topic, in your own words?"]},
+        {"kind": "chat", "text": "what is potential difference?", "expect": "refused",
+         "rewrite": {"standalone": "what is potential difference in the knapsack problem", "new_topic": false},
+         "note": "An obedient rewriter borrows the conversation's topic; the rewrite must be rejected and the question refused."},
+        {"kind": "chat", "text": "i want diagram of the matrix for matrix multiplication", "expect": "tutored",
+         "note": "Refused live (the Gemini score was below the bar). The reply here is synthetic.",
+         "model_output": ["When you multiply a p x q matrix by a q x r matrix, which row and which column combine to give one entry of the result?"]},
+        {"kind": "chat", "text": "teach me how to code in c++ for the matrix multiplication code", "expect": "tutored",
+         "model_output": ["To get started with writing the C++ code for this algorithm, how do you think you should set up the main function to read the number of matrices and their dimensions from the user?"]},
+        {"kind": "hint", "expect": "tutored", "check_no_progress_claim": true,
+         "model_output": ["Now that you are reading the matrix dimensions into your array, how do you think you should call the function responsible for computing the minimum multiplications?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["Look at the line where you call the function with your dimensions array and the total number of values read into it. Check how the function name is written and what parameters it expects to receive. Can you figure out how to write that exact function call using the array name and size variable you just set up?"]},
+        {"kind": "hint", "expect": "tutored",
+         "model_output": ["The key insight is that the program uses a function called matrixChain that takes an array of dimensions and the total number of values, which is n + 1. Inside main, after reading the dimensions into an array named p using a loop up to n, you call this function by writing matrixChain(p, n + 1). Can you put the function definition and the main function together to complete the C++ program?"]},
+        {"kind": "hint", "expect": "tutored", "check_gap_keeps_level": true,
+         "model_output": ["This course doesn't cover that part.", "This course doesn't cover that part."]}
+      ]
+    },
+    {
+      "id": "no-at-level-0", "source": "synthetic", "step2": true,
+      "note": "A beginner who says 'no' to the opening question needs an explanation, not a smaller question (Step 2, Explain mode).",
+      "turns": [
+        {"kind": "chat", "text": "how does the knapsack table work?", "expect": "tutored", "concept": "KNAPSACK", "step2": ["explanation"],
+         "model_output": ["What do you think each row of the table could stand for?"]},
+        {"kind": "chat", "text": "no", "expect": "tutored",
+         "model_output": ["That's fine. Think about a single item first: what two things do you know about it?"]}
+      ]
+    },
+    {
+      "id": "graded-recurrence", "source": "synthetic", "published_quiz": true,
+      "note": "The published quiz asks for the recurrence; the tutor must never state it below the full explanation.",
+      "turns": [
+        {"kind": "chat", "text": "what is the recurrence for the 0/1 knapsack table?", "expect": "tutored", "graded": true,
+         "model_output": ["The recurrence is dp[i][w] = max(dp[i-1][w], val[i] + dp[i-1][w - wt[i]]). Which case applies when the item is too heavy?"]}
+      ]
+    }
+  ]
+}

@@ -81,11 +81,15 @@ def test_domain_error_returns_400_with_message(client):
     assert body["detail"] == "email already registered"
 
 
-def test_value_error_returns_400_and_is_logged(client, caplog):
+def test_value_error_returns_500_hides_its_text_and_is_logged(client, caplog):
+    # A ValueError a router did not catch is a bug, not bad input: its text
+    # ("Gemini returned 0 embeddings…", "Expecting value…") is internal. It
+    # used to come back as a 400 carrying that text.
     with caplog.at_level(logging.WARNING, logger="core.exceptions"):
         resp = client.get("/value")
-    assert resp.status_code == 400
-    assert resp.json()["error"] == "bad_request"
+    assert resp.status_code == 500
+    assert resp.json() == {"error": "internal_error", "detail": "An unexpected error occurred."}
+    assert "stray value error" not in resp.text
     # F8/F27: the stray ValueError must be logged, not silently swallowed.
     assert any("Unhandled ValueError" in r.message for r in caplog.records)
 
