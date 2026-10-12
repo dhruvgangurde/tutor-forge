@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from agents.ingestion.state import IngestionState
 from core.config import settings
 from core.prompt_safety import UNTRUSTED_CONTENT_NOTICE, wrap_untrusted
+from courses.file_types import base_mime
 from retrieval.models import Chunk
 
 if TYPE_CHECKING:
@@ -48,7 +49,7 @@ def validate_files_node(state: IngestionState) -> IngestionState:
     upload route's own (settings.max_upload_bytes), so the two cannot disagree.
     """
     for f in state["files"]:
-        if f["mime_type"] not in _ALLOWED_MIME:
+        if base_mime(f["mime_type"]) not in _ALLOWED_MIME:
             return {**state, "status": "failed",
                     "error": f"Unsupported file type: {f['mime_type']} for {f['filename']}"}
         if len(f["content"]) > settings.max_upload_bytes:
@@ -72,7 +73,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
     course_id = state["course_id"]
 
     for file_index, f in enumerate(state["files"]):
-        mime = f["mime_type"]
+        mime = base_mime(f["mime_type"])
         raw = f["content"]
         filename = f["filename"]
 

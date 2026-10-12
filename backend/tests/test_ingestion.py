@@ -71,6 +71,17 @@ def test_validate_accepts_supported_file():
     assert out["status"] == "running"
 
 
+def test_validate_accepts_a_type_with_parameters_the_upload_accepted():
+    """
+    The upload route ignores parameters ("text/plain; charset=utf-8" is a
+    text file) but this node compared the whole string, so the same file was
+    accepted at upload and then failed as "Unsupported file type".
+    """
+    f = {**_txt("a.txt", "hi"), "mime_type": "text/plain; charset=utf-8"}
+    out = validate_files_node(_state(files=[f]))
+    assert out["status"] == "running"
+
+
 def test_validate_rejects_unsupported_mime():
     bad = {"filename": "a.exe", "content": b"x", "mime_type": "application/x-msdownload"}
     out = validate_files_node(_state(files=[bad]))
