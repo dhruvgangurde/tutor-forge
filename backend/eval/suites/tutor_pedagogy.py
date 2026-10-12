@@ -124,6 +124,34 @@ def _repeats_previous(text: str | None, previous: str | None, question: str) -> 
     return any(_is_question(s) and _repeats_question(s, earlier, topic) for s in _sentences(text))
 
 
+def _definition_grounded(text: str | None, question: str, passages: str) -> bool:
+    """A reply's first sentence is grounded by the guard's own measure (agents/tutor/output_guard.py)."""
+    from agents.tutor.output_guard import _claim_words, _plain
+    from core.config import TUTOR_GUARD
+
+    first = (_sentences(text) or [""])[0]
+    words = _claim_words(_plain(first)) - _claim_words(question)
+    return bool(words) and len(words & _claim_words(passages)) / len(words) >= TUTOR_GUARD.definition_grounded_share
+
+
+def _definition_fields(shown: str, question: str, definition: dict, passages: str, live: bool) -> dict:
+    """
+    expected "kept": the definition must be shown; "removed": it must not be;
+    "grounded": one may be shown only when it is grounded in the retrieved
+    passages (the recorded, ungrounded one is removed; a live model may write
+    its own). Offline the recorded sentence is looked for; live, any opening
+    statement that names the term counts as a definition.
+    """
+    kept = _definition_given(shown, question) if live else contains(shown, definition["sentence"])
+    fields = {"definition_expected": definition["expected"], "definition_kept": kept}
+    if definition["expected"] == "grounded":
+        fields["definition_grounded"] = kept and _definition_grounded(shown, question, passages)
+        fields["definition_ok"] = not kept or fields["definition_grounded"]
+    else:
+        fields["definition_ok"] = kept == (definition["expected"] == "kept")
+    return fields
+
+
 def _definition_given(text: str | None, question: str) -> bool:
     """Live: the reply opens with a statement naming the term of a "what is X?" question."""
     from agents.tutor.output_guard import _content_words, _is_question
@@ -327,10 +355,7 @@ async def _run_probe(probe: dict, data: dict, retrieval, course_id: uuid.UUID, l
         else:
             row["repeat_survived"] = contains(shown, probe["repeated_question"])
     if definition:
-        row["definition_expected"] = definition["expected"]
-        row["definition_kept"] = (
-            _definition_given(shown, question_text) if live else contains(shown, definition["sentence"])
-        )
+        row.update(_definition_fields(shown, question_text, definition, _guard_passages(final), bool(live)))
     row["gate_ok"] = (
         not row["refused"]
         and not row["leak"]
@@ -436,11 +461,9 @@ async def _run_conversation(
                 else:
                     row["repeat_survived"] = contains(shown, turn["repeated_question"])
             if turn.get("definition"):
-                row["definition_expected"] = turn["definition"]["expected"]
-                row["definition_kept"] = (
-                    _definition_given(shown, question_text) if live
-                    else contains(shown, turn["definition"]["sentence"])
-                )
+                row.update(_definition_fields(
+                    shown, question_text, turn["definition"], _guard_passages(final), bool(live)
+                ))
             if shown and not row["refused"]:
                 last_shown = shown
             rows.append(row)
@@ -647,10 +670,11 @@ def _result(
     removed_as_expected = sum(
         1 for r in definition_rows if r["definition_expected"] == "removed" and not r["definition_kept"]
     )
+    grounded_as_expected = sum(
+        1 for r in definition_rows if r["definition_expected"] == "grounded" and r["definition_ok"]
+    )
     definition_mismatch = [
-        r.get("id") or f"{r['conversation']}#{r['turn']}"
-        for r in definition_rows
-        if r["definition_kept"] != (r["definition_expected"] == "kept")
+        r.get("id") or f"{r['conversation']}#{r['turn']}" for r in definition_rows if not r["definition_ok"]
     ]
 
     mcq = [r for r in gen_rows if r["type"] == "mcq"]
@@ -689,6 +713,7 @@ def _result(
         "definition_cases": len(definition_rows),
         "definition_kept_as_expected": kept_as_expected,
         "definition_removed_as_expected": removed_as_expected,
+        "definition_grounded_as_expected": grounded_as_expected,
         "definition_mismatches": definition_mismatch,
         "mcq_items": len(mcq),
         "mcq_keys_supported": sum(1 for r in mcq if r["key_supported"]),
@@ -731,7 +756,7 @@ def _result(
     def shows_gap(r: dict) -> bool:
         return bool(
             r.get("leak") or r.get("repeat_survived") or r.get("agrees") is False
-            or ("definition_expected" in r and r["definition_kept"] != (r["definition_expected"] == "kept"))
+            or r.get("definition_ok") is False
         )
 
     gaps = sorted({r["known_gap"] for r in probes + turns + gen_rows if r.get("known_gap") and shows_gap(r)})
