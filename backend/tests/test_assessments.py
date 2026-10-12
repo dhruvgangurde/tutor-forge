@@ -1208,6 +1208,40 @@ async def test_submit_invalid_choice_still_rejected_with_string_detail(
 
 
 @pytest.mark.asyncio
+async def test_submit_with_a_question_twice_is_422_and_saves_nothing(
+    client, student_token, ready_course_id
+):
+    """
+    A repeated question id was graded once per row, so a correct answer sent
+    twice for a 1-point question earned 2 out of 2. The browser never sends
+    duplicates; the API must refuse them.
+    """
+    from sqlalchemy import select as _select
+
+    from db.models import Submission
+
+    aid, qids = await _seed_published_assessment(ready_course_id, n_questions=2)
+    resp = await client.post(
+        f"/assessments/{aid}/submit",
+        json={"responses": [
+            {"question_id": str(qids[0]), "answer_choice": "A"},
+            {"question_id": str(qids[0]), "answer_choice": "A"},
+            {"question_id": str(qids[1]), "answer_choice": "B"},
+        ]},
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["error"] == "validation_error"
+    assert "more than once" in body["detail"]
+    async with _TestSessionFactory() as db:
+        saved = (
+            await db.execute(_select(Submission).where(Submission.assessment_id == aid))
+        ).scalars().all()
+    assert saved == []
+
+
+@pytest.mark.asyncio
 async def test_teacher_list_reports_real_question_count(
     client, teacher_token, ready_course_id
 ):
