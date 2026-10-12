@@ -19,6 +19,8 @@ from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.limits import MAX_UPLOAD_TOTAL_BYTES
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -200,10 +202,11 @@ class Settings(BaseSettings):
     security_headers_enabled: bool = True
 
     # ── Uploads (F15) ─────────────────────────────────────────────────────────
-    # Per-file cap enforced during read (bounded memory; oversized => 413) and a
-    # cap on the number of files per request.
+    # Per-file cap enforced during read (bounded memory; oversized => 413), a
+    # cap on the number of files per request, and one on all files together.
     max_upload_bytes: int = 50 * 1024 * 1024   # 50 MB
     max_upload_files: int = 20
+    max_upload_total_bytes: int = MAX_UPLOAD_TOTAL_BYTES   # 100 MB
 
     # ── LLM provider selection ────────────────────────────────────────────────
     # Replaces the old binary USE_MOCK_GEMINI flag with an explicit three-way

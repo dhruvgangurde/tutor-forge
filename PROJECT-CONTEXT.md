@@ -335,7 +335,7 @@ Scripts: `npm run dev` · `npm run build` (`tsc && vite build`) · `npm run test
 | `GEMINI_INGEST_MAX_WAIT_SECONDS` | `300.0` | every background job (ingestion embedding and outline, assessment generation, grading); a 429 waits at least a full window and retries |
 | `JOB_STALE_AFTER_SECONDS` | `1800` | orphaned-job reaper threshold |
 | `RATE_LIMIT_*` | enabled; auth 10/60 s, AI 20/60 s | |
-| `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` | 50 MB / 20 | oversized ⇒ 413 |
+| `MAX_UPLOAD_BYTES` / `MAX_UPLOAD_FILES` / `MAX_UPLOAD_TOTAL_BYTES` | 50 MB / 20 / 100 MB | a file over its cap, or all files over the total ⇒ 413 |
 | `GROUNDEDNESS_THRESHOLD` / `_MOCK` | `0.62` / `0.20` | see §7 |
 | `TUTOR_REWRITE_TIMEOUT_SECONDS` | `10.0` | longest wait for the Flash call that rewrites a follow-up into a standalone question for retrieval; past it the rewrite is skipped |
 | `ASSESSMENT_MIN_HIGHER_ORDER_SHARE` | `0.4` | smallest share of apply-or-higher questions in a generated quiz of 5+ questions when the teacher gives no Bloom mix |

@@ -37,3 +37,9 @@ MAX_ASSESSMENT_TOPIC_CHARS = 300
 # (audit 2026-10-06 #1). The model still reads whole chunks; the client only
 # needs enough to recognise the passage, not the course text verbatim.
 MAX_CITATION_EXCERPT_CHARS = 200
+
+# Bytes, not characters, and a 413 from the upload route rather than a 422:
+# every file in one upload together. Each file is already capped (50 MB) but
+# twenty of them could hold a gigabyte in memory for the whole ingestion.
+# core/config.py takes its default from here (MAX_UPLOAD_TOTAL_BYTES).
+MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024

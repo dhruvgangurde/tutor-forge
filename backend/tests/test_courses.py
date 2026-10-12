@@ -118,6 +118,38 @@ async def test_upload_rejects_oversized_file(client, monkeypatch):
     assert "exceeds the maximum upload size" in resp.json()["detail"]
 
 
+async def test_upload_over_the_total_cap_is_413_and_creates_nothing(client, monkeypatch):
+    """
+    Each file was capped but the total was not: twenty files under the per-file
+    limit could hold a gigabyte in memory for the whole ingestion.
+    """
+    from sqlalchemy import select
+
+    from db.models import Course
+
+    monkeypatch.setattr(settings, "max_upload_total_bytes", 3 * 1024 * 1024)  # 3 MB for the test
+    token = await _token(client, "teacher@demo.com")
+    two_mb = b"x" * (2 * 1024 * 1024)
+    resp = await client.post(
+        "/courses/upload",
+        data={"name": "Too much"},
+        files=[("files", ("a.txt", two_mb, "text/plain")), ("files", ("b.txt", two_mb, "text/plain"))],
+        headers=_auth(token),
+    )
+    assert resp.status_code == 413
+    assert resp.json()["detail"] == "These files add up to more than 3 MB. Upload fewer files at a time."
+    async with _Session() as db:
+        assert (await db.execute(select(Course).where(Course.name == "Too much"))).first() is None
+
+    under = await client.post(
+        "/courses/upload",
+        data={"name": "Fits"},
+        files=[("files", ("a.txt", two_mb, "text/plain"))],
+        headers=_auth(token),
+    )
+    assert under.status_code == 200, under.text
+
+
 async def test_upload_requires_teacher_role(client):
     token = await _token(client, "student@demo.com")
     resp = await client.post(

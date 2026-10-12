@@ -11,3 +11,9 @@ export const MAX_COURSE_NAME_CHARS = 255
 export const MAX_EMAIL_CHARS = 254
 export const MAX_ASSESSMENT_TITLE_CHARS = 200
 export const MAX_ASSESSMENT_TOPIC_CHARS = 300
+
+/**
+ * All files in one course upload together, in bytes (backend MAX_UPLOAD_TOTAL_BYTES:
+ * the server answers 413 past it). Checked before sending so a teacher is told at once.
+ */
+export const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024
