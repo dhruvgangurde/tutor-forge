@@ -254,6 +254,10 @@ class TutoringMessage(Base):
     citations: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     hint_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_refusal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # A student message as the tutor understood it: the follow-up rewritten
+    # into a standalone question for retrieval (agents/tutor/rewrite.py), when
+    # that rewrite was used. Later hints retrieve on it.
+    resolved_content: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     session: Mapped["TutoringSession"] = relationship(

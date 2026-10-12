@@ -76,6 +76,7 @@ from agents.tutor.prompts import (
 from agents.tutor.query_resolution import (
     SOURCE_MESSAGE,
     SOURCE_PRIOR_TURN,
+    SOURCE_REWRITE,
     TURN_NEW_QUESTION,
     TURN_REPLY,
     classify_turn,
@@ -84,6 +85,7 @@ from agents.tutor.query_resolution import (
     is_pedagogy_skip_request,
     resolve_retrieval_query,
 )
+from agents.tutor.rewrite import rewrite_follow_up
 from agents.tutor.state import TutorState
 from core.config import TUTOR_GUARD
 from core.context_phrasing import (
@@ -112,6 +114,7 @@ _REFUSAL_MESSAGE = OUT_OF_CORPUS_REFUSAL
 def retrieve_context_node(
     state: TutorState,
     retrieval_service: RetrievalService,
+    gemini_flash=None,
 ) -> TutorState:
     """
     Resolve what to retrieve on, then retrieve the course context for it.
@@ -131,6 +134,8 @@ def retrieve_context_node(
     question = state["question"]
     resolved, source = resolve_retrieval_query(question, state.get("prior_question"))
     turn_kind = TURN_NEW_QUESTION if source == SOURCE_MESSAGE else classify_turn(question)
+    non_answer = turn_kind == TURN_REPLY and (is_non_answer(question) or is_confusion(question))
+    skip_requested = is_pedagogy_skip_request(question)
 
     if source != SOURCE_MESSAGE:
         # Lengths only: both texts are what the student typed.
@@ -144,14 +149,31 @@ def retrieve_context_node(
         )
 
     result = retrieval_service.retrieve(state["course_id"], resolved)
+    query = resolved
+
+    # A follow-up rewritten as the standalone question it stands for, from the
+    # conversation only (agents/tutor/rewrite.py). The better-scoring
+    # retrieval wins. A new question is still judged on its own text when that
+    # scores higher, and a rewrite holds only words the student typed, so it
+    # cannot pass what they did not ask; the off-topic controls stay refused.
+    rewritten = None
+    if gemini_flash is not None and not non_answer and not skip_requested:
+        rewritten = rewrite_follow_up(question, state.get("history") or [], gemini_flash)
+    if rewritten:
+        alt = retrieval_service.retrieve(state["course_id"], rewritten)
+        if (alt.top_score if not alt.is_empty() else 0.0) > (result.top_score if not result.is_empty() else 0.0):
+            result, query, source = alt, rewritten, SOURCE_REWRITE
+            if turn_kind == TURN_NEW_QUESTION:
+                resolved = rewritten  # the question this new ladder is about
     return {
         **state,
         "resolved_question": resolved,
+        "retrieval_query": query,
         "retrieval_query_source": source,
         "turn_kind": turn_kind,
         # "I don't get it" counts with "no" and "I don't know": nothing to judge.
-        "is_non_answer": turn_kind == TURN_REPLY and (is_non_answer(question) or is_confusion(question)),
-        "pedagogy_skip_requested": is_pedagogy_skip_request(question),
+        "is_non_answer": non_answer,
+        "pedagogy_skip_requested": skip_requested,
         "retrieval_result": {
             "query": result.query,
             "chunks": [asdict(c) for c in result.chunks],
@@ -348,7 +370,9 @@ def generate_guiding_question_node(
 
     hint_level = state["hint_level"]
     topic = state.get("resolved_question") or state["question"]
-    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN
+    in_conversation = state.get("retrieval_query_source") == SOURCE_PRIOR_TURN or (
+        state.get("retrieval_query_source") == SOURCE_REWRITE and state.get("turn_kind") != TURN_NEW_QUESTION
+    )
     # A pure "what is X?" opening (the service has ruled out graded work) gets
     # one definition sentence; hints and replies keep the normal ladder.
     definition = (

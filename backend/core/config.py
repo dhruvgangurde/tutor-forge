@@ -106,6 +106,10 @@ class Settings(BaseSettings):
     # model, in approximate tokens (RetrievalService.build_context_window uses
     # 4 characters per token). Chunks are added best-first until it is spent.
     tutor_context_token_budget: int = 3000
+    # Longest wait for the one Flash call that rewrites a follow-up into a
+    # standalone question for retrieval (agents/tutor/rewrite.py). Past it the
+    # rewrite is skipped and the message is retrieved on as typed.
+    tutor_rewrite_timeout_seconds: float = 10.0
 
     # ── Assessment generation ─────────────────────────────────────────────────
     # Smallest share of apply-or-higher Bloom levels in a generated quiz of 5 or
@@ -277,6 +281,9 @@ class TutorGuardThresholds:
     # Eight messages is four exchanges, about 1,200 tokens at the cap.
     memory_turns: int = 8
     memory_chars_per_turn: int = 600
+    # agents/tutor/rewrite.py: a rewritten question longer than this is not
+    # a question any more; it is discarded.
+    rewrite_max_chars: int = 300
 
 
 @dataclass(frozen=True)

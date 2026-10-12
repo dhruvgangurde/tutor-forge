@@ -379,6 +379,7 @@ def is_confusion(text: str) -> bool:
 #: earlier turn of the conversation.
 SOURCE_MESSAGE = "message"
 SOURCE_PRIOR_TURN = "prior_turn"
+SOURCE_REWRITE = "rewrite"  # the message rewritten as a standalone question (agents/tutor/rewrite.py)
 
 
 def resolve_retrieval_query(

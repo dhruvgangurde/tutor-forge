@@ -36,6 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from agents.tutor.prompts import NO_OPEN_QUESTION_FOR_HINT
 from agents.tutor.query_resolution import (
+    SOURCE_REWRITE,
     TURN_NEW_QUESTION,
     classify_turn,
     definition_head,
@@ -230,6 +231,7 @@ async def send_chat_message(
     retrieval_service: RetrievalService,
     gemini_pro,
     langfuse: Langfuse,
+    gemini_flash=None,
 ) -> dict:
     """
     Process a student's question and return a Socratic guiding response.
@@ -277,7 +279,7 @@ async def send_chat_message(
         "course_id": session.course_id,
         "student_id": session.student_id,
         "question": question,
-        "prior_question": None if is_new_question else open_question.content,
+        "prior_question": None if is_new_question else (open_question.resolved_content or open_question.content),
         "tutor_last_message": last_tutor.content if last_tutor else None,
         "tutor_last_level": last_tutor.hint_level if last_tutor else 0,
         "resolved_question": None,
@@ -300,9 +302,13 @@ async def send_chat_message(
         gemini_pro=gemini_pro,
         langfuse=langfuse,
         mode="chat",
+        gemini_flash=gemini_flash,
     )
     final_state = await graph.ainvoke(initial_state)
     grounded = bool(final_state.get("is_grounded"))
+    if final_state.get("retrieval_query_source") == SOURCE_REWRITE:
+        # The question this message stood for; later hints retrieve on it.
+        student_msg.resolved_content = final_state.get("retrieval_query")
 
     # Persist tutor response. A grounded turn that declined to hand over the
     # answer (FR-03.3) is also a refusal from the UI's point of view -- it is
@@ -387,7 +393,7 @@ async def request_hint(
         "session_id": session.id,
         "course_id": session.course_id,
         "student_id": session.student_id,
-        "question": open_question.content,
+        "question": open_question.resolved_content or open_question.content,
         "prior_question": None,
         "tutor_last_message": last_tutor.content if last_tutor else None,
         "resolved_question": None,

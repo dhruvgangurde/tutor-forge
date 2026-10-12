@@ -63,6 +63,8 @@ class GeminiProClient:
         prompt: str,
         temperature: float = 0.7,
         system_instruction: str = "",
+        *,
+        timeout: float | None = None,
     ) -> str:
         import google.generativeai as genai
 
@@ -76,7 +78,7 @@ class GeminiProClient:
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(temperature=temperature),
-                request_options={"timeout": settings.gemini_timeout_seconds},
+                request_options={"timeout": timeout or settings.gemini_timeout_seconds},
             )
             return response.text
 
@@ -188,6 +190,8 @@ class GeminiFlashClient:
         prompt: str,
         temperature: float = 0.7,
         system_instruction: str = "",
+        *,
+        timeout: float | None = None,
     ) -> str:
         import google.generativeai as genai
 
@@ -201,7 +205,7 @@ class GeminiFlashClient:
             response = model.generate_content(
                 prompt,
                 generation_config=genai.types.GenerationConfig(temperature=temperature),
-                request_options={"timeout": settings.gemini_timeout_seconds},
+                request_options={"timeout": timeout or settings.gemini_timeout_seconds},
             )
             return response.text
 
@@ -217,8 +221,8 @@ def _build_llm_clients() -> tuple[object, object]:
     Construct the (pro, flash) client pair for the configured LLM_PROVIDER.
 
     Every provider satisfies the same duck-typed interface:
-        generate(prompt, temperature=..., system_instruction=...) -> str
-        generate_deterministic(prompt)                            -> str
+        generate(prompt, temperature=..., system_instruction=..., timeout=None) -> str
+        generate_deterministic(prompt, system_instruction="")     -> str
         embed(text)                                               -> list[float]
 
     The "pro" client is also what RetrievalService uses for embeddings, so it

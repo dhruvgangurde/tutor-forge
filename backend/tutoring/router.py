@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from auth.service import require_student
 from core.dependencies import (
     get_db_session,
+    get_gemini_flash,
     get_gemini_pro,
     get_langfuse_client,
     get_retrieval_service,
@@ -167,6 +168,7 @@ async def send_tutor_chat(
     retrieval_service=Depends(get_retrieval_service),
     gemini_pro=Depends(get_gemini_pro),
     langfuse=Depends(get_langfuse_client),
+    gemini_flash=Depends(get_gemini_flash),
 ) -> TutorResponse:
     """
     Submit a question to the Socratic tutor and get a guiding response.
@@ -190,6 +192,7 @@ async def send_tutor_chat(
         retrieval_service=retrieval_service,
         gemini_pro=gemini_pro,
         langfuse=langfuse,
+        gemini_flash=gemini_flash,
     )
 
     # Build response, converting citation dicts to Citation objects

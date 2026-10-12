@@ -75,6 +75,8 @@ class MockGeminiProClient:
         prompt: str,
         temperature: float = 0.7,
         system_instruction: str = "",
+        *,
+        timeout: float | None = None,
     ) -> str:
         """
         Generate mock hierarchy JSON from course material.
@@ -487,6 +489,8 @@ class MockGeminiFlashClient:
         prompt: str,
         temperature: float = 0.7,
         system_instruction: str = "",
+        *,
+        timeout: float | None = None,
     ) -> str:
         """Generate mock assessment response."""
         logger.debug("[MOCK] Flash generate() called")
