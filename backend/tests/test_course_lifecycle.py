@@ -226,6 +226,43 @@ async def test_hard_delete_allowed_when_there_is_no_student_work(client, teacher
 
 
 @pytest.mark.asyncio
+async def test_hard_delete_keeps_the_index_when_the_row_delete_fails():
+    """
+    The collection used to be dropped first, so a failed row delete left a
+    course that looked fine but answered "not covered" to everything. The rows
+    go first now; an orphaned index (the other failure) is recoverable.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from courses.lifecycle import hard_delete_course
+
+    db = AsyncMock()
+    db.commit.side_effect = RuntimeError("database is down")
+    retrieval = MagicMock()
+    with pytest.raises(RuntimeError):
+        await hard_delete_course(SimpleNamespace(id=uuid.uuid4(), name="C"), db, retrieval)
+    retrieval.delete_course_collection.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_hard_delete_drops_the_index_after_the_rows_are_committed():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from courses.lifecycle import hard_delete_course
+
+    calls = MagicMock()
+    db = AsyncMock()
+    db.execute.side_effect = lambda *_: calls.execute()
+    db.commit.side_effect = lambda: calls.commit()
+    retrieval = MagicMock()
+    retrieval.delete_course_collection.side_effect = lambda *_: calls.delete_collection()
+    await hard_delete_course(SimpleNamespace(id=uuid.uuid4(), name="C"), db, retrieval)
+    assert [c[0] for c in calls.mock_calls] == ["execute", "commit", "delete_collection"]
+
+
+@pytest.mark.asyncio
 async def test_hard_delete_refused_when_a_released_grade_exists(client, teacher_token):
     course_id = await _seed_course()
     await _seed_published_assessment(course_id)
