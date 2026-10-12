@@ -77,7 +77,7 @@ async def test_same_student_different_assessment_allowed(session):
 
 
 async def test_different_student_same_assessment_allowed(session):
-    teacher, student_a, assessment = await _seed(session)
+    _teacher, student_a, assessment = await _seed(session)
     student_b = User(email=f"s2-{uuid.uuid4()}@x.com", hashed_password=hash_password("pw"), role="student")
     session.add(student_b)
     await session.flush()
