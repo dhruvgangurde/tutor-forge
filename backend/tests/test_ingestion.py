@@ -308,7 +308,7 @@ def test_chunk_and_embed_produces_overlapping_chunks():
     assert passed_course_id == course_id
     # 1000 chars, window 400, stride 340 -> windows at 0, 340, 680 => 3 chunks
     assert len(chunks) == 3
-    assert out["chunks"][0]["chunk_id"] == f"{course_id}_a.txt_1_0"
+    assert out["chunks"][0]["chunk_id"] == f"{course_id}_0_a.txt_1_0"
 
 
 def test_chunk_and_embed_empty_content_adds_nothing():
@@ -416,6 +416,37 @@ async def test_a_text_file_is_cited_without_a_page_end_to_end(seeded):
     assert all(c.page_or_slide is None for c in result.chunks)
     assert all(c.page_or_slide is None for c in retrieval.build_citation_bundle(result))
     assert "p.-1" not in retrieval.build_context_window(result, token_budget=1000)
+
+
+async def test_two_files_with_the_same_name_are_both_indexed(seeded):
+    """
+    Chunk ids were course + file name + page + index, so two uploads named
+    notes.txt produced the same ids, and the one upsert batch was refused
+    (Chroma rejects repeated ids in a batch): the whole ingestion failed. The
+    file's position in the upload now keeps the ids apart.
+    """
+    import chromadb
+
+    from core.mock_gemini import MockGeminiProClient
+    from retrieval.service import RetrievalService
+
+    db, course_id, job_id = seeded
+    retrieval = RetrievalService(
+        chroma_client=chromadb.EphemeralClient(), gemini_client=MockGeminiProClient()
+    )
+    gemini_pro = MagicMock()
+    gemini_pro.generate.return_value = json.dumps(HIERARCHY)
+    graph = build_ingestion_graph(retrieval_service=retrieval, gemini_pro=gemini_pro, db=db)
+    first, second = "Binary search halves the sorted range.", "Merge sort splits the list in two."
+    final = await graph.ainvoke(_state(
+        course_id=course_id,
+        job_id=job_id,
+        files=[_txt("notes.txt", first), _txt("notes.txt", second)],
+    ))
+    assert final["status"] == "complete"
+
+    found = {c.text for c in retrieval.retrieve(course_id, "binary search merge sort").chunks}
+    assert {first, second} <= found
 
 
 async def test_persist_logs_carry_no_outline_names(seeded, caplog):

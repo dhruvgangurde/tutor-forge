@@ -70,7 +70,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
     parsed: list[dict[str, Any]] = []
     course_id = state["course_id"]
 
-    for f in state["files"]:
+    for file_index, f in enumerate(state["files"]):
         mime = f["mime_type"]
         raw = f["content"]
         filename = f["filename"]
@@ -93,6 +93,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                         )
                         parsed.append({
                             "source_file": filename,
+                            "file_index": file_index,
                             "page_or_slide": page_num,
                             "text": text,
                         })
@@ -113,6 +114,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
                     )
                     parsed.append({
                         "source_file": filename,
+                        "file_index": file_index,
                         "page_or_slide": slide_num,
                         "text": combined_text,
                     })
@@ -125,6 +127,7 @@ def parse_content_node(state: IngestionState) -> IngestionState:
             )
             parsed.append({
                 "source_file": filename,
+                "file_index": file_index,
                 "page_or_slide": None,
                 "text": text,
             })
@@ -639,7 +642,9 @@ def chunk_and_embed_node(
             end = start + _CHUNK_SIZE
             chunk_text = text[start:end].strip()
             if chunk_text:
-                chunk_id = f"{course_id}_{page['source_file']}_{page['page_or_slide']}_{chunk_index}"
+                # The file's position in the upload keeps two same-named files apart.
+                file_index = page.get("file_index", 0)
+                chunk_id = f"{course_id}_{file_index}_{page['source_file']}_{page['page_or_slide']}_{chunk_index}"
                 chunk = Chunk(
                     text=chunk_text,
                     source_file=page["source_file"],
