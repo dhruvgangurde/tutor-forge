@@ -24,7 +24,9 @@ from core.limits import MAX_UPLOAD_TOTAL_BYTES
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Never under pytest (it sets PYTEST_VERSION before any conftest loads):
+        # the suite runs on its defaults, not on a developer's .env (invariant 6).
+        env_file=None if os.environ.get("PYTEST_VERSION") else ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
