@@ -143,6 +143,9 @@ Write it as a short conversational explanation in plain paragraphs, about 120 to
 #: Highest hint level at which the tutor must not state the answer. Hint 3 is
 #: the near-answer rung and level 4 the full explanation, so both may.
 MAX_ANSWER_GUARD_LEVEL = 2
+#: From this rung on, the tutor has explained; a confused reply gets the
+#: explanation again from another angle rather than a smaller question.
+EXPLAIN_FROM_LEVEL = MAX_ANSWER_GUARD_LEVEL + 1
 
 #: Below Hint 3, on every path (a new question, a hint, or a reply).
 _ASK_DO_NOT_TELL = """\
@@ -297,13 +300,34 @@ QUESTION into a smaller, simpler first step and ask about that step.
 """
 
 
-def reply_instruction(non_answer: bool, hint_level: int = 0) -> str:
+#: "no" or "I don't get it" right after a full explanation. The non-answer
+#: step above would break THE QUESTION into a smaller quiz question, which is
+#: what happened live: the student said the explanation did not help and was
+#: asked another question. They need the explanation again, differently.
+_EXPLAIN_AGAIN = """\
+You are a tutor partway through a conversation. THE QUESTION is what you are
+working through together, and you have already explained it in full. THEIR
+REPLY says that explanation did not land.
+Do not ask another question in its place, do not repeat the same explanation,
+and give no verdict on their reply. Explain it again from a different angle:
+start from the simplest idea, use everyday words, and give one small concrete
+example labelled "Example" (made-up small numbers are fine when the method
+itself is from the course). End with one short question that checks they
+followed. Keep it to 4-8 sentences.
+"""
+
+
+def reply_instruction(non_answer: bool, hint_level: int = 0, explain_again: bool = False) -> str:
     """
     System instruction for a reply or follow-up inside an open conversation.
 
     Below Hint 3 the reply must not tell them the answer either; from Hint 3 on
     the ladder has already started giving it, so that rule is left out.
+    ``explain_again`` is the confused reply after a full explanation: the
+    explanation again from another angle, not a smaller question.
     """
+    if explain_again:
+        return _EXPLAIN_AGAIN + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES
     step = "\n" + _NON_ANSWER_STEP if non_answer else ""
     ask = "\n" + _ASK_DO_NOT_TELL if hint_level <= MAX_ANSWER_GUARD_LEVEL else ""
     return _REPLY + step + ask + "\n" + _GROUNDING_CLAUSE + "\n" + _OUTPUT_RULES

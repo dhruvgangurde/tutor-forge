@@ -279,6 +279,7 @@ async def send_chat_message(
         "question": question,
         "prior_question": None if is_new_question else open_question.content,
         "tutor_last_message": last_tutor.content if last_tutor else None,
+        "tutor_last_level": last_tutor.hint_level if last_tutor else 0,
         "resolved_question": None,
         "retrieval_query_source": "message",
         "pedagogy_skip_requested": False,

@@ -339,6 +339,29 @@ def is_non_answer(text: str) -> bool:
     return any(normalised.startswith(prefix) for prefix in _NON_ANSWER_PREFIXES)
 
 
+#: Replies that say the explanation did not land. A non-answer is one of them;
+#: so is "I don't get it" after a full explanation, which used to be judged as
+#: an attempt at the question.
+_CONFUSION_PREFIXES = (
+    "i dont get it", "i don't get it", "dont get it", "don't get it", "i dont understand",
+    "i don't understand", "dont understand", "don't understand", "i do not understand",
+    "still confused", "im confused", "i'm confused", "i am confused", "confused",
+    "that didnt help", "that didn't help", "didnt help", "didn't help", "doesnt help",
+    "doesn't help", "not helpful", "explain again", "explain it again", "explain that again",
+    "can you explain", "could you explain", "simpler", "make it simpler", "in simpler",
+    "i still dont", "i still don't", "no idea what", "what does that mean", "lost me",
+    "you lost me", "too hard", "too complicated",
+)
+
+
+def is_confusion(text: str) -> bool:
+    """True when the reply says they did not follow: a non-answer, or "I don't get it"."""
+    if is_non_answer(text):
+        return True
+    normalised = " ".join(_leading_words(_normalise(text)))
+    return any(normalised.startswith(prefix) for prefix in _CONFUSION_PREFIXES)
+
+
 # ── Query resolution ──────────────────────────────────────────────────────────
 
 #: ``retrieval_query_source`` values recorded on the state for observability.

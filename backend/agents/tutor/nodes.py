@@ -63,6 +63,7 @@ from agents.tutor.prompts import (
     COURSE_GAP_MESSAGE,
     COURSE_GAP_RETRY,
     DIRECT_ANSWER_DECLINE,
+    EXPLAIN_FROM_LEVEL,
     FULL_EXPLANATION_LEVEL,
     HINT_AFTER_LAST_MESSAGE,
     MAX_HINT_LEVEL,
@@ -78,6 +79,7 @@ from agents.tutor.query_resolution import (
     TURN_NEW_QUESTION,
     TURN_REPLY,
     classify_turn,
+    is_confusion,
     is_non_answer,
     is_pedagogy_skip_request,
     resolve_retrieval_query,
@@ -147,7 +149,8 @@ def retrieve_context_node(
         "resolved_question": resolved,
         "retrieval_query_source": source,
         "turn_kind": turn_kind,
-        "is_non_answer": turn_kind == TURN_REPLY and is_non_answer(question),
+        # "I don't get it" counts with "no" and "I don't know": nothing to judge.
+        "is_non_answer": turn_kind == TURN_REPLY and (is_non_answer(question) or is_confusion(question)),
         "pedagogy_skip_requested": is_pedagogy_skip_request(question),
         "retrieval_result": {
             "query": result.query,
@@ -365,7 +368,12 @@ def generate_guiding_question_node(
             )
         parts.append(f"Their reply:\n{wrap_untrusted(state['question'], 'THEIR REPLY')}")
         parts.append(f"Course context:\n{wrap_untrusted(context, 'COURSE CONTEXT')}")
-        system = reply_instruction(bool(state.get("is_non_answer")), hint_level)
+        # A confused reply right after a full explanation (the tutor's last turn
+        # at Hint 3 or above) gets the explanation again, not a smaller question.
+        explain_again = (
+            bool(state.get("is_non_answer")) and state.get("tutor_last_level", hint_level) >= EXPLAIN_FROM_LEVEL
+        )
+        system = reply_instruction(bool(state.get("is_non_answer")), hint_level, explain_again=explain_again)
     else:
         # Labelled "The question", not "Student question": the label was
         # echoed back as "the student" in the reply.

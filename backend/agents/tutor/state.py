@@ -16,7 +16,8 @@ class TutorState(TypedDict):
     resolved_question: str | None              # what retrieval actually ran on
     retrieval_query_source: str                # "message" | "prior_turn" (the open question)
     turn_kind: NotRequired[str]                # "new_question" | "follow_up" | "reply"
-    is_non_answer: NotRequired[bool]           # "no", "I don't know": ask a simpler step
+    is_non_answer: NotRequired[bool]           # "no", "I don't know", "I don't get it"
+    tutor_last_level: NotRequired[int]         # hint level of the tutor's last turn
     definition_allowed: NotRequired[bool]      # pure "what is X?", not from graded work
     history: NotRequired[list[dict]]           # the turns before this one, oldest first:
                                                # {role, content, hint_level, is_refusal}
