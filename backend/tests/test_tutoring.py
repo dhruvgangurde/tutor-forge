@@ -2330,6 +2330,25 @@ class TestSourceNarration:
             # Saying the course does not cover something is honest, not narration.
             ("The course material does not cover that part.", "The course material does not cover that part."),
             ("What do you think happens next?", "What do you think happens next?"),
+            # A trailing "provided" used to stay behind, capitalised: the live
+            # reply "Provided, there is no mention or explanation of…" (2026-10-12).
+            (
+                "Based on the course material provided, there is no mention of the travelling salesman problem.",
+                "There is no mention of the travelling salesman problem.",
+            ),
+            ("According to the passages provided, the pivot splits the list.", "The pivot splits the list."),
+            ("Based on the text provided, merge sort is stable.", "Merge sort is stable."),
+            ("From the course notes provided, a heap keeps its smallest item on top.",
+             "A heap keeps its smallest item on top."),
+            (
+                "Based on the course material provided by your teacher, a heap keeps its smallest item on top.",
+                "A heap keeps its smallest item on top.",
+            ),
+            # "given that" is a conjunction, not part of the qualifier.
+            (
+                "Based on the course material given that the list is sorted, which half do you search?",
+                "Given that the list is sorted, which half do you search?",
+            ),
         ],
     )
     def test_strips_narration_and_keeps_the_claim(self, raw, expected):

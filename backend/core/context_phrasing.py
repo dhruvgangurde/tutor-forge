@@ -177,14 +177,22 @@ _SOURCE_SUBJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+#: "the course material provided", "the passages given": the trailing word went
+#: unmatched and was left capitalised ("Provided, there is no mention of...").
+#: "given that" is a conjunction and stays.
+_PROVIDED = (
+    r"(?:\s+(?:provided|supplied|given(?!\s+that\b))"
+    r"(?:\s+by\s+(?:your|the|our)\s+(?:teacher|instructor))?)?"
+)
+
 #: "according to the course material, X" / "based on the course material, X" /
 #: "as the course mentions, X" / "as mentioned in the course material" /
 #: "the key idea from the course material about..." / "X, as you saw in the
 #: lecture notes." -> removed.
 _SOURCE_QUALIFIER_RE = re.compile(
     r"\s*,?\s*(?:"
-    r"(?:according\s+to|based\s+on|as\s+per)\s+" + _COURSE
-    + r"|from\s+" + _COURSE_NAMED
+    r"(?:according\s+to|based\s+on|as\s+per)\s+" + _COURSE + _PROVIDED
+    + r"|from\s+" + _COURSE_NAMED + _PROVIDED
     + r"|as\s+" + _COURSE + r"\s+" + _NARRATING_VERB
     + r"|as\s+(?:stated|mentioned|described|explained|noted|shown|given|outlined)\s+in\s+"
     + _COURSE
@@ -207,7 +215,7 @@ _SOURCE = (
 #: a sentence-final "in this context" -> removed.
 _SOURCE_NOUN_QUALIFIER_RE = re.compile(
     r"\s*,?\s*(?:"
-    r"(?:according\s+to|based\s+on|as\s+per|per|from)\s+" + _SOURCE
+    r"(?:according\s+to|based\s+on|as\s+per|per|from)\s+" + _SOURCE + _PROVIDED
     + r"|as\s+(?:stated|described|mentioned|explained|noted|shown|given|outlined)\s+in\s+" + _SOURCE
     + r"|in\s+" + _SOURCE + r"(?=\s*[,.?!])"
     + r"|(?:according\s+to|based\s+on)\s+the\s+description\s+of\b[^,.?!\n]*"
