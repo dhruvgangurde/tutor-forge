@@ -76,6 +76,7 @@ _FILLER_WORDS = frozenset({
     "what", "whats", "why", "how", "when", "where", "which", "who", "whom",
     # meta / interaction verbs and nouns
     "tell", "give", "show", "say", "answer", "answers", "solution", "solutions",
+    "want", "wanna", "need", "like",
     "solve", "explain", "explanation", "help", "hint", "hints", "clarify",
     "understand", "know", "get", "see", "think", "mean", "means", "meaning",
     "question", "ask", "repeat", "rephrase", "elaborate", "continue", "go",
@@ -101,8 +102,11 @@ _WORD_RE = re.compile(r"[a-z0-9']+")
 
 
 def topical_words(text: str) -> list[str]:
-    """Return the words in ``text`` that carry retrievable topic signal."""
-    return [w for w in _WORD_RE.findall((text or "").lower()) if w not in _FILLER_WORDS]
+    """
+    Return the words in ``text`` that carry retrievable topic signal. A bare
+    number is not one: "0/1 knapsack" names one topic, not three.
+    """
+    return [w for w in _WORD_RE.findall((text or "").lower()) if w not in _FILLER_WORDS and not w.isdigit()]
 
 
 def is_low_content(text: str) -> bool:
@@ -204,9 +208,14 @@ _QUESTION_OPENERS = frozenset({
     "what", "whats", "what's", "why", "how", "who", "whom", "whose", "when",
     "where", "which",
     "tell", "explain", "define", "describe", "show", "give", "list", "solve",
-    "calculate", "derive", "compare",
+    "calculate", "derive", "compare", "teach", "help", "walk",
     "is", "are", "does", "do", "can", "could",
 })
+
+#: Requests that open with the student rather than a verb: "i want a diagram
+#: of the matrix", "i need help with the knapsack table". Seen live as replies
+#: to whatever question was open, because no opener was known.
+_REQUEST_PREFIXES = ("i want", "i wanna", "i need", "i'd like", "id like", "i would like")
 
 #: Skipped at the start of a message before looking for an opener.
 _INTERJECTIONS = frozenset({
@@ -248,9 +257,10 @@ def classify_turn(text: str) -> str:
     learning question yet.
     """
     words = _leading_words(text)
-    if not words or words[0] not in _QUESTION_OPENERS:
-        return TURN_REPLY
     joined = " ".join(words)
+    is_request = any(joined == p or joined.startswith(p + " ") for p in _REQUEST_PREFIXES)
+    if not words or (words[0] not in _QUESTION_OPENERS and not is_request):
+        return TURN_REPLY
     if any(joined.startswith(prefix) for prefix in _FOLLOW_UP_PREFIXES):
         return TURN_FOLLOW_UP
     if any(w in _REFERRING_WORDS for w in words[1:3]):
